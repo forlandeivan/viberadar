@@ -1,6 +1,6 @@
 {
   "name": "viberadar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
   "bin": "./dist/cli.js",
@@ -11,7 +11,13 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "commonjs",
-  "keywords": ["vibe", "coverage", "modules", "cli", "dashboard"],
+  "keywords": [
+    "vibe",
+    "coverage",
+    "modules",
+    "cli",
+    "dashboard"
+  ],
   "author": "",
   "license": "MIT",
   "files": [
