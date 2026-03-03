@@ -13,6 +13,7 @@ export interface ModuleInfo {
   coverage?: CoverageInfo;
   size: number;
   dependencies: string[];
+  featureKeys: string[];
 }
 
 export interface CoverageInfo {
@@ -22,13 +23,42 @@ export interface CoverageInfo {
   branches: number;
 }
 
+// ─── Feature config types ─────────────────────────────────────────────────────
+
+export interface FeatureConfig {
+  label: string;
+  description?: string;
+  include: string[];
+  color: string;
+}
+
+export interface VibeRadarConfig {
+  version: string;
+  features: Record<string, FeatureConfig>;
+}
+
+export interface FeatureResult {
+  key: string;
+  label: string;
+  description: string;
+  color: string;
+  fileCount: number;     // source (non-test) files matched
+  testFileCount: number; // test files matched
+  testedCount: number;   // source files that have a test
+  coveragePct?: number;  // average line coverage
+}
+
 export interface ScanResult {
   projectRoot: string;
   projectName: string;
   scannedAt: string;
   modules: ModuleInfo[];
   totalCoverage?: CoverageInfo;
+  features: FeatureResult[] | null;
+  hasConfig: boolean;
 }
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const IGNORE_DIRS = [
   'node_modules', 'dist', 'build', '.git', '.next',
@@ -37,6 +67,34 @@ const IGNORE_DIRS = [
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
 const TEST_PATTERNS = ['.test.', '.spec.', '__tests__'];
+
+// ─── Glob pattern matcher ─────────────────────────────────────────────────────
+
+/**
+ * Converts a glob pattern (relative to project root) to a RegExp and tests relPath.
+ * Supports: **, *, exact paths.
+ */
+function fileMatchesGlob(relPath: string, pattern: string): boolean {
+  const normalPath = relPath.replace(/\\/g, '/');
+  let regexStr = pattern
+    .replace(/\\/g, '/')
+    .replace(/[.+^${}()|[\]]/g, '\\$&')  // escape regex special chars (not *)
+    .replace(/\*\*/g, '\x00')             // placeholder for **
+    .replace(/\*/g, '[^/]*')              // * = anything except /
+    .replace(/\x00\//g, '(.+/)?')        // **/ = zero or more directory segments
+    .replace(/\x00/g, '.*');             // ** alone = anything
+  try {
+    return new RegExp('^' + regexStr + '$').test(normalPath);
+  } catch {
+    return false;
+  }
+}
+
+function fileMatchesFeature(relPath: string, include: string[]): boolean {
+  return include.some(p => fileMatchesGlob(relPath, p));
+}
+
+// ─── Module detection helpers ─────────────────────────────────────────────────
 
 function detectType(filePath: string): ModuleInfo['type'] {
   const p = filePath.toLowerCase();
@@ -64,14 +122,9 @@ function extractDependencies(filePath: string): string[] {
   }
 }
 
-function loadPlaywrightCoverage(projectRoot: string): Map<string, CoverageInfo> {
+function loadCoverageMap(projectRoot: string): Map<string, CoverageInfo> {
   const coverageMap = new Map<string, CoverageInfo>();
-
-  // Try Playwright JSON report
-  const playwrightReport = path.join(projectRoot, 'playwright-report', 'results.json');
-  // Try V8/Istanbul coverage
   const v8Coverage = path.join(projectRoot, 'coverage', 'coverage-summary.json');
-
   if (fs.existsSync(v8Coverage)) {
     try {
       const raw = JSON.parse(fs.readFileSync(v8Coverage, 'utf-8'));
@@ -88,9 +141,10 @@ function loadPlaywrightCoverage(projectRoot: string): Map<string, CoverageInfo> 
       // no coverage data
     }
   }
-
   return coverageMap;
 }
+
+// ─── Main scan function ───────────────────────────────────────────────────────
 
 export async function scanProject(projectRoot: string): Promise<ScanResult> {
   const pkgPath = path.join(projectRoot, 'package.json');
@@ -111,7 +165,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     absolute: true,
   });
 
-  const coverageMap = loadPlaywrightCoverage(projectRoot);
+  const coverageMap = loadCoverageMap(projectRoot);
 
   const testFiles = new Set(
     files.filter((f) => TEST_PATTERNS.some((t) => f.includes(t)))
@@ -122,7 +176,6 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     const name = path.basename(filePath, path.extname(filePath));
     const isTest = TEST_PATTERNS.some((t) => filePath.includes(t));
 
-    // Try to find test file for non-test modules
     let testFile: string | undefined;
     if (!isTest) {
       const base = filePath.replace(/\.[^.]+$/, '');
@@ -136,9 +189,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     }
 
     let size = 0;
-    try {
-      size = fs.statSync(filePath).size;
-    } catch {}
+    try { size = fs.statSync(filePath).size; } catch {}
 
     return {
       id: relativePath.replace(/[/\\]/g, '_'),
@@ -151,13 +202,61 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       coverage: coverageMap.get(filePath),
       size,
       dependencies: extractDependencies(filePath),
+      featureKeys: [], // filled below
     };
   });
+
+  // ─── Load viberadar.config.json ──────────────────────────────────────────────
+
+  let config: VibeRadarConfig | null = null;
+  const configPath = path.join(projectRoot, 'viberadar.config.json');
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {}
+
+  let features: FeatureResult[] | null = null;
+
+  if (config) {
+    const featureEntries = Object.entries(config.features);
+
+    // Assign feature keys to each module
+    for (const m of modules) {
+      m.featureKeys = featureEntries
+        .filter(([, f]) => fileMatchesFeature(m.relativePath, f.include))
+        .map(([key]) => key);
+    }
+
+    const sourceModules = modules.filter(m => m.type !== 'test');
+    const testModules   = modules.filter(m => m.type === 'test');
+
+    features = featureEntries.map(([key, feat]) => {
+      const srcFiles = sourceModules.filter(m => fileMatchesFeature(m.relativePath, feat.include));
+      const tstFiles = testModules.filter(m => fileMatchesFeature(m.relativePath, feat.include));
+      const testedCount = srcFiles.filter(m => m.hasTests).length;
+      const covFiles = srcFiles.filter(m => m.coverage?.lines !== undefined);
+      const coveragePct = covFiles.length > 0
+        ? covFiles.reduce((s, m) => s + m.coverage!.lines, 0) / covFiles.length
+        : undefined;
+
+      return {
+        key,
+        label: feat.label,
+        description: feat.description || '',
+        color: feat.color,
+        fileCount: srcFiles.length,
+        testFileCount: tstFiles.length,
+        testedCount,
+        coveragePct,
+      };
+    });
+  }
 
   return {
     projectRoot,
     projectName,
     scannedAt: new Date().toISOString(),
     modules,
+    features,
+    hasConfig: config !== null,
   };
 }

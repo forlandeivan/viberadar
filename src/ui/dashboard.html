@@ -7,141 +7,217 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      min-height: 100vh;
+    :root {
+      --bg:       #0d1117;
+      --bg-card:  #161b22;
+      --bg-hover: #1c2230;
+      --border:   #21262d;
+      --text:     #e6edf3;
+      --muted:    #7d8590;
+      --dim:      #484f58;
+      --blue:     #58a6ff;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --yellow:   #e3b341;
     }
 
+    body {
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────────── */
     header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 16px 24px;
-      border-bottom: 1px solid #21262d;
-      background: #161b22;
+      gap: 10px;
+      padding: 12px 20px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 10;
     }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .header-project { margin-left: auto; font-size: 13px; color: var(--muted); }
+    .header-time    { font-size: 12px; color: var(--dim); }
 
-    header h1 {
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-    }
-
-    header .project-name {
-      font-size: 13px;
-      color: #7d8590;
-      margin-left: auto;
-    }
-
-    header .scanned-at {
-      font-size: 12px;
-      color: #484f58;
-    }
-
+    /* ── Stats bar ───────────────────────────────────────────────────────────── */
     .stats-bar {
       display: flex;
-      gap: 24px;
-      padding: 14px 24px;
-      background: #161b22;
-      border-bottom: 1px solid #21262d;
+      gap: 28px;
+      padding: 12px 20px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
       flex-wrap: wrap;
     }
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-value { font-size: 20px; font-weight: 700; color: var(--blue); }
+    .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .stat {
+    /* ── Layout ──────────────────────────────────────────────────────────────── */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 14px 10px;
       display: flex;
       flex-direction: column;
+      gap: 14px;
+    }
+
+    .view-tabs {
+      display: flex;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 3px;
       gap: 2px;
     }
-
-    .stat-value {
-      font-size: 22px;
-      font-weight: 700;
-      color: #58a6ff;
+    .view-tab {
+      flex: 1;
+      padding: 5px 0;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: background 0.15s, color 0.15s;
+      user-select: none;
     }
+    .view-tab.active { background: var(--bg-card); color: var(--text); }
+    .view-tab.disabled { opacity: 0.4; pointer-events: none; }
 
-    .stat-label {
-      font-size: 11px;
-      color: #7d8590;
+    .sidebar-label {
+      font-size: 10px;
+      color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      padding: 0 6px;
     }
 
-    .main {
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      height: calc(100vh - 110px);
-    }
-
-    .sidebar {
-      border-right: 1px solid #21262d;
-      overflow-y: auto;
-      padding: 12px 0;
-    }
-
-    .filter-group {
-      padding: 8px 16px;
-    }
-
-    .filter-group label {
-      font-size: 11px;
-      color: #7d8590;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .filter-group input {
+    .search-input {
       width: 100%;
-      padding: 6px 10px;
-      background: #21262d;
-      border: 1px solid #30363d;
+      padding: 7px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      color: #e6edf3;
+      color: var(--text);
       font-size: 13px;
       outline: none;
     }
-
-    .filter-group input:focus {
-      border-color: #58a6ff;
-    }
-
-    .type-filters {
-      padding: 8px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
+    .search-input:focus { border-color: var(--blue); }
+    .search-input::placeholder { color: var(--dim); }
 
     .type-filter {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 4px 6px;
+      gap: 7px;
+      padding: 5px 8px;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 13px;
-      color: #7d8590;
-      transition: background 0.1s;
+      font-size: 12px;
+      color: var(--muted);
+      transition: background 0.1s, color 0.1s;
+    }
+    .type-filter:hover { background: var(--border); color: var(--text); }
+    .type-filter.active { background: var(--border); color: var(--text); }
+    .type-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .type-count { margin-left: auto; font-size: 11px; color: var(--dim); }
+
+    /* ── Content area ────────────────────────────────────────────────────────── */
+    .content { flex: 1; overflow-y: auto; padding: 18px 20px; }
+
+    /* ── Feature cards ───────────────────────────────────────────────────────── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
     }
 
-    .type-filter:hover { background: #21262d; }
-    .type-filter.active { color: #e6edf3; background: #21262d; }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      overflow: hidden;
+      transition: background 0.15s, transform 0.1s, border-color 0.15s;
+    }
+    .feature-card:hover    { background: var(--bg-hover); transform: translateY(-1px); }
+    .feature-card.active   { background: var(--bg-hover); border-color: #30363d; }
 
-    .type-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
+    .feature-accent { width: 4px; flex-shrink: 0; }
+
+    .feature-body { padding: 14px 16px; flex: 1; min-width: 0; }
+
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .feature-file-count { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+
+    .feature-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      line-height: 1.4;
     }
 
-    .content {
-      overflow-y: auto;
-      padding: 16px;
+    .feature-progress-wrap { display: flex; align-items: center; gap: 8px; }
+    .feature-progress-bar {
+      flex: 1;
+      height: 5px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .feature-progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
+    .feature-progress-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+    /* ── No config banner ────────────────────────────────────────────────────── */
+    .no-config {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .no-config-icon { font-size: 48px; }
+    .no-config h2   { font-size: 18px; color: var(--text); }
+    .no-config p    { font-size: 14px; max-width: 420px; line-height: 1.6; }
+    .no-config-cmd  {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-family: monospace;
+      font-size: 15px;
+      color: var(--blue);
     }
 
+    /* ── Module grid (Files view) ────────────────────────────────────────────── */
     .module-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -149,240 +225,165 @@
     }
 
     .module-card {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px;
       cursor: pointer;
       transition: border-color 0.15s, transform 0.1s;
     }
-
-    .module-card:hover {
-      border-color: #58a6ff;
-      transform: translateY(-1px);
-    }
-
-    .module-card.selected {
-      border-color: #58a6ff;
-      background: #1c2230;
-    }
-
-    .module-card-header {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
+    .module-card:hover  { border-color: var(--blue); transform: translateY(-1px); }
+    .module-card.active { border-color: var(--blue); background: var(--bg-hover); }
 
     .module-name {
       font-size: 13px;
       font-weight: 600;
-      word-break: break-all;
-      flex: 1;
-    }
-
-    .badge {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 10px;
-      font-weight: 600;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .badge-green { background: #1a3a2a; color: #3fb950; }
-    .badge-red   { background: #3a1a1a; color: #f85149; }
-    .badge-gray  { background: #21262d; color: #7d8590; }
-
-    .module-path {
-      font-size: 11px;
-      color: #484f58;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       word-break: break-all;
     }
+    .module-path { font-size: 11px; color: var(--dim); margin-bottom: 8px; word-break: break-all; }
+    .module-meta { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--muted); }
 
-    .coverage-bar {
-      height: 4px;
-      border-radius: 2px;
-      background: #21262d;
-      overflow: hidden;
-      margin-top: 6px;
-    }
+    /* ── Badges ──────────────────────────────────────────────────────────────── */
+    .badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+    .badge-green { background: #1a3a2a; color: var(--green); }
+    .badge-red   { background: #3a1a1a; color: var(--red); }
+    .badge-gray  { background: var(--border); color: var(--muted); }
 
-    .coverage-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width 0.3s;
-    }
+    .cov-bar  { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+    .cov-fill { height: 100%; border-radius: 2px; }
 
-    .detail-panel {
+    /* ── Right panel ─────────────────────────────────────────────────────────── */
+    .panel {
       position: fixed;
-      right: 0;
-      top: 0;
-      width: 380px;
+      top: 0; right: 0;
+      width: 420px;
       height: 100vh;
-      background: #161b22;
-      border-left: 1px solid #21262d;
-      padding: 20px;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border);
       overflow-y: auto;
       transform: translateX(100%);
-      transition: transform 0.2s;
+      transition: transform 0.2s ease;
       z-index: 100;
+      padding: 20px;
     }
+    .panel.open { transform: translateX(0); }
 
-    .detail-panel.open {
-      transform: translateX(0);
-    }
-
-    .detail-close {
+    .panel-close {
       position: absolute;
-      top: 16px;
-      right: 16px;
+      top: 16px; right: 16px;
       background: none;
       border: none;
-      color: #7d8590;
+      color: var(--muted);
       cursor: pointer;
-      font-size: 18px;
-      padding: 4px;
-    }
-
-    .detail-close:hover { color: #e6edf3; }
-
-    .detail-title {
       font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 4px;
-      padding-right: 32px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      line-height: 1;
     }
+    .panel-close:hover { background: var(--border); color: var(--text); }
 
-    .detail-path {
-      font-size: 11px;
-      color: #484f58;
-      margin-bottom: 16px;
-      word-break: break-all;
-    }
+    .panel-title    { font-size: 17px; font-weight: 700; padding-right: 36px; margin-bottom: 4px; }
+    .panel-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
 
-    .detail-section {
-      margin-bottom: 16px;
+    .panel-stats {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
     }
+    .panel-stat      { flex: 1; text-align: center; }
+    .panel-stat-val  { font-size: 22px; font-weight: 700; }
+    .panel-stat-lbl  { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .detail-section-title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #7d8590;
-      margin-bottom: 8px;
+    .panel-section       { margin-bottom: 20px; }
+    .panel-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+
+    .file-list { display: flex; flex-direction: column; gap: 3px; }
+    .file-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 10px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 12px;
     }
+    .file-item-icon { font-size: 11px; flex-shrink: 0; padding-top: 2px; }
+    .file-item-name { font-weight: 600; color: var(--text); word-break: break-all; line-height: 1.3; }
+    .file-item-dir  { color: var(--dim); font-size: 11px; word-break: break-all; }
+
+    .cov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cov-metric { background: var(--bg); border-radius: 6px; padding: 10px; text-align: center; }
+    .cov-metric-val { font-size: 20px; font-weight: 700; }
+    .cov-metric-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; }
 
     .detail-row {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       font-size: 13px;
-      padding: 4px 0;
-      border-bottom: 1px solid #21262d;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
     }
-
     .detail-row:last-child { border-bottom: none; }
-
-    .coverage-metric {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .coverage-metric-item {
-      background: #21262d;
-      border-radius: 6px;
-      padding: 8px;
-      text-align: center;
-    }
-
-    .coverage-metric-value {
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    .coverage-metric-label {
-      font-size: 10px;
-      color: #7d8590;
-      text-transform: uppercase;
-    }
-
-    .deps-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
+    .detail-row-right { font-size: 11px; color: var(--muted); text-align: right; max-width: 60%; word-break: break-all; }
 
     .dep-item {
       font-size: 12px;
-      color: #7d8590;
+      color: var(--muted);
       padding: 3px 8px;
-      background: #21262d;
+      background: var(--bg);
       border-radius: 4px;
       font-family: monospace;
     }
 
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 200px;
-      color: #7d8590;
-      font-size: 14px;
-    }
-
-    .type-colors {
-      component: '#58a6ff';
-      service: '#d2a8ff';
-      util: '#ffa657';
-      test: '#3fb950';
-      config: '#f85149';
-      other: '#484f58';
-    }
+    /* ── Misc ────────────────────────────────────────────────────────────────── */
+    .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--muted); font-size: 14px; }
+    .empty   { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
   </style>
 </head>
 <body>
 
 <header>
-  <span style="font-size:22px">🔭</span>
+  <span style="font-size:20px">🔭</span>
   <h1>VibeRadar</h1>
-  <span class="project-name" id="projectName">—</span>
-  <span class="scanned-at" id="scannedAt"></span>
+  <span class="header-project" id="projectName">—</span>
+  <span class="header-time" id="scannedAt"></span>
 </header>
 
-<div class="stats-bar">
-  <div class="stat"><span class="stat-value" id="statModules">—</span><span class="stat-label">Modules</span></div>
-  <div class="stat"><span class="stat-value" id="statWithTests">—</span><span class="stat-label">With Tests</span></div>
-  <div class="stat"><span class="stat-value" id="statCoverage">—</span><span class="stat-label">Avg Coverage</span></div>
-  <div class="stat"><span class="stat-value" id="statTests">—</span><span class="stat-label">Test Files</span></div>
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="view-tabs" id="viewTabs">
+      <div class="view-tab" data-view="features">Features</div>
+      <div class="view-tab" data-view="files">Files</div>
+    </div>
+    <input class="search-input" id="searchInput" type="text" placeholder="Search…" />
+    <div id="sidebarExtra"></div>
+  </aside>
+
+  <main class="content" id="content">
+    <div class="loading" id="loading">Loading…</div>
+  </main>
 </div>
 
-<div class="main">
-  <div class="sidebar">
-    <div class="filter-group">
-      <label>Search</label>
-      <input id="searchInput" type="text" placeholder="Filter modules..." />
-    </div>
-
-    <div style="padding: 8px 16px; font-size:11px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px; margin-top:8px;">
-      Type
-    </div>
-    <div class="type-filters" id="typeFilters"></div>
-  </div>
-
-  <div class="content">
-    <div class="loading" id="loading">Loading...</div>
-    <div class="module-grid" id="moduleGrid" style="display:none"></div>
-  </div>
-</div>
-
-<div class="detail-panel" id="detailPanel">
-  <button class="detail-close" id="detailClose">✕</button>
-  <div id="detailContent"></div>
+<div class="panel" id="panel">
+  <button class="panel-close" id="panelClose">✕</button>
+  <div id="panelContent"></div>
 </div>
 
 <script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let D = null;
+let view = 'features';
+let searchQuery = '';
+let activeTypes = new Set();
+let activePanelKey = null;
+
+// ─── Color helpers ────────────────────────────────────────────────────────────
 const TYPE_COLORS = {
   component: '#58a6ff',
   service:   '#d2a8ff',
@@ -392,193 +393,361 @@ const TYPE_COLORS = {
   other:     '#484f58',
 };
 
-let allModules = [];
-let activeTypes = new Set();
-let searchQuery = '';
-let selectedModule = null;
-
-function coverageColor(pct) {
-  if (pct === undefined) return '#484f58';
-  if (pct >= 80) return '#3fb950';
-  if (pct >= 50) return '#e3b341';
+function covColor(pct) {
+  if (pct == null) return '#484f58';
+  if (pct >= 70)   return '#3fb950';
+  if (pct >= 30)   return '#e3b341';
   return '#f85149';
 }
 
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  return (bytes / 1024).toFixed(1) + ' KB';
+function fmt(b) {
+  return b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB';
 }
 
-function renderTypeFilters() {
-  const types = [...new Set(allModules.map(m => m.type))].sort();
-  const container = document.getElementById('typeFilters');
-  container.innerHTML = '';
-
-  const allBtn = document.createElement('div');
-  allBtn.className = 'type-filter' + (activeTypes.size === 0 ? ' active' : '');
-  allBtn.innerHTML = `<span class="type-dot" style="background:#7d8590"></span> All`;
-  allBtn.onclick = () => { activeTypes.clear(); renderAll(); };
-  container.appendChild(allBtn);
-
-  types.forEach(type => {
-    const count = allModules.filter(m => m.type === type).length;
-    const btn = document.createElement('div');
-    btn.className = 'type-filter' + (activeTypes.has(type) ? ' active' : '');
-    btn.innerHTML = `<span class="type-dot" style="background:${TYPE_COLORS[type] || '#484f58'}"></span> ${type} <span style="margin-left:auto;color:#484f58">${count}</span>`;
-    btn.onclick = () => {
-      if (activeTypes.has(type)) activeTypes.delete(type);
-      else activeTypes.add(type);
-      renderAll();
-    };
-    container.appendChild(btn);
-  });
+function pluralFiles(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m100 >= 11 && m100 <= 14) return 'файлов';
+  if (m10 === 1) return 'файл';
+  if (m10 >= 2 && m10 <= 4) return 'файла';
+  return 'файлов';
 }
 
-function getFilteredModules() {
-  return allModules.filter(m => {
-    if (activeTypes.size > 0 && !activeTypes.has(m.type)) return false;
-    if (searchQuery && !m.name.toLowerCase().includes(searchQuery) && !m.relativePath.toLowerCase().includes(searchQuery)) return false;
-    return true;
-  });
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch('/api/data');
+    D = await res.json();
+
+    document.getElementById('projectName').textContent = D.projectName;
+    document.getElementById('scannedAt').textContent =
+      new Date(D.scannedAt).toLocaleTimeString();
+
+    view = D.hasConfig ? 'features' : 'files';
+
+    if (!D.hasConfig) {
+      document.querySelector('[data-view="features"]').classList.add('disabled');
+    }
+
+    document.getElementById('loading').style.display = 'none';
+    renderStats();
+    renderSidebar();
+    renderContent();
+  } catch (err) {
+    document.getElementById('loading').textContent = '❌ Failed to load: ' + err.message;
+  }
 }
 
-function renderModules() {
-  const grid = document.getElementById('moduleGrid');
-  const filtered = getFilteredModules();
-  grid.innerHTML = '';
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function renderStats() {
+  const src = D.modules.filter(m => m.type !== 'test');
+  const tested = src.filter(m => m.hasTests).length;
+  const testFiles = D.modules.filter(m => m.type === 'test').length;
+  const pct = src.length ? Math.round(tested / src.length * 100) : 0;
 
-  filtered.forEach(m => {
-    const card = document.createElement('div');
-    card.className = 'module-card' + (selectedModule?.id === m.id ? ' selected' : '');
+  let items;
+  if (D.hasConfig && D.features) {
+    const unmapped = src.filter(m => !m.featureKeys || m.featureKeys.length === 0).length;
+    items = [
+      { v: D.features.length,   l: 'Features' },
+      { v: src.length,          l: 'Source Files' },
+      { v: pct + '%',           l: 'With Tests' },
+      { v: testFiles,           l: 'Test Files' },
+      unmapped > 0 ? { v: unmapped, l: 'Unmapped', c: '#e3b341' } : null,
+    ].filter(Boolean);
+  } else {
+    items = [
+      { v: D.modules.length, l: 'Modules' },
+      { v: tested,           l: 'With Tests' },
+      { v: pct + '%',        l: 'Test Coverage' },
+      { v: testFiles,        l: 'Test Files' },
+    ];
+  }
 
-    const cov = m.coverage?.lines;
-    const covText = cov !== undefined ? cov.toFixed(0) + '%' : 'No data';
-    const badgeClass = m.hasTests ? 'badge-green' : 'badge-red';
-    const badgeText = m.hasTests ? '✓ tested' : '✗ no test';
+  document.getElementById('statsBar').innerHTML = items.map(s =>
+    `<div class="stat">
+       <span class="stat-value"${s.c ? ` style="color:${s.c}"` : ''}>${s.v}</span>
+       <span class="stat-label">${s.l}</span>
+     </div>`
+  ).join('');
+}
 
-    card.innerHTML = `
-      <div class="module-card-header">
-        <span class="module-name">${m.name}</span>
-        <span class="badge ${badgeClass}">${badgeText}</span>
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  document.querySelectorAll('.view-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.view === view)
+  );
+
+  const extra = document.getElementById('sidebarExtra');
+  if (view !== 'files') { extra.innerHTML = ''; return; }
+
+  const types = [...new Set(D.modules.map(m => m.type))].sort();
+  extra.innerHTML = `
+    <div class="sidebar-label">Type</div>
+    <div>
+      <div class="type-filter ${activeTypes.size === 0 ? 'active' : ''}" data-t="all">
+        <span class="type-dot" style="background:#7d8590"></span>
+        All
+        <span class="type-count">${D.modules.length}</span>
       </div>
-      <div class="module-path">${m.relativePath}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#7d8590">
-        <span style="display:flex;align-items:center;gap:4px">
-          <span class="type-dot" style="background:${TYPE_COLORS[m.type] || '#484f58'}"></span>
-          ${m.type}
-        </span>
-        <span>${formatSize(m.size)}</span>
-      </div>
-      ${cov !== undefined ? `
-        <div class="coverage-bar">
-          <div class="coverage-fill" style="width:${cov}%;background:${coverageColor(cov)}"></div>
+      ${types.map(t => `
+        <div class="type-filter ${activeTypes.has(t) ? 'active' : ''}" data-t="${t}">
+          <span class="type-dot" style="background:${TYPE_COLORS[t] || '#484f58'}"></span>
+          ${t}
+          <span class="type-count">${D.modules.filter(m => m.type === t).length}</span>
         </div>
-      ` : ''}
-    `;
+      `).join('')}
+    </div>`;
 
-    card.onclick = () => openDetail(m);
+  extra.querySelectorAll('.type-filter').forEach(el => {
+    el.onclick = () => {
+      const t = el.dataset.t;
+      if (t === 'all') activeTypes.clear();
+      else if (activeTypes.has(t)) activeTypes.delete(t);
+      else activeTypes.add(t);
+      renderSidebar();
+      renderContent();
+    };
+  });
+}
+
+// ─── Content ──────────────────────────────────────────────────────────────────
+function renderContent() {
+  const c = document.getElementById('content');
+  view === 'features' ? renderFeatureCards(c) : renderModuleGrid(c);
+}
+
+function renderFeatureCards(c) {
+  if (!D.hasConfig || !D.features) {
+    c.innerHTML = `
+      <div class="no-config">
+        <div class="no-config-icon">🗺️</div>
+        <h2>Карта фич не настроена</h2>
+        <p>Запусти команду ниже, вставь промпт в AI-агента —<br>он создаст <code>viberadar.config.json</code> с описанием твоих фич</p>
+        <div class="no-config-cmd">npx viberadar init</div>
+        <p style="font-size:13px;color:#484f58">После создания конфига перезапусти VibeRadar</p>
+      </div>`;
+    return;
+  }
+
+  const q = searchQuery.toLowerCase();
+  const list = D.features.filter(f =>
+    !q || f.label.toLowerCase().includes(q) || f.description.toLowerCase().includes(q)
+  );
+
+  if (!list.length) { c.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
+
+  c.innerHTML = '<div class="features-grid" id="featGrid"></div>';
+  const grid = document.getElementById('featGrid');
+
+  list.forEach(f => {
+    // Use testFileCount/fileCount as test coverage proxy
+    const pct = f.fileCount > 0 ? Math.min(100, Math.round(f.testFileCount / f.fileCount * 100)) : 0;
+    const isActive = activePanelKey === f.key;
+
+    const card = document.createElement('div');
+    card.className = 'feature-card' + (isActive ? ' active' : '');
+    card.innerHTML = `
+      <div class="feature-accent" style="background:${f.color}"></div>
+      <div class="feature-body">
+        <div class="feature-title">
+          <span>${f.label}</span>
+          <span class="feature-file-count">${f.fileCount} ${pluralFiles(f.fileCount)}</span>
+        </div>
+        ${f.description ? `<div class="feature-desc">${f.description}</div>` : ''}
+        <div class="feature-progress-wrap">
+          <div class="feature-progress-bar">
+            <div class="feature-progress-fill" style="width:${pct}%;background:${f.color}"></div>
+          </div>
+          <span class="feature-progress-label" style="color:${covColor(pct)}">${f.testFileCount} 🧪</span>
+        </div>
+      </div>`;
+    card.onclick = () => openFeaturePanel(f.key);
     grid.appendChild(card);
   });
 }
 
-function renderAll() {
-  renderTypeFilters();
-  renderModules();
+function renderModuleGrid(c) {
+  const q = searchQuery.toLowerCase();
+  const list = D.modules.filter(m => {
+    if (activeTypes.size > 0 && !activeTypes.has(m.type)) return false;
+    if (q && !m.name.toLowerCase().includes(q) && !m.relativePath.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!list.length) { c.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
+
+  c.innerHTML = '<div class="module-grid" id="modGrid"></div>';
+  const grid = document.getElementById('modGrid');
+
+  list.forEach(m => {
+    const cov = m.coverage?.lines;
+    const isActive = activePanelKey === m.id;
+    const card = document.createElement('div');
+    card.className = 'module-card' + (isActive ? ' active' : '');
+    card.innerHTML = `
+      <div class="module-name">${m.name}</div>
+      <div class="module-path">${m.relativePath}</div>
+      <div class="module-meta">
+        <span style="display:flex;align-items:center;gap:4px">
+          <span class="type-dot" style="background:${TYPE_COLORS[m.type] || '#484f58'}"></span>${m.type}
+        </span>
+        <span class="badge ${m.hasTests ? 'badge-green' : 'badge-red'}">${m.hasTests ? '✓' : '✗'}</span>
+      </div>
+      ${cov != null ? `<div class="cov-bar"><div class="cov-fill" style="width:${cov}%;background:${covColor(cov)}"></div></div>` : ''}`;
+    card.onclick = () => openModulePanel(m);
+    grid.appendChild(card);
+  });
 }
 
-function openDetail(m) {
-  selectedModule = m;
-  renderModules();
+// ─── Panels ───────────────────────────────────────────────────────────────────
+function openFeaturePanel(key) {
+  activePanelKey = key;
+  renderContent();
+
+  const feat = D.features.find(f => f.key === key);
+  const mods = D.modules.filter(m => m.featureKeys && m.featureKeys.includes(key));
+  const src  = mods.filter(m => m.type !== 'test');
+  const tst  = mods.filter(m => m.type === 'test');
+  const pct  = src.length > 0 ? Math.min(100, Math.round(tst.length / src.length * 100)) : 0;
+
+  document.getElementById('panelContent').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${feat.color};flex-shrink:0"></div>
+      <div class="panel-title">${feat.label}</div>
+    </div>
+    ${feat.description ? `<div class="panel-subtitle">${feat.description}</div>` : ''}
+
+    <div class="panel-stats">
+      <div class="panel-stat">
+        <div class="panel-stat-val">${src.length}</div>
+        <div class="panel-stat-lbl">Файлов</div>
+      </div>
+      <div class="panel-stat">
+        <div class="panel-stat-val">${tst.length}</div>
+        <div class="panel-stat-lbl">Тестов</div>
+      </div>
+      <div class="panel-stat">
+        <div class="panel-stat-val" style="color:${covColor(pct)}">${pct}%</div>
+        <div class="panel-stat-lbl">Тест / файл</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-section-label">Исходные файлы (${src.length})</div>
+      <div class="file-list">
+        ${src.length === 0
+          ? '<div style="font-size:13px;color:var(--dim);padding:8px 0">Нет файлов — возможно паттерны не совпадают</div>'
+          : src.map(m => fileItem(m)).join('')
+        }
+      </div>
+    </div>
+
+    ${tst.length > 0 ? `
+    <div class="panel-section">
+      <div class="panel-section-label">Тест-файлы (${tst.length})</div>
+      <div class="file-list">${tst.map(m => fileItem(m, true)).join('')}</div>
+    </div>` : ''}`;
+
+  document.getElementById('panel').classList.add('open');
+}
+
+function fileItem(m, isTest = false) {
+  const parts = m.relativePath.replace(/\\/g, '/').split('/');
+  const name  = parts[parts.length - 1];
+  const dir   = parts.slice(0, -1).join('/');
+  const icon  = isTest ? '🧪' : (m.hasTests ? '✅' : '⬜');
+  return `
+    <div class="file-item">
+      <span class="file-item-icon">${icon}</span>
+      <div>
+        <div class="file-item-name">${name}</div>
+        ${dir ? `<div class="file-item-dir">${dir}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function openModulePanel(m) {
+  activePanelKey = m.id;
+  renderContent();
 
   const cov = m.coverage;
-  const panel = document.getElementById('detailPanel');
-  const content = document.getElementById('detailContent');
+  const featureLabels = m.featureKeys && m.featureKeys.length > 0
+    ? m.featureKeys.map(k => D.features?.find(f => f.key === k)?.label || k).join(', ')
+    : null;
 
-  content.innerHTML = `
-    <div class="detail-title">${m.name}</div>
-    <div class="detail-path">${m.relativePath}</div>
+  document.getElementById('panelContent').innerHTML = `
+    <div class="panel-title">${m.name}</div>
+    <div class="panel-subtitle">${m.relativePath}</div>
 
-    <div class="detail-section">
-      <div class="detail-section-title">Info</div>
-      <div class="detail-row"><span>Type</span><span style="color:${TYPE_COLORS[m.type]}">${m.type}</span></div>
-      <div class="detail-row"><span>Size</span><span>${formatSize(m.size)}</span></div>
-      <div class="detail-row"><span>Tests</span><span class="${m.hasTests ? 'badge badge-green' : 'badge badge-red'}">${m.hasTests ? '✓ ' + (m.testFile || 'tested') : '✗ none'}</span></div>
-      ${m.testFile ? `<div class="detail-row"><span>Test file</span><span style="font-size:11px;color:#7d8590;text-align:right">${m.testFile}</span></div>` : ''}
+    <div class="panel-section">
+      <div class="panel-section-label">Информация</div>
+      <div class="detail-row">
+        <span>Тип</span>
+        <span style="color:${TYPE_COLORS[m.type] || '#484f58'}">${m.type}</span>
+      </div>
+      <div class="detail-row">
+        <span>Размер</span>
+        <span>${fmt(m.size)}</span>
+      </div>
+      <div class="detail-row">
+        <span>Тесты</span>
+        <span class="badge ${m.hasTests ? 'badge-green' : 'badge-red'}">${m.hasTests ? '✓ есть' : '✗ нет'}</span>
+      </div>
+      ${m.testFile ? `<div class="detail-row"><span>Тест-файл</span><span class="detail-row-right">${m.testFile}</span></div>` : ''}
+      ${featureLabels ? `<div class="detail-row"><span>Фичи</span><span class="detail-row-right">${featureLabels}</span></div>` : ''}
     </div>
 
     ${cov ? `
-    <div class="detail-section">
-      <div class="detail-section-title">Coverage</div>
-      <div class="coverage-metric">
+    <div class="panel-section">
+      <div class="panel-section-label">Coverage</div>
+      <div class="cov-grid">
         ${['lines','statements','functions','branches'].map(k => `
-          <div class="coverage-metric-item">
-            <div class="coverage-metric-value" style="color:${coverageColor(cov[k])}">${cov[k]?.toFixed(1)}%</div>
-            <div class="coverage-metric-label">${k}</div>
-          </div>
-        `).join('')}
+          <div class="cov-metric">
+            <div class="cov-metric-val" style="color:${covColor(cov[k])}">${cov[k]?.toFixed(1)}%</div>
+            <div class="cov-metric-lbl">${k}</div>
+          </div>`).join('')}
       </div>
-    </div>
-    ` : `
-    <div class="detail-section">
-      <div class="detail-section-title">Coverage</div>
-      <div style="font-size:13px;color:#484f58">No coverage data. Run tests with coverage to see metrics.</div>
-    </div>
-    `}
+    </div>` : ''}
 
     ${m.dependencies.length > 0 ? `
-    <div class="detail-section">
-      <div class="detail-section-title">Local Imports (${m.dependencies.length})</div>
-      <div class="deps-list">
+    <div class="panel-section">
+      <div class="panel-section-label">Импорты (${m.dependencies.length})</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
         ${m.dependencies.map(d => `<div class="dep-item">${d}</div>`).join('')}
       </div>
-    </div>
-    ` : ''}
-  `;
+    </div>` : ''}`;
 
-  panel.classList.add('open');
+  document.getElementById('panel').classList.add('open');
 }
 
-document.getElementById('detailClose').onclick = () => {
-  document.getElementById('detailPanel').classList.remove('open');
-  selectedModule = null;
-  renderModules();
-};
+function closePanel() {
+  activePanelKey = null;
+  document.getElementById('panel').classList.remove('open');
+  renderContent();
+}
 
-document.getElementById('searchInput').oninput = (e) => {
+// ─── Events ───────────────────────────────────────────────────────────────────
+document.querySelectorAll('.view-tab').forEach(tab => {
+  tab.onclick = () => {
+    if (tab.classList.contains('disabled')) return;
+    view = tab.dataset.view;
+    activePanelKey = null;
+    searchQuery = '';
+    activeTypes.clear();
+    document.getElementById('searchInput').value = '';
+    document.getElementById('panel').classList.remove('open');
+    renderSidebar();
+    renderContent();
+  };
+});
+
+document.getElementById('searchInput').oninput = e => {
   searchQuery = e.target.value.toLowerCase();
-  renderModules();
+  renderContent();
 };
 
-async function init() {
-  try {
-    const res = await fetch('/api/data');
-    const data = await res.json();
-
-    allModules = data.modules;
-
-    document.getElementById('projectName').textContent = data.projectName;
-    document.getElementById('scannedAt').textContent = new Date(data.scannedAt).toLocaleTimeString();
-
-    const testCount = allModules.filter(m => m.type === 'test').length;
-    const withTests = allModules.filter(m => m.hasTests && m.type !== 'test').length;
-    const covModules = allModules.filter(m => m.coverage?.lines !== undefined);
-    const avgCov = covModules.length
-      ? (covModules.reduce((s, m) => s + m.coverage.lines, 0) / covModules.length).toFixed(0) + '%'
-      : '—';
-
-    document.getElementById('statModules').textContent = allModules.length;
-    document.getElementById('statWithTests').textContent = withTests;
-    document.getElementById('statCoverage').textContent = avgCov;
-    document.getElementById('statTests').textContent = testCount;
-
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('moduleGrid').style.display = 'grid';
-
-    renderAll();
-  } catch (err) {
-    document.getElementById('loading').textContent = 'Failed to load data: ' + err.message;
-  }
-}
+document.getElementById('panelClose').onclick = closePanel;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
 init();
 </script>
