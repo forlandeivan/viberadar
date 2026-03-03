@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VibeRadar</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header .project-name {
+      font-size: 13px;
+      color: #7d8590;
+      margin-left: auto;
+    }
+
+    header .scanned-at {
+      font-size: 12px;
+      color: #484f58;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      padding: 14px 24px;
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #58a6ff;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #7d8590;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      height: calc(100vh - 110px);
+    }
+
+    .sidebar {
+      border-right: 1px solid #21262d;
+      overflow-y: auto;
+      padding: 12px 0;
+    }
+
+    .filter-group {
+      padding: 8px 16px;
+    }
+
+    .filter-group label {
+      font-size: 11px;
+      color: #7d8590;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .filter-group input {
+      width: 100%;
+      padding: 6px 10px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .filter-group input:focus {
+      border-color: #58a6ff;
+    }
+
+    .type-filters {
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .type-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #7d8590;
+      transition: background 0.1s;
+    }
+
+    .type-filter:hover { background: #21262d; }
+    .type-filter.active { color: #e6edf3; background: #21262d; }
+
+    .type-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .content {
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .module-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+
+    .module-card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-1px);
+    }
+
+    .module-card.selected {
+      border-color: #58a6ff;
+      background: #1c2230;
+    }
+
+    .module-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .module-name {
+      font-size: 13px;
+      font-weight: 600;
+      word-break: break-all;
+      flex: 1;
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .badge-green { background: #1a3a2a; color: #3fb950; }
+    .badge-red   { background: #3a1a1a; color: #f85149; }
+    .badge-gray  { background: #21262d; color: #7d8590; }
+
+    .module-path {
+      font-size: 11px;
+      color: #484f58;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+
+    .coverage-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: #21262d;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .coverage-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.3s;
+    }
+
+    .detail-panel {
+      position: fixed;
+      right: 0;
+      top: 0;
+      width: 380px;
+      height: 100vh;
+      background: #161b22;
+      border-left: 1px solid #21262d;
+      padding: 20px;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.2s;
+      z-index: 100;
+    }
+
+    .detail-panel.open {
+      transform: translateX(0);
+    }
+
+    .detail-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: #7d8590;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px;
+    }
+
+    .detail-close:hover { color: #e6edf3; }
+
+    .detail-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      padding-right: 32px;
+    }
+
+    .detail-path {
+      font-size: 11px;
+      color: #484f58;
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+
+    .detail-section {
+      margin-bottom: 16px;
+    }
+
+    .detail-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #7d8590;
+      margin-bottom: 8px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 4px 0;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .detail-row:last-child { border-bottom: none; }
+
+    .coverage-metric {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .coverage-metric-item {
+      background: #21262d;
+      border-radius: 6px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .coverage-metric-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .coverage-metric-label {
+      font-size: 10px;
+      color: #7d8590;
+      text-transform: uppercase;
+    }
+
+    .deps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .dep-item {
+      font-size: 12px;
+      color: #7d8590;
+      padding: 3px 8px;
+      background: #21262d;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: #7d8590;
+      font-size: 14px;
+    }
+
+    .type-colors {
+      component: '#58a6ff';
+      service: '#d2a8ff';
+      util: '#ffa657';
+      test: '#3fb950';
+      config: '#f85149';
+      other: '#484f58';
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:22px">🔭</span>
+  <h1>VibeRadar</h1>
+  <span class="project-name" id="projectName">—</span>
+  <span class="scanned-at" id="scannedAt"></span>
+</header>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-value" id="statModules">—</span><span class="stat-label">Modules</span></div>
+  <div class="stat"><span class="stat-value" id="statWithTests">—</span><span class="stat-label">With Tests</span></div>
+  <div class="stat"><span class="stat-value" id="statCoverage">—</span><span class="stat-label">Avg Coverage</span></div>
+  <div class="stat"><span class="stat-value" id="statTests">—</span><span class="stat-label">Test Files</span></div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="filter-group">
+      <label>Search</label>
+      <input id="searchInput" type="text" placeholder="Filter modules..." />
+    </div>
+
+    <div style="padding: 8px 16px; font-size:11px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px; margin-top:8px;">
+      Type
+    </div>
+    <div class="type-filters" id="typeFilters"></div>
+  </div>
+
+  <div class="content">
+    <div class="loading" id="loading">Loading...</div>
+    <div class="module-grid" id="moduleGrid" style="display:none"></div>
+  </div>
+</div>
+
+<div class="detail-panel" id="detailPanel">
+  <button class="detail-close" id="detailClose">✕</button>
+  <div id="detailContent"></div>
+</div>
+
+<script>
+const TYPE_COLORS = {
+  component: '#58a6ff',
+  service:   '#d2a8ff',
+  util:      '#ffa657',
+  test:      '#3fb950',
+  config:    '#e3b341',
+  other:     '#484f58',
+};
+
+let allModules = [];
+let activeTypes = new Set();
+let searchQuery = '';
+let selectedModule = null;
+
+function coverageColor(pct) {
+  if (pct === undefined) return '#484f58';
+  if (pct >= 80) return '#3fb950';
+  if (pct >= 50) return '#e3b341';
+  return '#f85149';
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  return (bytes / 1024).toFixed(1) + ' KB';
+}
+
+function renderTypeFilters() {
+  const types = [...new Set(allModules.map(m => m.type))].sort();
+  const container = document.getElementById('typeFilters');
+  container.innerHTML = '';
+
+  const allBtn = document.createElement('div');
+  allBtn.className = 'type-filter' + (activeTypes.size === 0 ? ' active' : '');
+  allBtn.innerHTML = `<span class="type-dot" style="background:#7d8590"></span> All`;
+  allBtn.onclick = () => { activeTypes.clear(); renderAll(); };
+  container.appendChild(allBtn);
+
+  types.forEach(type => {
+    const count = allModules.filter(m => m.type === type).length;
+    const btn = document.createElement('div');
+    btn.className = 'type-filter' + (activeTypes.has(type) ? ' active' : '');
+    btn.innerHTML = `<span class="type-dot" style="background:${TYPE_COLORS[type] || '#484f58'}"></span> ${type} <span style="margin-left:auto;color:#484f58">${count}</span>`;
+    btn.onclick = () => {
+      if (activeTypes.has(type)) activeTypes.delete(type);
+      else activeTypes.add(type);
+      renderAll();
+    };
+    container.appendChild(btn);
+  });
+}
+
+function getFilteredModules() {
+  return allModules.filter(m => {
+    if (activeTypes.size > 0 && !activeTypes.has(m.type)) return false;
+    if (searchQuery && !m.name.toLowerCase().includes(searchQuery) && !m.relativePath.toLowerCase().includes(searchQuery)) return false;
+    return true;
+  });
+}
+
+function renderModules() {
+  const grid = document.getElementById('moduleGrid');
+  const filtered = getFilteredModules();
+  grid.innerHTML = '';
+
+  filtered.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'module-card' + (selectedModule?.id === m.id ? ' selected' : '');
+
+    const cov = m.coverage?.lines;
+    const covText = cov !== undefined ? cov.toFixed(0) + '%' : 'No data';
+    const badgeClass = m.hasTests ? 'badge-green' : 'badge-red';
+    const badgeText = m.hasTests ? '✓ tested' : '✗ no test';
+
+    card.innerHTML = `
+      <div class="module-card-header">
+        <span class="module-name">${m.name}</span>
+        <span class="badge ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="module-path">${m.relativePath}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#7d8590">
+        <span style="display:flex;align-items:center;gap:4px">
+          <span class="type-dot" style="background:${TYPE_COLORS[m.type] || '#484f58'}"></span>
+          ${m.type}
+        </span>
+        <span>${formatSize(m.size)}</span>
+      </div>
+      ${cov !== undefined ? `
+        <div class="coverage-bar">
+          <div class="coverage-fill" style="width:${cov}%;background:${coverageColor(cov)}"></div>
+        </div>
+      ` : ''}
+    `;
+
+    card.onclick = () => openDetail(m);
+    grid.appendChild(card);
+  });
+}
+
+function renderAll() {
+  renderTypeFilters();
+  renderModules();
+}
+
+function openDetail(m) {
+  selectedModule = m;
+  renderModules();
+
+  const cov = m.coverage;
+  const panel = document.getElementById('detailPanel');
+  const content = document.getElementById('detailContent');
+
+  content.innerHTML = `
+    <div class="detail-title">${m.name}</div>
+    <div class="detail-path">${m.relativePath}</div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Info</div>
+      <div class="detail-row"><span>Type</span><span style="color:${TYPE_COLORS[m.type]}">${m.type}</span></div>
+      <div class="detail-row"><span>Size</span><span>${formatSize(m.size)}</span></div>
+      <div class="detail-row"><span>Tests</span><span class="${m.hasTests ? 'badge badge-green' : 'badge badge-red'}">${m.hasTests ? '✓ ' + (m.testFile || 'tested') : '✗ none'}</span></div>
+      ${m.testFile ? `<div class="detail-row"><span>Test file</span><span style="font-size:11px;color:#7d8590;text-align:right">${m.testFile}</span></div>` : ''}
+    </div>
+
+    ${cov ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Coverage</div>
+      <div class="coverage-metric">
+        ${['lines','statements','functions','branches'].map(k => `
+          <div class="coverage-metric-item">
+            <div class="coverage-metric-value" style="color:${coverageColor(cov[k])}">${cov[k]?.toFixed(1)}%</div>
+            <div class="coverage-metric-label">${k}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ` : `
+    <div class="detail-section">
+      <div class="detail-section-title">Coverage</div>
+      <div style="font-size:13px;color:#484f58">No coverage data. Run tests with coverage to see metrics.</div>
+    </div>
+    `}
+
+    ${m.dependencies.length > 0 ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Local Imports (${m.dependencies.length})</div>
+      <div class="deps-list">
+        ${m.dependencies.map(d => `<div class="dep-item">${d}</div>`).join('')}
+      </div>
+    </div>
+    ` : ''}
+  `;
+
+  panel.classList.add('open');
+}
+
+document.getElementById('detailClose').onclick = () => {
+  document.getElementById('detailPanel').classList.remove('open');
+  selectedModule = null;
+  renderModules();
+};
+
+document.getElementById('searchInput').oninput = (e) => {
+  searchQuery = e.target.value.toLowerCase();
+  renderModules();
+};
+
+async function init() {
+  try {
+    const res = await fetch('/api/data');
+    const data = await res.json();
+
+    allModules = data.modules;
+
+    document.getElementById('projectName').textContent = data.projectName;
+    document.getElementById('scannedAt').textContent = new Date(data.scannedAt).toLocaleTimeString();
+
+    const testCount = allModules.filter(m => m.type === 'test').length;
+    const withTests = allModules.filter(m => m.hasTests && m.type !== 'test').length;
+    const covModules = allModules.filter(m => m.coverage?.lines !== undefined);
+    const avgCov = covModules.length
+      ? (covModules.reduce((s, m) => s + m.coverage.lines, 0) / covModules.length).toFixed(0) + '%'
+      : '—';
+
+    document.getElementById('statModules').textContent = allModules.length;
+    document.getElementById('statWithTests').textContent = withTests;
+    document.getElementById('statCoverage').textContent = avgCov;
+    document.getElementById('statTests').textContent = testCount;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('moduleGrid').style.display = 'grid';
+
+    renderAll();
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Failed to load data: ' + err.message;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
