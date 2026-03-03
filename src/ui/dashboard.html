@@ -540,8 +540,7 @@ function renderFeatureCards(c) {
   const grid = document.getElementById('featGrid');
 
   list.forEach(f => {
-    // Use testFileCount/fileCount as test coverage proxy
-    const pct = f.fileCount > 0 ? Math.min(100, Math.round(f.testFileCount / f.fileCount * 100)) : 0;
+    const pct = f.fileCount > 0 ? Math.round(f.testedCount / f.fileCount * 100) : 0;
     const isActive = activePanelKey === f.key;
 
     const card = document.createElement('div');
@@ -558,7 +557,7 @@ function renderFeatureCards(c) {
           <div class="feature-progress-bar">
             <div class="feature-progress-fill" style="width:${pct}%;background:${f.color}"></div>
           </div>
-          <span class="feature-progress-label" style="color:${covColor(pct)}">${f.testFileCount} 🧪</span>
+          <span class="feature-progress-label" style="color:${covColor(pct)}">${f.testedCount}/${f.fileCount} ✓</span>
         </div>
       </div>`;
     card.onclick = () => openFeaturePanel(f.key);
@@ -608,7 +607,8 @@ function openFeaturePanel(key) {
   const mods = D.modules.filter(m => m.featureKeys && m.featureKeys.includes(key));
   const src  = mods.filter(m => m.type !== 'test');
   const tst  = mods.filter(m => m.type === 'test');
-  const pct  = src.length > 0 ? Math.min(100, Math.round(tst.length / src.length * 100)) : 0;
+  const testedSrc = src.filter(m => m.hasTests).length;
+  const pct = src.length > 0 ? Math.round(testedSrc / src.length * 100) : 0;
 
   document.getElementById('panelContent').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -623,12 +623,12 @@ function openFeaturePanel(key) {
         <div class="panel-stat-lbl">Файлов</div>
       </div>
       <div class="panel-stat">
-        <div class="panel-stat-val">${tst.length}</div>
-        <div class="panel-stat-lbl">Тестов</div>
+        <div class="panel-stat-val" style="color:${covColor(pct)}">${pct}%</div>
+        <div class="panel-stat-lbl">С тестами</div>
       </div>
       <div class="panel-stat">
-        <div class="panel-stat-val" style="color:${covColor(pct)}">${pct}%</div>
-        <div class="panel-stat-lbl">Тест / файл</div>
+        <div class="panel-stat-val">${tst.length}</div>
+        <div class="panel-stat-lbl">Тест-файлов</div>
       </div>
     </div>
 

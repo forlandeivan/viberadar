@@ -167,7 +167,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
 
   const coverageMap = loadCoverageMap(projectRoot);
 
-  const testFiles = new Set(
+  const testFileSet = new Set(
     files.filter((f) => TEST_PATTERNS.some((t) => f.includes(t)))
   );
 
@@ -184,8 +184,9 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
         `${base}.test${ext}`,
         `${base}.spec${ext}`,
         filePath.replace('/src/', '/tests/').replace(ext, `.test${ext}`),
+        filePath.replace('\\src\\', '\\tests\\').replace(ext, `.test${ext}`),
       ];
-      testFile = candidates.find((c) => testFiles.has(c));
+      testFile = candidates.find((c) => testFileSet.has(c));
     }
 
     let size = 0;
@@ -205,6 +206,45 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       featureKeys: [], // filled below
     };
   });
+
+  // ─── Fuzzy test pairing for centralized test directories ─────────────────────
+  // Handles patterns like: server/routes/auth.routes.ts → tests/auth.test.ts
+  // Also: WorkspaceSettings.tsx → workspace-settings.test.ts
+  //
+  // Strategy: strip extensions + .test/.spec + dashes/underscores + lowercase
+  // and match source file's first name segment against test file's clean name.
+
+  function cleanName(s: string): string {
+    return s.toLowerCase().replace(/[_\-]/g, '');
+  }
+
+  // Build map: cleanName → test file absolute path (first match wins)
+  const testByCleanName = new Map<string, string>();
+  for (const tf of testFileSet) {
+    let base = path.basename(tf, path.extname(tf)); // e.g. "auth.test" or "chat.spec"
+    base = base.replace(/\.(test|spec)$/, '');       // → "auth"
+    const clean = cleanName(base.split('.')[0]);     // first dot-segment, cleaned
+    if (!testByCleanName.has(clean)) {
+      testByCleanName.set(clean, tf);
+    }
+  }
+
+  // Second pass: for source modules still missing a test, try fuzzy match
+  for (const m of modules) {
+    if (m.hasTests || m.type === 'test') continue;
+    // Try each dot-segment of the module name from left to right
+    const segments = m.name.split('.');
+    for (const seg of segments) {
+      const clean = cleanName(seg);
+      if (clean.length < 3) continue; // skip too-short segments (avoid false positives)
+      const matched = testByCleanName.get(clean);
+      if (matched) {
+        m.hasTests = true;
+        m.testFile = path.relative(projectRoot, matched);
+        break;
+      }
+    }
+  }
 
   // ─── Load viberadar.config.json ──────────────────────────────────────────────
 
