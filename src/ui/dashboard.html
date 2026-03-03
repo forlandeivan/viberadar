@@ -569,6 +569,37 @@ function renderFeatureCards(c) {
     card.onclick = () => openFeaturePanel(f.key);
     grid.appendChild(card);
   });
+
+  // ── Unmapped card ──────────────────────────────────────────────────────────
+  if (!q) {
+    const unmappedSrc = D.modules.filter(m =>
+      m.type !== 'test' && (!m.featureKeys || m.featureKeys.length === 0)
+    );
+    if (unmappedSrc.length > 0) {
+      const isActive = activePanelKey === '__unmapped__';
+      const card = document.createElement('div');
+      card.className = 'feature-card' + (isActive ? ' active' : '');
+      card.style.borderStyle = 'dashed';
+      card.style.opacity = '0.75';
+      card.innerHTML = `
+        <div class="feature-accent" style="background:var(--yellow)"></div>
+        <div class="feature-body">
+          <div class="feature-title">
+            <span style="color:var(--yellow)">⚠ Unmapped</span>
+            <span class="feature-file-count">${unmappedSrc.length} ${pluralFiles(unmappedSrc.length)}</span>
+          </div>
+          <div class="feature-desc">Файлы вне карты фич — не входят ни в одну фичу</div>
+          <div class="feature-progress-wrap">
+            <div class="feature-progress-bar">
+              <div class="feature-progress-fill" style="width:100%;background:var(--border)"></div>
+            </div>
+            <span class="feature-progress-label" style="color:var(--dim)">нет привязки</span>
+          </div>
+        </div>`;
+      card.onclick = () => openUnmappedPanel(unmappedSrc);
+      grid.appendChild(card);
+    }
+  }
 }
 
 function renderModuleGrid(c) {
@@ -726,6 +757,71 @@ function openModulePanel(m) {
   document.getElementById('panel').classList.add('open');
 }
 
+function openUnmappedPanel(files) {
+  activePanelKey = '__unmapped__';
+  renderContent();
+
+  // Group by top-level directory
+  const byDir = {};
+  files.forEach(m => {
+    const parts = m.relativePath.replace(/\\/g, '/').split('/');
+    const dir = parts.length > 1 ? parts[0] : '(root)';
+    if (!byDir[dir]) byDir[dir] = [];
+    byDir[dir].push(m);
+  });
+  const dirs = Object.keys(byDir).sort();
+
+  // Build plain-text list for copying to AI agent
+  const plainList = files
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'))
+    .join('\n');
+
+  const promptText =
+    `В проекте ${files.length} файлов без привязки к фичам (unmapped).\n` +
+    `Изучи список ниже и обнови viberadar.config.json:\n` +
+    `добавь эти файлы в существующие фичи или создай новые.\n\n` +
+    plainList;
+
+  document.getElementById('panelContent').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:16px">⚠</span>
+      <div class="panel-title" style="color:var(--yellow)">Unmapped файлы</div>
+    </div>
+    <div class="panel-subtitle">
+      Не входят ни в одну фичу.<br>
+      Запусти <code style="color:var(--blue)">npx viberadar init</code> — агент предложит куда добавить.
+    </div>
+
+    <button id="copyUnmapped" style="
+      width:100%; padding:8px 12px; margin-bottom:16px;
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:6px; color:var(--blue); font-size:12px;
+      cursor:pointer; text-align:left;
+    ">📋 Скопировать список для AI-агента</button>
+
+    ${dirs.map(dir => `
+      <div class="panel-section">
+        <div class="panel-section-label">${dir}/ (${byDir[dir].length})</div>
+        <div class="file-list">
+          ${byDir[dir].map(m => fileItem(m)).join('')}
+        </div>
+      </div>
+    `).join('')}`;
+
+  document.getElementById('copyUnmapped').onclick = function() {
+    navigator.clipboard.writeText(promptText).then(() => {
+      this.textContent = '✅ Скопировано! Вставь в AI-агента';
+      this.style.color = 'var(--green)';
+      setTimeout(() => {
+        this.textContent = '📋 Скопировать список для AI-агента';
+        this.style.color = 'var(--blue)';
+      }, 3000);
+    });
+  };
+
+  document.getElementById('panel').classList.add('open');
+}
+
 function closePanel() {
   activePanelKey = null;
   document.getElementById('panel').classList.remove('open');
@@ -778,7 +874,12 @@ async function refreshData() {
     // Re-open panel if it was open
     const panelOpen = document.getElementById('panel').classList.contains('open');
     if (panelOpen && activePanelKey) {
-      if (view === 'features' && D.features) {
+      if (activePanelKey === '__unmapped__') {
+        const unmapped = D.modules.filter(m =>
+          m.type !== 'test' && (!m.featureKeys || m.featureKeys.length === 0)
+        );
+        openUnmappedPanel(unmapped);
+      } else if (view === 'features' && D.features) {
         openFeaturePanel(activePanelKey);
       } else {
         const m = D.modules.find(m => m.id === activePanelKey);
