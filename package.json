@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
-  "bin": {
-    "viberadar": "./dist/cli.js"
-  },
+  "bin": "./dist/cli.js",
   "scripts": {
     "build": "tsc && node scripts/bundle-ui.js",
     "dev": "ts-node src/cli.ts",
