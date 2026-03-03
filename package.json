@@ -4,7 +4,7 @@
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
   "bin": {
-    "viberadar": "./bin/viberadar"
+    "viberadar": "./viberadar.js"
   },
   "scripts": {
     "build": "tsc && node scripts/bundle-ui.js",
@@ -24,7 +24,8 @@
   "license": "MIT",
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "viberadar.js"
   ],
   "dependencies": {
     "open": "^10.1.0",
