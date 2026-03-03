@@ -351,6 +351,12 @@
   <h1>VibeRadar</h1>
   <span class="header-project" id="projectName">—</span>
   <span class="header-time" id="scannedAt"></span>
+  <span id="liveDot" title="Connecting…" style="
+    width:8px; height:8px; border-radius:50%;
+    background:var(--dim); display:inline-block;
+    margin-left:8px; transition:background 0.3s;
+    flex-shrink:0;
+  "></span>
 </header>
 
 <div class="stats-bar" id="statsBar"></div>
@@ -749,7 +755,64 @@ document.getElementById('searchInput').oninput = e => {
 document.getElementById('panelClose').onclick = closePanel;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
-init();
+// ─── Live reload ──────────────────────────────────────────────────────────────
+function setLiveDot(color, title) {
+  const dot = document.getElementById('liveDot');
+  dot.style.background = color;
+  dot.title = title;
+}
+
+async function refreshData() {
+  try {
+    const res = await fetch('/api/data');
+    D = await res.json();
+
+    // Update header timestamp
+    document.getElementById('scannedAt').textContent =
+      new Date(D.scannedAt).toLocaleTimeString();
+
+    renderStats();
+    renderSidebar();
+    renderContent();
+
+    // Re-open panel if it was open
+    const panelOpen = document.getElementById('panel').classList.contains('open');
+    if (panelOpen && activePanelKey) {
+      if (view === 'features' && D.features) {
+        openFeaturePanel(activePanelKey);
+      } else {
+        const m = D.modules.find(m => m.id === activePanelKey);
+        if (m) openModulePanel(m);
+        else closePanel();
+      }
+    }
+
+    // Brief green flash on the dot to signal fresh data
+    setLiveDot('#3fb950', 'Live — обновлено только что');
+    setTimeout(() => setLiveDot('#3fb950', 'Live — автообновление включено'), 1500);
+  } catch (err) {
+    console.error('Refresh failed:', err);
+  }
+}
+
+function connectSSE() {
+  const es = new EventSource('/api/events');
+
+  es.onopen = () => setLiveDot('#3fb950', 'Live — автообновление включено');
+
+  es.addEventListener('data-updated', () => {
+    setLiveDot('#e3b341', 'Обновляю данные…');
+    refreshData();
+  });
+
+  es.onerror = () => {
+    setLiveDot('var(--dim)', 'Нет соединения — переподключаюсь…');
+    es.close();
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+init().then(() => connectSSE());
 </script>
 </body>
 </html>
