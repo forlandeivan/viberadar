@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
-import * as path from 'path';
 import { scanProject } from './scanner';
 import { startServer } from './server';
+import { runInit } from './init';
 
 const PROJECT_ROOT = process.cwd();
 const PORT = 4242;
+const command = process.argv[2];
 
-async function main() {
+async function runDashboard() {
   console.log('🔭 VibeRadar starting...');
   console.log(`   Project: ${PROJECT_ROOT}`);
 
@@ -23,6 +24,37 @@ async function main() {
 
   const { default: open } = await import('open');
   await open(`http://localhost:${PORT}`);
+}
+
+function printHelp() {
+  console.log(`
+🔭 VibeRadar
+
+Команды:
+  npx viberadar          Запустить дашборд на http://localhost:4242
+  npx viberadar init     Сгенерировать промпт для AI-агента (настройка фич)
+  npx viberadar help     Показать эту справку
+`);
+}
+
+async function main() {
+  switch (command) {
+    case 'init':
+      await runInit(PROJECT_ROOT);
+      break;
+    case 'help':
+    case '--help':
+    case '-h':
+      printHelp();
+      break;
+    case undefined:
+      await runDashboard();
+      break;
+    default:
+      console.error(`❌ Неизвестная команда: ${command}`);
+      printHelp();
+      process.exit(1);
+  }
 }
 
 main().catch((err) => {
