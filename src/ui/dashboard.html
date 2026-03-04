@@ -1266,7 +1266,7 @@ function fileRow(m, isTest = false, featureKey = null) {
   const isActive = activePanelKey === m.id;
   // Agent button: "написать тест" for untested, "обновить тест" for stale
   const showAgentBtn = D.agent && !isTest && !m.isInfra && featureKey && (!m.hasTests || m.testStale);
-  const agentBtnLabel = m.testStale ? '↻ обновить' : '▶ тест';
+  const agentBtnLabel = m.testStale ? '↻ обновить тест' : '✍ написать тест';
   const agentBtnTitle = m.testStale ? 'Файл изменился — обновить тесты' : 'Написать тест для этого файла';
   const agentTask     = m.testStale ? 'write-tests-file' : 'write-tests-file';
   const agentBtn = showAgentBtn

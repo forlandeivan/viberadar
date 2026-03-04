@@ -34,13 +34,13 @@ const WIN = process.platform === 'win32';
 function buildAgentShellCmd(agent: string, taskFile: string): string {
   const escaped = taskFile.replace(/\\/g, '\\\\');
   if (WIN) {
-    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --output-format stream-json`;
+    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json`;
     if (agent === 'codex')  return `type "${escaped}" | codex.cmd`;
   } else {
-    if (agent === 'claude') return `claude --print --output-format stream-json < "${escaped}"`;
+    if (agent === 'claude') return `claude --print --verbose --output-format stream-json < "${escaped}"`;
     if (agent === 'codex')  return `codex < "${escaped}"`;
   }
-  return `claude --print --output-format stream-json < "${escaped}"`;
+  return `claude --print --verbose --output-format stream-json < "${escaped}"`;
 }
 
 /** Parse a Claude Code stream-json event into a human-readable line, or null to skip */
