@@ -16,6 +16,7 @@ export interface ModuleInfo {
   featureKeys: string[];
   isInfra: boolean;        // matched by config.ignore — intentionally system/infra file
   testType?: 'unit' | 'integration' | 'e2e';  // only for test files
+  testCount?: number;      // number of it()/test() cases in a test file
 }
 
 export interface CoverageInfo {
@@ -135,6 +136,17 @@ function detectType(filePath: string): ModuleInfo['type'] {
   return 'other';
 }
 
+function countTestCases(filePath: string): number {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    // Match it( / it.only( / it.skip( / test( / test.only( / test.skip(
+    const re = /\b(it|test)\s*[\.(]/g;
+    return (content.match(re) || []).length;
+  } catch {
+    return 0;
+  }
+}
+
 function extractDependencies(filePath: string): string[] {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -235,6 +247,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       featureKeys: [], // filled below
       isInfra: INFRA_FILE_PATTERNS.some(p => p.test(filePath)), // .d.ts etc — always infra
       testType: isTest ? detectTestType(relativePath) : undefined,
+      testCount: isTest ? countTestCases(filePath) : undefined,
     };
   });
 

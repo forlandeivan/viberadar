@@ -1358,6 +1358,7 @@ function openModulePanel(m) {
         <span>Тесты</span>
         <span class="badge ${m.hasTests ? 'badge-green' : 'badge-red'}">${m.hasTests ? '✓ есть' : '✗ нет'}</span>
       </div>
+      ${m.testCount != null ? `<div class="detail-row"><span>Тест-кейсов</span><span style="color:var(--green);font-weight:600">${m.testCount}</span></div>` : ''}
       ${m.testFile ? `<div class="detail-row"><span>Тест-файл</span><span class="detail-row-right">${m.testFile}</span></div>` : ''}
       ${featureLabels ? `<div class="detail-row"><span>Фичи</span><span class="detail-row-right">${featureLabels}</span></div>` : ''}
     </div>
