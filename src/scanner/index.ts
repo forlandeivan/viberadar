@@ -18,6 +18,7 @@ export interface ModuleInfo {
   testType?: 'unit' | 'integration' | 'e2e';  // only for test files
   testCount?: number;      // number of it()/test() cases in a test file
   testStale?: boolean;     // source file is newer than its test file → tests may be outdated
+  suggestedTestType?: 'unit' | 'integration'; // recommended test type based on source imports
 }
 
 export interface CoverageInfo {
@@ -126,6 +127,34 @@ const INTEGRATION_IMPORT_PATTERNS = [
   /drizzle-orm/,
   /supertest/,
 ];
+
+// Source file imports that suggest integration test is needed
+const SOURCE_INTEGRATION_PATTERNS = [
+  /drizzle-orm/,
+  /\.\/db\b/,
+  /\.\.\/db\b/,
+  /repository/i,
+  /Repository/,
+  /\.\/storage\b/,
+  /\.\.\/storage\b/,
+  /prisma/i,
+  /sequelize/i,
+  /mongoose/i,
+  /typeorm/i,
+  /knex/i,
+];
+
+/** Recommend test type for a SOURCE file based on its imports */
+function suggestTestType(filePath: string): 'unit' | 'integration' {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return SOURCE_INTEGRATION_PATTERNS.some(re => re.test(content))
+      ? 'integration'
+      : 'unit';
+  } catch {
+    return 'unit';
+  }
+}
 
 /** Classify a test file into unit / integration / e2e based on location + imports */
 function detectTestType(relativePath: string, filePath?: string): 'unit' | 'integration' | 'e2e' {
@@ -255,6 +284,8 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     let mtime = 0;
     try { const st = fs.statSync(filePath); size = st.size; mtime = st.mtimeMs; } catch {}
 
+    const isInfra = INFRA_FILE_PATTERNS.some(p => p.test(filePath));
+
     // testStale: source file is newer than its test file → tests may need updating
     let testStale = false;
     if (!isTest && testFile) {
@@ -276,10 +307,11 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       size,
       dependencies: extractDependencies(filePath),
       featureKeys: [], // filled below
-      isInfra: INFRA_FILE_PATTERNS.some(p => p.test(filePath)), // .d.ts etc — always infra
+      isInfra,
       testType: isTest ? detectTestType(relativePath, filePath) : undefined,
       testCount: isTest ? countTestCases(filePath) : undefined,
       testStale: testStale || undefined,
+      suggestedTestType: (!isTest && !isInfra) ? suggestTestType(filePath) : undefined,
     };
   });
 

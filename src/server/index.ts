@@ -136,22 +136,43 @@ function buildWriteTestsPrompt(
   modules: ModuleInfo[],
   testRunner: string,
 ): string {
-  const untested = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.hasTests && !m.isInfra)
-    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  const untestedMods = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.hasTests && !m.isInfra);
+
+  const untestedPaths = untestedMods.map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
 
   const existing = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
     .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
 
+  const hasNoTestInfra = modules.filter(m => m.type === 'test').length === 0;
+
+  // Split by suggested type and give explicit guidance
+  const unitFiles = untestedMods.filter(m => (m.suggestedTestType ?? 'unit') === 'unit');
+  const integrationFiles = untestedMods.filter(m => m.suggestedTestType === 'integration');
+  const typeSummary = [
+    unitFiles.length > 0
+      ? `Unit-тесты (${unitFiles.length} файлов): мокай все зависимости через vi.mock(), никаких обращений к реальной БД`
+      : '',
+    integrationFiles.length > 0
+      ? `Integration-тесты (${integrationFiles.length} файлов): используй реальную БД через test-helpers или pg-mem`
+      : '',
+  ].filter(Boolean).join('\n');
+
   return [
     `Напиши тесты для фичи "${feat.label}".`,
     ``,
-    `Файлов без тестов (${untested.length}):`,
-    ...untested,
+    `Файлов без тестов (${untestedMods.length}):`,
+    ...untestedPaths,
+    ``,
+    typeSummary ? `Рекомендации по типам тестов:\n${typeSummary}` : '',
     ``,
     existing.length > 0
       ? `Существующие тест-файлы (для справки по паттернам):\n${existing.join('\n')}`
+      : '',
+    ``,
+    hasNoTestInfra
+      ? `⚠️ В проекте пока нет ни одного теста. Если нужна тестовая инфраструктура (test-helpers.ts, vitest.config.ts) — создай её сначала.`
       : '',
     ``,
     `Требования:`,
@@ -159,7 +180,7 @@ function buildWriteTestsPrompt(
     `- Следуй паттернам существующих тестов в проекте`,
     `- Для каждого файла создай соответствующий тест-файл`,
     `- Не изменяй существующие тесты`,
-  ].filter(l => l !== null).join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function buildWriteTestsForFilePrompt(
@@ -169,17 +190,46 @@ function buildWriteTestsForFilePrompt(
   testRunner: string,
 ): string {
   const normalPath = filePath.replace(/\\/g, '/');
+
+  // Find module info to get suggestedTestType (match by relativePath or absolute path)
+  const sourceModule = modules.find(m =>
+    m.relativePath.replace(/\\/g, '/') === normalPath || m.path === filePath
+  );
+  const suggestedTestType = sourceModule?.suggestedTestType ?? 'unit';
+
   const existing = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
     .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
 
+  const hasNoTestInfra = modules.filter(m => m.type === 'test').length === 0;
+
+  const testTypeBlock = suggestedTestType === 'integration'
+    ? [
+        `Тип теста: INTEGRATION`,
+        `Файл обращается к БД, репозиториям или внешним сервисам.`,
+        `→ Используй test-helpers или pg-mem для работы с реальной БД.`,
+        `→ Не мокай репозитории — проверяй реальное поведение.`,
+      ].join('\n')
+    : [
+        `Тип теста: UNIT`,
+        `→ Замокай все внешние зависимости через \`vi.mock()\`.`,
+        `→ Не используй реальную БД или внешние сервисы.`,
+        `→ Тест должен работать быстро без внешних зависимостей.`,
+      ].join('\n');
+
   return [
-    `Напиши тесты для файла \`${normalPath}\`.`,
+    `Напиши тест для файла \`${normalPath}\`.`,
     `Фича: "${feat.label}"`,
+    ``,
+    testTypeBlock,
     ``,
     existing.length > 0
       ? `Существующие тест-файлы фичи (следуй этим паттернам):\n${existing.join('\n')}`
       : 'Существующих тестов в этой фиче пока нет — следуй общим паттернам проекта.',
+    ``,
+    hasNoTestInfra
+      ? `⚠️ В проекте пока нет ни одного теста. Если нужна тестовая инфраструктура (test-helpers.ts, vitest.config.ts) — создай её сначала.`
+      : '',
     ``,
     `Требования:`,
     `- Используй ${testRunner}`,
