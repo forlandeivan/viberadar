@@ -457,8 +457,7 @@
     }
     .file-rows { display: flex; flex-direction: column; gap: 2px; }
     .file-row {
-      display: grid;
-      grid-template-columns: 22px 1fr auto auto;
+      display: flex;
       align-items: center;
       gap: 8px;
       padding: 7px 10px;
@@ -469,9 +468,9 @@
     }
     .file-row:hover  { background: var(--bg-card); }
     .file-row.active { background: var(--bg-hover); border-left: 2px solid var(--blue); padding-left: 8px; }
-    .file-row-icon { font-size: 12px; }
-    .file-row-name { font-weight: 500; word-break: break-all; }
-    .file-row-dir  { font-size: 11px; color: var(--dim); text-align: right; word-break: break-word; }
+    .file-row-icon { font-size: 12px; flex-shrink: 0; }
+    .file-row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .file-row-dir  { font-size: 11px; color: var(--dim); margin-left: auto; white-space: nowrap; flex-shrink: 0; }
     .file-row-agent-btn {
       display: inline-flex;
       align-items: center;
@@ -564,6 +563,11 @@
       font-size: 14px; padding: 3px 6px; border-radius: 4px; line-height: 1;
     }
     .agent-panel-close:hover { background: var(--border); color: var(--text); }
+    .agent-panel-cancel {
+      background: none; border: 1px solid var(--yellow); color: var(--yellow);
+      cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    }
+    .agent-panel-cancel:hover { background: var(--yellow); color: #000; }
     .agent-terminal {
       flex: 1;
       overflow-y: auto;
@@ -624,6 +628,7 @@
   <div class="agent-panel-header">
     <span class="agent-panel-title" id="agentPanelTitle">🤖 Agent</span>
     <span class="agent-panel-status" id="agentPanelStatus">running…</span>
+    <button class="agent-panel-cancel" id="agentCancelBtn" onclick="cancelAgent()" title="Сбросить состояние агента" style="display:none">⏹ сброс</button>
     <button class="agent-panel-close" onclick="closeAgentPanel()">✕</button>
   </div>
   <div class="agent-terminal" id="agentTerminal"></div>
@@ -676,8 +681,26 @@ async function setAgent(agent) {
   // scheduleRescan will fire → data-updated → D.agent updates
 }
 
+function setAgentRunning(val) {
+  agentRunning = val;
+  document.getElementById('agentCancelBtn').style.display = val ? 'inline-block' : 'none';
+}
+
+async function cancelAgent() {
+  await fetch('/api/cancel-agent', { method: 'POST' });
+  setAgentRunning(false);
+  document.getElementById('agentPanelStatus').textContent = '⏹ сброшен';
+  appendTerminalLine('⏹ Состояние агента сброшено', false);
+}
+
 async function runAgentTask(task, featureKey, filePath) {
-  if (agentRunning) return;
+  if (agentRunning) {
+    // Show panel so user sees cancel button
+    document.getElementById('agentPanel').classList.add('open');
+    document.getElementById('termBtn').classList.add('term-active');
+    appendTerminalLine('⚠️ Агент уже запущен. Нажми ⏹ сброс чтобы отменить.', true);
+    return;
+  }
   document.getElementById('agentTerminal').innerHTML = '';
   document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   document.getElementById('agentPanel').classList.add('open');
@@ -1255,8 +1278,8 @@ function fileRow(m, isTest = false, featureKey = null) {
     <div class="file-row${isActive ? ' active' : ''}" data-id="${m.id}">
       <span class="file-row-icon">${icon}</span>
       <span class="file-row-name">${name}</span>
-      <span class="file-row-dir">${dir}</span>
       ${agentBtn}
+      <span class="file-row-dir">${dir}</span>
     </div>`;
 }
 
@@ -1602,7 +1625,7 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-started', (e) => {
-    agentRunning = true;
+    setAgentRunning(true);
     const { title } = JSON.parse(e.data);
     document.getElementById('agentPanelTitle').textContent = '🤖 ' + title;
     document.getElementById('agentPanelStatus').textContent = 'запускаю…';
@@ -1618,7 +1641,7 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-done', () => {
-    agentRunning = false;
+    setAgentRunning(false);
     document.getElementById('agentPanelStatus').textContent = '✅ готово';
     renderContent();
   });
@@ -1647,7 +1670,7 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-error', (e) => {
-    agentRunning = false;
+    setAgentRunning(false);
     const { message } = JSON.parse(e.data);
     document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
     appendTerminalLine('❌ ' + (message || 'Ошибка агента'), true);

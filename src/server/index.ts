@@ -603,6 +603,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return;
       }
 
+      if (url === '/api/cancel-agent' && req.method === 'POST') {
+        agentRunning = false;
+        process.stdout.write('   ⏹ Agent state reset by user\n');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
       if (url === '/api/set-agent' && req.method === 'POST') {
         let body = '';
         req.on('data', d => body += d);
