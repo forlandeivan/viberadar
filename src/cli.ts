@@ -24,10 +24,6 @@ async function runDashboard() {
 
   const { default: open } = await import('open');
   await open(`http://localhost:${PORT}`);
-
-  // Auto-run coverage in background after browser opens
-  console.log('   🧪 Running coverage in background...');
-  triggerCoverage();
 }
 
 function printHelp() {
