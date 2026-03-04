@@ -639,9 +639,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             const result = await runTestFiles(testFilesToRun, projectRoot);
 
             // Store per-file results for "fix-tests" feature
+            // path.resolve() normalizes slashes on Windows (vitest outputs forward slashes)
             lastTestResults.clear();
             for (const [fp, detail] of Object.entries(result.fileDetails)) {
-              if (detail.failed > 0) lastTestResults.set(fp, { failed: detail.failed, errors: detail.errors });
+              if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
             const summary = result.failed === 0
@@ -765,10 +766,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             const result = await runTestFiles(testFiles, projectRoot);
             testsRunning = false;
 
-            // Store per-file errors
+            // Store per-file errors (normalize paths for Windows forward-slash compat)
             lastTestResults.clear();
             for (const [fp, detail] of Object.entries(result.fileDetails)) {
-              if (detail.failed > 0) lastTestResults.set(fp, { failed: detail.failed, errors: detail.errors });
+              if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
             const summary = result.failed === 0
