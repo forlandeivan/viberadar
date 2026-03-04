@@ -788,7 +788,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
               }
               broadcast('agent-output', { line: '  → Нажми 🔧 исправить рядом с файлом чтобы агент починил' });
             }
-            broadcast('tests-done', { passed: result.passed, failed: result.failed });
+            // Send testErrors directly in event — avoids path/timing issues with /api/data fetch
+            const testErrorsForClient: Record<string, { failed: number; errors: TestFileError[] }> = {};
+            for (const [fp, detail] of lastTestResults) {
+              const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+              testErrorsForClient[rel] = detail;
+            }
+            broadcast('tests-done', { passed: result.passed, failed: result.failed, testErrors: testErrorsForClient });
           } catch (err: any) {
             testsRunning = false;
             res.writeHead(400); res.end(JSON.stringify({ error: err.message }));

@@ -455,6 +455,11 @@
       background: var(--bg-hover);
       border-width: 2px;
     }
+    .test-type-card.tt-failed {
+      border-color: var(--red) !important;
+      border-width: 2px;
+      background: rgba(248, 81, 73, 0.06);
+    }
     .tt-run-btn {
       display: block; width: 100%; margin-top: 8px;
       padding: 3px 0;
@@ -499,15 +504,23 @@
     .file-row-agent-btn:hover { background: var(--accent); color: #000 !important; border-color: var(--accent); }
     .file-row-agent-btn.stale { border-color: var(--yellow); color: var(--yellow); }
     .file-row-agent-btn.stale:hover { background: var(--yellow) !important; color: #000 !important; }
-    .file-row-fix-btn { border-color: var(--red) !important; color: var(--red) !important; }
-    .file-row-fix-btn:hover { background: var(--red) !important; color: #fff !important; border-color: var(--red) !important; }
+    .file-row-fix-btn {
+      background: var(--red) !important; border-color: var(--red) !important;
+      color: #fff !important; font-weight: 600;
+    }
+    .file-row-fix-btn:hover { opacity: 0.85; }
     .file-row-err-badge {
       display: inline-flex; align-items: center;
       font-size: 11px; padding: 1px 6px; border-radius: 10px;
       background: #3a1a1a; color: var(--red);
       cursor: pointer; white-space: nowrap; flex-shrink: 0;
     }
-    .file-row.has-errors { border-left: 2px solid var(--red); padding-left: 8px; }
+    .file-row.has-errors {
+      border-left: 3px solid var(--red);
+      padding-left: 8px;
+      background: rgba(248, 81, 73, 0.07);
+    }
+    .file-row.has-errors:hover { background: rgba(248, 81, 73, 0.12); }
     .file-row-errors {
       padding: 4px 10px 6px 32px;
       display: flex; flex-direction: column; gap: 3px;
@@ -1067,19 +1080,26 @@ function renderFeatureCards(c) {
   }
 }
 
-function testTypeCard(type, label, icon, color, count, active, featureKey) {
+function testTypeCard(type, label, icon, color, count, active, featureKey, failedCount = 0) {
   const empty = count === 0 && type !== 'source';
+  const hasFailed = failedCount > 0 && type !== 'source';
   const subLabel = empty ? 'нет тестов' : (type === 'source' ? 'код приложения' : pluralFiles(count));
   const runBtn = !empty && type !== 'source' && featureKey
     ? `<button class="tt-run-btn" onclick="event.stopPropagation();runTests('${featureKey}','${type}')">▶ запустить</button>`
     : '';
+  const accentColor = hasFailed && !active ? 'var(--red)' : color;
+  const countColor  = hasFailed ? 'var(--red)' : (active || !empty ? color : 'var(--dim)');
+  const failedNote  = hasFailed
+    ? `<div style="font-size:11px;color:var(--red);margin-top:2px;font-weight:600">❌ ${failedCount} упало</div>`
+    : '';
   return `
-    <div class="test-type-card${empty ? ' tt-empty' : ''}${active ? ' tt-active' : ''}" data-testtype="${type}"
-         style="${active ? 'border-color:' + color : ''}">
-      <div class="tt-accent" style="background:${color}"></div>
+    <div class="test-type-card${empty ? ' tt-empty' : ''}${active ? ' tt-active' : ''}${hasFailed ? ' tt-failed' : ''}"
+         data-testtype="${type}" style="${active ? 'border-color:' + color : ''}">
+      <div class="tt-accent" style="background:${accentColor}"></div>
       <div class="tt-label">${icon} ${label}</div>
-      <div class="tt-count" style="color:${active || !empty ? color : 'var(--dim)'}">${count}</div>
+      <div class="tt-count" style="color:${countColor}">${count}</div>
       <div class="tt-sub">${subLabel}</div>
+      ${failedNote}
       ${runBtn}
     </div>`;
 }
@@ -1097,6 +1117,12 @@ function renderFeatureDetail(c) {
   const unitCount        = feat.unitTestCount        ?? tst.filter(m => m.testType === 'unit').length;
   const integrationCount = feat.integrationTestCount ?? tst.filter(m => m.testType === 'integration').length;
   const e2eCount         = feat.e2eTestCount         ?? tst.filter(m => m.testType === 'e2e').length;
+
+  // Count failing test files per type (from last test run)
+  const te = D.testErrors || {};
+  const unitFailed        = tst.filter(m => m.testType === 'unit'        && te[m.relativePath.replace(/\\/g, '/')]).length;
+  const integrationFailed = tst.filter(m => m.testType === 'integration' && te[m.relativePath.replace(/\\/g, '/')]).length;
+  const e2eFailed         = tst.filter(m => m.testType === 'e2e'         && te[m.relativePath.replace(/\\/g, '/')]).length;
 
   // Determine what list to show based on active tab
   // null or 'source' → source files; test type → test files of that type
@@ -1132,10 +1158,10 @@ function renderFeatureDetail(c) {
     ${feat.description ? `<div class="drill-desc">${feat.description}</div>` : ''}
 
     <div class="test-type-grid">
-      ${testTypeCard('source',      'Файлы',       '📁', feat.color, src.length,       activeTab === 'source',      drillFeatureKey)}
-      ${testTypeCard('unit',        'Unit',        '🧪', '#e3b341',  unitCount,        activeTab === 'unit',        drillFeatureKey)}
-      ${testTypeCard('integration', 'Integration', '🔗', '#58a6ff',  integrationCount, activeTab === 'integration', drillFeatureKey)}
-      ${testTypeCard('e2e',         'E2E',         '🎭', '#d2a8ff',  e2eCount,         activeTab === 'e2e',         drillFeatureKey)}
+      ${testTypeCard('source',      'Файлы',       '📁', feat.color, src.length,       activeTab === 'source',      drillFeatureKey, 0)}
+      ${testTypeCard('unit',        'Unit',        '🧪', '#e3b341',  unitCount,        activeTab === 'unit',        drillFeatureKey, unitFailed)}
+      ${testTypeCard('integration', 'Integration', '🔗', '#58a6ff',  integrationCount, activeTab === 'integration', drillFeatureKey, integrationFailed)}
+      ${testTypeCard('e2e',         'E2E',         '🎭', '#d2a8ff',  e2eCount,         activeTab === 'e2e',         drillFeatureKey, e2eFailed)}
     </div>
 
     <div class="drill-section-label">${listLabel}</div>
@@ -1329,7 +1355,7 @@ function fileRow(m, isTest = false, featureKey = null) {
   const fixBtn = testErr && D.agent
     ? `<button class="file-row-agent-btn file-row-fix-btn" title="Попросить агента исправить упавшие тесты"
          onclick="event.stopPropagation();runAgentTask('fix-tests','${featureKey || ''}','${relPath}')">
-         🔧 исправить</button>`
+         Починить</button>`
     : '';
 
   // Inline error list (always shown when there are errors)
@@ -1756,11 +1782,12 @@ function connectSSE() {
   });
 
   es.addEventListener('tests-done', (e) => {
-    const { passed, failed } = JSON.parse(e.data);
+    const { passed, failed, testErrors } = JSON.parse(e.data);
     document.getElementById('agentPanelStatus').textContent =
       failed === 0 ? `✅ ${passed} passed` : `⚠️ ${passed} passed, ${failed} failed`;
-    // Refresh data to show updated error badges
-    fetch('/api/data').then(r => r.json()).then(data => { D = data; renderContent(); });
+    // Apply testErrors directly from event — no separate fetch needed
+    D.testErrors = testErrors || {};
+    renderContent();
   });
 
   es.onerror = () => {
