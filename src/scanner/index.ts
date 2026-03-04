@@ -117,11 +117,31 @@ function fileMatchesFeature(relPath: string, include: string[]): boolean {
   return include.some(p => expandBraces(p).some(exp => fileMatchesGlob(relPath, exp)));
 }
 
-/** Classify a test file into unit / integration / e2e based on its location */
-function detectTestType(relativePath: string): 'unit' | 'integration' | 'e2e' {
+// Imports that indicate a real DB / infra dependency → integration test
+const INTEGRATION_IMPORT_PATTERNS = [
+  /test-helpers/,
+  /pg-mem/,
+  /createTestDb/,
+  /\.\.\/server\/db\b/,
+  /drizzle-orm/,
+  /supertest/,
+];
+
+/** Classify a test file into unit / integration / e2e based on location + imports */
+function detectTestType(relativePath: string, filePath?: string): 'unit' | 'integration' | 'e2e' {
   const p = relativePath.replace(/\\/g, '/');
   if (p.startsWith('e2e/') || p.includes('/e2e/')) return 'e2e';
-  if (p.startsWith('tests/') || p.includes('/tests/')) return 'integration';
+
+  // For files in tests/ dir: check imports to distinguish unit vs integration
+  if ((p.startsWith('tests/') || p.includes('/tests/')) && filePath) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const isIntegration = INTEGRATION_IMPORT_PATTERNS.some(re => re.test(content));
+      return isIntegration ? 'integration' : 'unit';
+    } catch {}
+    return 'integration'; // fallback
+  }
+
   return 'unit'; // co-located with source
 }
 
@@ -257,7 +277,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       dependencies: extractDependencies(filePath),
       featureKeys: [], // filled below
       isInfra: INFRA_FILE_PATTERNS.some(p => p.test(filePath)), // .d.ts etc — always infra
-      testType: isTest ? detectTestType(relativePath) : undefined,
+      testType: isTest ? detectTestType(relativePath, filePath) : undefined,
       testCount: isTest ? countTestCases(filePath) : undefined,
       testStale: testStale || undefined,
     };
