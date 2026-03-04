@@ -186,6 +186,48 @@ function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]
   ].join('\n');
 }
 
+// ─── Coverage provider auto-install ──────────────────────────────────────────
+
+function autoInstallCoverageProvider(projectRoot: string): Promise<boolean> {
+  return new Promise(resolve => {
+    // Detect vitest version to install matching coverage package
+    let vitestVersion = 'latest';
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      const raw = deps['vitest'] as string | undefined;
+      if (raw) vitestVersion = raw.replace(/[\^~>=<\s]/g, '') || 'latest';
+    } catch {}
+
+    const pkg = `@vitest/coverage-v8@${vitestVersion}`;
+    process.stdout.write(`   📦 Installing ${pkg}...\n`);
+
+    const proc = spawn('npm', ['install', '--save-dev', '--legacy-peer-deps', pkg], {
+      cwd: projectRoot,
+      shell: true,
+      stdio: 'pipe',
+    });
+
+    let stderr = '';
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        process.stdout.write(`   ✅ Installed ${pkg}\n`);
+        resolve(true);
+      } else {
+        process.stdout.write(`   ❌ Failed to install ${pkg}: ${stderr.slice(0, 200)}\n`);
+        resolve(false);
+      }
+    });
+
+    proc.on('error', (err) => {
+      process.stdout.write(`   ❌ Install error: ${err.message}\n`);
+      resolve(false);
+    });
+  });
+}
+
 // ─── Coverage command detection ───────────────────────────────────────────────
 
 function detectCoverageCommand(projectRoot: string): { cmd: string; args: string[] } {
@@ -283,14 +325,28 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             broadcast('coverage-error');
           }
         } else {
-          coverageError = true;
-          // Check for missing coverage provider
-          if (coverageStderr.includes('@vitest/coverage') || coverageStderr.includes('coverage provider')) {
-            process.stdout.write('   ❌ Coverage: missing package. Run: npm i -D @vitest/coverage-v8\n');
+          const isMissingProvider =
+            coverageStderr.includes('@vitest/coverage') ||
+            coverageStderr.includes('coverage provider') ||
+            coverageStderr.includes('Cannot find package') ||
+            coverageStderr.includes('ERR_MODULE_NOT_FOUND');
+
+          if (isMissingProvider && currentData.testRunner === 'vitest') {
+            // Auto-install matching @vitest/coverage-v8
+            autoInstallCoverageProvider(projectRoot).then(ok => {
+              if (ok) {
+                process.stdout.write('   🔄 Retrying coverage after install...\n');
+                triggerCoverage();
+              } else {
+                coverageError = true;
+                broadcast('coverage-error');
+              }
+            });
           } else {
+            coverageError = true;
             process.stdout.write(`   ❌ Coverage failed (exit code ${code})\n`);
+            broadcast('coverage-error');
           }
-          broadcast('coverage-error');
         }
       });
 
