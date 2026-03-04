@@ -46,6 +46,43 @@
     .header-project { margin-left: auto; font-size: 13px; color: var(--muted); }
     .header-time    { font-size: 12px; color: var(--dim); }
 
+    /* ── Coverage button ─────────────────────────────────────────────────────── */
+    #covBtn {
+      padding: 5px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+    #covBtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+    #covBtn:disabled              { cursor: not-allowed; opacity: 0.7; }
+    #covBtn.cov-running  { color: var(--yellow); border-color: var(--yellow); }
+    #covBtn.cov-error    { color: var(--red);    border-color: var(--red); }
+    #covBtn.cov-done     { color: var(--green);  border-color: var(--green); }
+    #termBtn {
+      padding: 5px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+    #termBtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+    #termBtn.term-active { color: var(--accent); border-color: var(--accent); }
+
     /* ── Stats bar ───────────────────────────────────────────────────────────── */
     .stats-bar {
       display: flex;
@@ -339,6 +376,187 @@
       font-family: monospace;
     }
 
+    /* ── Feature drill-down ──────────────────────────────────────────────────── */
+    .drill-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .back-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 5px 12px;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: background 0.1s, color 0.1s;
+    }
+    .back-btn:hover { background: var(--border); color: var(--text); }
+    .drill-title {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 17px; font-weight: 700;
+    }
+    .drill-stats {
+      display: flex; gap: 16px;
+      font-size: 12px; color: var(--muted);
+      margin-left: auto;
+    }
+    .drill-desc {
+      font-size: 13px; color: var(--muted);
+      margin-bottom: 14px; line-height: 1.5;
+    }
+    .drill-section-label {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted);
+      margin: 14px 0 6px;
+    }
+
+    /* ── Test-type cards inside feature detail ───────────────────────────────── */
+    .test-type-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .test-type-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .test-type-card:hover { background: var(--bg-hover); border-color: var(--dim); }
+    .test-type-card .tt-accent {
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .test-type-card .tt-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--muted); margin-bottom: 6px; margin-top: 2px;
+    }
+    .test-type-card .tt-count {
+      font-size: 26px; font-weight: 700; line-height: 1;
+      margin-bottom: 4px;
+    }
+    .test-type-card .tt-sub {
+      font-size: 11px; color: var(--dim);
+    }
+    .test-type-card.tt-empty .tt-count { color: var(--dim); }
+    .test-type-card.tt-empty { opacity: 0.7; }
+    .test-type-card.tt-active {
+      background: var(--bg-hover);
+      border-width: 2px;
+    }
+    .file-rows { display: flex; flex-direction: column; gap: 2px; }
+    .file-row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.1s;
+    }
+    .file-row:hover  { background: var(--bg-card); }
+    .file-row.active { background: var(--bg-hover); border-left: 2px solid var(--blue); padding-left: 8px; }
+    .file-row-icon { font-size: 12px; }
+    .file-row-name { font-weight: 500; word-break: break-all; }
+    .file-row-dir  { font-size: 11px; color: var(--dim); text-align: right; word-break: break-word; }
+
+    /* ── Agent setup banner ──────────────────────────────────────────────────── */
+    .agent-setup-banner {
+      background: linear-gradient(135deg, #161b22 0%, #1c2230 100%);
+      border: 1px solid var(--blue);
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .agent-setup-banner h3 { font-size: 15px; margin-bottom: 6px; }
+    .agent-setup-banner p  { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .agent-choices { display: flex; gap: 10px; justify-content: center; }
+    .agent-choice-btn {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .agent-choice-btn:hover { background: var(--bg-hover); border-color: var(--blue); transform: translateY(-1px); }
+
+    /* ── Agent card button ───────────────────────────────────────────────────── */
+    .agent-card-btn {
+      margin-top: 10px;
+      padding: 5px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      width: 100%;
+      text-align: left;
+    }
+    .agent-card-btn:hover { background: var(--bg-hover); border-color: var(--blue); }
+    .agent-card-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Agent terminal panel ────────────────────────────────────────────────── */
+    .agent-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 280px;
+      background: #090d13;
+      border-top: 1px solid var(--border);
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+    }
+    .agent-panel.open { transform: translateY(0); }
+    .agent-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .agent-panel-title  { font-size: 13px; font-weight: 600; flex: 1; }
+    .agent-panel-status { font-size: 11px; color: var(--muted); }
+    .agent-panel-close  {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 14px; padding: 3px 6px; border-radius: 4px; line-height: 1;
+    }
+    .agent-panel-close:hover { background: var(--border); color: var(--text); }
+    .agent-terminal {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 16px;
+      font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .agent-line     { color: #c9d1d9; }
+    .agent-line.err { color: var(--red); }
+
     /* ── Misc ────────────────────────────────────────────────────────────────── */
     .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--muted); font-size: 14px; }
     .empty   { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
@@ -351,6 +569,8 @@
   <h1>VibeRadar</h1>
   <span class="header-project" id="projectName">—</span>
   <span class="header-time" id="scannedAt"></span>
+  <button id="covBtn" onclick="runCoverage()" title="Запустить тесты с coverage">🧪 Coverage</button>
+  <button id="termBtn" onclick="toggleAgentPanel()" title="Показать/скрыть терминал агента">📟 Terminal</button>
   <span id="liveDot" title="Connecting…" style="
     width:8px; height:8px; border-radius:50%;
     background:var(--dim); display:inline-block;
@@ -381,6 +601,15 @@
   <div id="panelContent"></div>
 </div>
 
+<div class="agent-panel" id="agentPanel">
+  <div class="agent-panel-header">
+    <span class="agent-panel-title" id="agentPanelTitle">🤖 Agent</span>
+    <span class="agent-panel-status" id="agentPanelStatus">running…</span>
+    <button class="agent-panel-close" onclick="closeAgentPanel()">✕</button>
+  </div>
+  <div class="agent-terminal" id="agentTerminal"></div>
+</div>
+
 <script>
 // ─── State ────────────────────────────────────────────────────────────────────
 let D = null;
@@ -388,6 +617,79 @@ let view = 'features';
 let searchQuery = '';
 let activeTypes = new Set();
 let activePanelKey = null;
+let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string = feature key
+let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
+let coverageRunning = false;
+let coverageHasError = false;
+
+// ─── Coverage button ───────────────────────────────────────────────────────────
+function updateCovBtn() {
+  const btn = document.getElementById('covBtn');
+  if (!btn) return;
+  btn.className = '';
+  btn.disabled = coverageRunning;
+  if (coverageRunning) {
+    btn.className = 'cov-running';
+    btn.textContent = '⏳ Running...';
+  } else if (coverageHasError) {
+    btn.className = 'cov-error';
+    btn.textContent = '❌ Coverage failed';
+  } else {
+    btn.textContent = '🧪 Coverage';
+  }
+}
+
+async function runCoverage() {
+  if (coverageRunning) return;
+  await fetch('/api/run-coverage', { method: 'POST' });
+  // SSE events will update state
+}
+
+// ─── Agent ────────────────────────────────────────────────────────────────────
+let agentRunning = false;
+
+async function setAgent(agent) {
+  await fetch('/api/set-agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent }),
+  });
+  // scheduleRescan will fire → data-updated → D.agent updates
+}
+
+async function runAgentTask(task, featureKey) {
+  if (agentRunning) return;
+  document.getElementById('agentTerminal').innerHTML = '';
+  document.getElementById('agentPanelStatus').textContent = 'запускаю…';
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
+  await fetch('/api/run-agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task, featureKey }),
+  });
+}
+
+function closeAgentPanel() {
+  document.getElementById('agentPanel').classList.remove('open');
+  document.getElementById('termBtn').classList.remove('term-active');
+}
+
+function toggleAgentPanel() {
+  const panel = document.getElementById('agentPanel');
+  const btn   = document.getElementById('termBtn');
+  panel.classList.toggle('open');
+  btn.classList.toggle('term-active', panel.classList.contains('open'));
+}
+
+function appendTerminalLine(line, isError) {
+  const term = document.getElementById('agentTerminal');
+  const el = document.createElement('div');
+  el.className = 'agent-line' + (isError ? ' err' : '');
+  el.textContent = line;
+  term.appendChild(el);
+  term.scrollTop = term.scrollHeight;
+}
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 const TYPE_COLORS = {
@@ -421,8 +723,18 @@ function pluralFiles(n) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const res = await fetch('/api/data');
+    const [res, statusRes] = await Promise.all([
+      fetch('/api/data'),
+      fetch('/api/status').catch(() => null),
+    ]);
     D = await res.json();
+
+    if (statusRes) {
+      const status = await statusRes.json().catch(() => ({}));
+      coverageRunning  = status.coverageRunning  ?? false;
+      coverageHasError = status.coverageError    ?? false;
+    }
+    updateCovBtn();
 
     document.getElementById('projectName').textContent = D.projectName;
     document.getElementById('scannedAt').textContent =
@@ -452,7 +764,7 @@ function renderStats() {
 
   let items;
   if (D.hasConfig && D.features) {
-    const unmapped = src.filter(m => !m.featureKeys || m.featureKeys.length === 0).length;
+    const unmapped = src.filter(m => !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)).length;
     items = [
       { v: D.features.length,   l: 'Features' },
       { v: src.length,          l: 'Source Files' },
@@ -519,7 +831,28 @@ function renderSidebar() {
 // ─── Content ──────────────────────────────────────────────────────────────────
 function renderContent() {
   const c = document.getElementById('content');
-  view === 'features' ? renderFeatureCards(c) : renderModuleGrid(c);
+  if (view === 'features') {
+    if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
+    else if (drillFeatureKey) renderFeatureDetail(c);
+    else renderFeatureCards(c);
+  } else {
+    renderModuleGrid(c);
+  }
+}
+
+function backToFeatureDetail() {
+  drillTestType = null;
+  activePanelKey = null;
+  document.getElementById('panel').classList.remove('open');
+  renderContent();
+}
+
+function backToFeatures() {
+  drillFeatureKey = null;
+  drillTestType = null;
+  activePanelKey = null;
+  document.getElementById('panel').classList.remove('open');
+  renderContent();
 }
 
 function renderFeatureCards(c) {
@@ -542,12 +875,25 @@ function renderFeatureCards(c) {
 
   if (!list.length) { c.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
 
-  c.innerHTML = '<div class="features-grid" id="featGrid"></div>';
+  // Agent setup banner — shown when no agent configured
+  const setupBanner = !D.agent ? `
+    <div class="agent-setup-banner">
+      <h3>🤖 Выбери AI агента</h3>
+      <p>VibeRadar будет запускать его прямо из дашборда — писать тесты, разбирать unmapped и не только</p>
+      <div class="agent-choices">
+        <button class="agent-choice-btn" onclick="setAgent('claude')">⚡ Claude Code</button>
+        <button class="agent-choice-btn" onclick="setAgent('codex')">🟢 Codex (OpenAI)</button>
+      </div>
+    </div>` : '';
+
+  c.innerHTML = setupBanner + '<div class="features-grid" id="featGrid"></div>';
   const grid = document.getElementById('featGrid');
 
   list.forEach(f => {
     const pct = f.fileCount > 0 ? Math.round(f.testedCount / f.fileCount * 100) : 0;
     const isActive = activePanelKey === f.key;
+    const hasCov = f.coveragePct != null;
+    const covPct = hasCov ? Math.round(f.coveragePct) : null;
 
     const card = document.createElement('div');
     card.className = 'feature-card' + (isActive ? ' active' : '');
@@ -559,21 +905,51 @@ function renderFeatureCards(c) {
           <span class="feature-file-count">${f.fileCount} ${pluralFiles(f.fileCount)}</span>
         </div>
         ${f.description ? `<div class="feature-desc">${f.description}</div>` : ''}
+        ${hasCov ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:24px;font-weight:700;line-height:1;color:${covColor(covPct)}">${covPct}%</span>
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">Coverage</div>
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+              <div style="width:${covPct}%;height:100%;background:${covColor(covPct)};border-radius:2px;transition:width 0.4s"></div>
+            </div>
+          </div>
+        </div>` : `
+        <div style="font-size:11px;color:var(--dim);margin-bottom:10px">
+          coverage: нет данных
+        </div>`}
         <div class="feature-progress-wrap">
           <div class="feature-progress-bar">
             <div class="feature-progress-fill" style="width:${pct}%;background:${f.color}"></div>
           </div>
-          <span class="feature-progress-label" style="color:${covColor(pct)}">${f.testedCount}/${f.fileCount} ✓</span>
+          <span class="feature-progress-label" style="color:${covColor(pct)}">${f.testedCount}/${f.fileCount} с тестами</span>
         </div>
+        ${D.agent && f.fileCount > f.testedCount ? `
+        <button class="agent-card-btn" data-task="write-tests" data-key="${f.key}">
+          ▶ Написать тесты (${f.fileCount - f.testedCount} без тестов)
+        </button>` : ''}
       </div>`;
-    card.onclick = () => openFeaturePanel(f.key);
+    card.onclick = (e) => {
+      if (e.target.closest('.agent-card-btn')) return; // don't drill on agent btn click
+      drillFeatureKey = f.key; activePanelKey = null;
+      document.getElementById('panel').classList.remove('open');
+      renderContent();
+    };
+    const agentBtn = card.querySelector('.agent-card-btn');
+    if (agentBtn) {
+      agentBtn.onclick = (e) => {
+        e.stopPropagation();
+        runAgentTask(agentBtn.dataset.task, agentBtn.dataset.key);
+      };
+    }
     grid.appendChild(card);
   });
 
   // ── Unmapped card ──────────────────────────────────────────────────────────
   if (!q) {
+    const infraSrc    = D.modules.filter(m => m.type !== 'test' && m.isInfra);
     const unmappedSrc = D.modules.filter(m =>
-      m.type !== 'test' && (!m.featureKeys || m.featureKeys.length === 0)
+      m.type !== 'test' && !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)
     );
     if (unmappedSrc.length > 0) {
       const isActive = activePanelKey === '__unmapped__';
@@ -581,6 +957,9 @@ function renderFeatureCards(c) {
       card.className = 'feature-card' + (isActive ? ' active' : '');
       card.style.borderStyle = 'dashed';
       card.style.opacity = '0.75';
+      const infraNote = infraSrc.length > 0
+        ? `<br><span style="color:var(--dim);font-size:11px">+ ${infraSrc.length} infra/system скрыты</span>`
+        : '';
       card.innerHTML = `
         <div class="feature-accent" style="background:var(--yellow)"></div>
         <div class="feature-body">
@@ -588,7 +967,7 @@ function renderFeatureCards(c) {
             <span style="color:var(--yellow)">⚠ Unmapped</span>
             <span class="feature-file-count">${unmappedSrc.length} ${pluralFiles(unmappedSrc.length)}</span>
           </div>
-          <div class="feature-desc">Файлы вне карты фич — не входят ни в одну фичу</div>
+          <div class="feature-desc">Файлы вне карты фич — не входят ни в одну фичу${infraNote}</div>
           <div class="feature-progress-wrap">
             <div class="feature-progress-bar">
               <div class="feature-progress-fill" style="width:100%;background:var(--border)"></div>
@@ -596,10 +975,259 @@ function renderFeatureCards(c) {
             <span class="feature-progress-label" style="color:var(--dim)">нет привязки</span>
           </div>
         </div>`;
-      card.onclick = () => openUnmappedPanel(unmappedSrc);
+      card.onclick = () => {
+        drillFeatureKey = '__unmapped__';
+        activePanelKey = null;
+        document.getElementById('panel').classList.remove('open');
+        renderContent();
+      };
       grid.appendChild(card);
     }
   }
+}
+
+function testTypeCard(type, label, icon, color, count, active) {
+  const empty = count === 0 && type !== 'source';
+  const subLabel = empty ? 'нет тестов' : (type === 'source' ? 'код приложения' : pluralFiles(count));
+  return `
+    <div class="test-type-card${empty ? ' tt-empty' : ''}${active ? ' tt-active' : ''}" data-testtype="${type}"
+         style="${active ? 'border-color:' + color : ''}">
+      <div class="tt-accent" style="background:${color}"></div>
+      <div class="tt-label">${icon} ${label}</div>
+      <div class="tt-count" style="color:${active || !empty ? color : 'var(--dim)'}">${count}</div>
+      <div class="tt-sub">${subLabel}</div>
+    </div>`;
+}
+
+function renderFeatureDetail(c) {
+  const feat = D.features.find(f => f.key === drillFeatureKey);
+  if (!feat) { backToFeatures(); return; }
+
+  const mods = D.modules.filter(m => m.featureKeys && m.featureKeys.includes(drillFeatureKey));
+  const src  = mods.filter(m => m.type !== 'test');
+  const tst  = mods.filter(m => m.type === 'test');
+  const testedCount = src.filter(m => m.hasTests).length;
+  const pct  = src.length > 0 ? Math.round(testedCount / src.length * 100) : 0;
+
+  const unitCount        = feat.unitTestCount        ?? tst.filter(m => m.testType === 'unit').length;
+  const integrationCount = feat.integrationTestCount ?? tst.filter(m => m.testType === 'integration').length;
+  const e2eCount         = feat.e2eTestCount         ?? tst.filter(m => m.testType === 'e2e').length;
+
+  // Determine what list to show based on active tab
+  // null or 'source' → source files; test type → test files of that type
+  const activeTab  = drillTestType || 'source';
+  const listFiles  = activeTab === 'source' ? src : tst.filter(m => m.testType === activeTab);
+  const isTestList = activeTab !== 'source';
+  const meta       = TEST_TYPE_META[activeTab];
+  const listLabel  = meta
+    ? `${meta.icon} ${meta.label} тесты (${listFiles.length})`
+    : `📁 Файлы фичи (${listFiles.length})`;
+
+  const q = searchQuery.toLowerCase();
+  const filtered = q ? listFiles.filter(m =>
+    m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
+  ) : listFiles;
+
+  c.innerHTML = `
+    <div class="drill-header">
+      <button class="back-btn" onclick="backToFeatures()">← Все фичи</button>
+      <div class="drill-title">
+        <div style="width:10px;height:10px;border-radius:50%;background:${feat.color};flex-shrink:0"></div>
+        <span>${feat.label}</span>
+      </div>
+      <div class="drill-stats">
+        <span>${src.length} файлов</span>
+        <span style="color:${covColor(pct)}">${pct}% с тестами</span>
+        ${feat.coveragePct != null
+          ? `<span style="color:${covColor(Math.round(feat.coveragePct))};font-weight:700">${Math.round(feat.coveragePct)}% coverage</span>`
+          : `<span style="color:var(--dim);font-size:11px" title="Нажми 🧪 Coverage в шапке">coverage: нет данных</span>`
+        }
+      </div>
+    </div>
+    ${feat.description ? `<div class="drill-desc">${feat.description}</div>` : ''}
+
+    <div class="test-type-grid">
+      ${testTypeCard('source',      'Файлы',       '📁', feat.color, src.length,       activeTab === 'source')}
+      ${testTypeCard('unit',        'Unit',        '🧪', '#e3b341',  unitCount,        activeTab === 'unit')}
+      ${testTypeCard('integration', 'Integration', '🔗', '#58a6ff',  integrationCount, activeTab === 'integration')}
+      ${testTypeCard('e2e',         'E2E',         '🎭', '#d2a8ff',  e2eCount,         activeTab === 'e2e')}
+    </div>
+
+    <div class="drill-section-label">${listLabel}</div>
+    <div class="file-rows" id="fileRows">
+      ${filtered.length === 0
+        ? `<div style="padding:20px;text-align:center;border:1px dashed var(--border);border-radius:8px;color:var(--dim);font-size:13px">
+            ${isTestList ? 'Нет тестов этого типа для данной фичи' : 'Нет файлов — возможно паттерны в конфиге не совпадают'}
+          </div>`
+        : filtered.map(m => fileRow(m, isTestList)).join('')
+      }
+    </div>`;
+
+  c.querySelectorAll('.test-type-card[data-testtype]').forEach(card => {
+    card.onclick = () => {
+      const type = card.dataset.testtype;
+      drillTestType = (type === 'source') ? null : type; // 'source' tab = null state
+      activePanelKey = null;
+      document.getElementById('panel').classList.remove('open');
+      renderContent();
+    };
+  });
+
+  c.querySelectorAll('.file-row[data-id]').forEach(row => {
+    row.onclick = () => {
+      const m = D.modules.find(m => m.id === row.dataset.id);
+      if (m) openModulePanel(m);
+    };
+  });
+}
+
+const TEST_TYPE_META = {
+  unit:        { label: 'Unit',        icon: '🧪', color: '#e3b341', desc: 'Изолированные тесты функций и модулей' },
+  integration: { label: 'Integration', icon: '🔗', color: '#58a6ff', desc: 'Тесты с реальной БД и зависимостями' },
+  e2e:         { label: 'E2E',         icon: '🎭', color: '#d2a8ff', desc: 'Сквозные тесты через браузер (Playwright)' },
+};
+
+function renderTestTypeDetail(c) {
+  const feat = D.features.find(f => f.key === drillFeatureKey);
+  if (!feat) { backToFeatures(); return; }
+  const meta = TEST_TYPE_META[drillTestType] || { label: drillTestType, icon: '🧪', color: '#58a6ff', desc: '' };
+
+  const tests = D.modules.filter(m =>
+    m.type === 'test' &&
+    m.testType === drillTestType &&
+    m.featureKeys && m.featureKeys.includes(drillFeatureKey)
+  );
+
+  const q = searchQuery.toLowerCase();
+  const filtered = q ? tests.filter(m =>
+    m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
+  ) : tests;
+
+  c.innerHTML = `
+    <div class="drill-header">
+      <button class="back-btn" onclick="backToFeatureDetail()">← ${feat.label}</button>
+      <div class="drill-title">
+        <span>${meta.icon}</span>
+        <span>${meta.label} тесты</span>
+      </div>
+      <div class="drill-stats">
+        <span style="color:${meta.color}">${tests.length} ${pluralFiles(tests.length)}</span>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">${meta.desc}</div>
+
+    <div class="file-rows" id="fileRows">
+      ${filtered.length === 0
+        ? `<div style="padding:24px;text-align:center;border:1px dashed var(--border);border-radius:8px">
+            <div style="font-size:28px;margin-bottom:8px">${meta.icon}</div>
+            <div style="font-size:14px;color:var(--muted);margin-bottom:4px">Нет ${meta.label} тестов для этой фичи</div>
+            <div style="font-size:12px;color:var(--dim)">Добавь тесты в <code>${drillTestType === 'e2e' ? 'e2e/' : 'tests/'}</code></div>
+          </div>`
+        : filtered.map(m => fileRow(m, true)).join('')
+      }
+    </div>`;
+
+  c.querySelectorAll('.file-row[data-id]').forEach(row => {
+    row.onclick = () => {
+      const m = D.modules.find(m => m.id === row.dataset.id);
+      if (m) openModulePanel(m);
+    };
+  });
+}
+
+function renderUnmappedDetail(c) {
+  const infraSrc    = D.modules.filter(m => m.type !== 'test' && m.isInfra);
+  const unmappedSrc = D.modules.filter(m =>
+    m.type !== 'test' && !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)
+  );
+
+  const q = searchQuery.toLowerCase();
+  const filtered = q ? unmappedSrc.filter(m =>
+    m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
+  ) : unmappedSrc;
+
+  // Build prompt text
+  const featureList = (D.features || []).map(f => `  • ${f.key} — ${f.label}`).join('\n');
+  const plainList   = unmappedSrc.map(m => '- ' + m.relativePath.replace(/\\/g, '/')).join('\n');
+  const promptText  =
+    `В проекте ${unmappedSrc.length} файлов без привязки к фичам (unmapped).\n` +
+    `\nДля каждого файла из списка реши:\n` +
+    `1. Если файл относится к конкретной фиче → добавь его путь в "include" этой фичи в viberadar.config.json\n` +
+    `2. Если это инфраструктура (утилиты, конфиги, middleware, типы, бутстрап) → добавь glob в массив "ignore"\n` +
+    `3. Если файл явно бизнес-логика новой фичи → создай новую фичу\n` +
+    `4. Если непонятно — пропусти\n` +
+    `\nСуществующие фичи:\n${featureList}\n` +
+    `\nФайлы:\n${plainList}`;
+
+  const infraNote = infraSrc.length > 0
+    ? `<span style="color:var(--dim);font-size:12px">+ ${infraSrc.length} infra/system скрыты (в ignore)</span>`
+    : '';
+
+  c.innerHTML = `
+    <div class="drill-header">
+      <button class="back-btn" onclick="backToFeatures()">← Все фичи</button>
+      <div class="drill-title">
+        <span style="color:var(--yellow)">⚠</span>
+        <span>Unmapped файлы</span>
+      </div>
+      <div class="drill-stats">
+        <span style="color:var(--yellow)">${unmappedSrc.length} без привязки</span>
+        ${infraNote}
+      </div>
+    </div>
+    <div style="padding:0 0 12px;display:flex;gap:8px;flex-wrap:wrap">
+      ${D.agent ? `<button id="runAgentUnmapped" style="
+        padding:7px 14px; background:var(--blue); border:none;
+        border-radius:6px; color:#000; font-size:12px; font-weight:700; cursor:pointer;
+      ">▶ Разобрать через ${D.agent === 'claude' ? 'Claude Code' : 'Codex'}</button>` : ''}
+      <button id="copyUnmappedDrill" style="
+        padding:7px 14px; background:var(--bg-card); border:1px solid var(--border);
+        border-radius:6px; color:var(--blue); font-size:12px; cursor:pointer;
+      ">📋 Скопировать промпт для AI-агента (${unmappedSrc.length} файлов)</button>
+    </div>
+    <div class="file-rows" id="fileRows">
+      ${filtered.length === 0
+        ? '<div style="font-size:13px;color:var(--dim)">Ничего не найдено</div>'
+        : filtered.map(m => fileRow(m)).join('')
+      }
+    </div>`;
+
+  const runAgentUnmappedBtn = document.getElementById('runAgentUnmapped');
+  if (runAgentUnmappedBtn) {
+    runAgentUnmappedBtn.onclick = () => runAgentTask('map-unmapped');
+  }
+
+  document.getElementById('copyUnmappedDrill').onclick = function() {
+    navigator.clipboard.writeText(promptText).then(() => {
+      this.textContent = '✅ Скопировано!';
+      this.style.color = 'var(--green)';
+      setTimeout(() => {
+        this.textContent = `📋 Скопировать промпт для AI-агента (${unmappedSrc.length} файлов)`;
+        this.style.color = 'var(--blue)';
+      }, 3000);
+    });
+  };
+
+  c.querySelectorAll('.file-row[data-id]').forEach(row => {
+    row.onclick = () => {
+      const m = D.modules.find(m => m.id === row.dataset.id);
+      if (m) openModulePanel(m);
+    };
+  });
+}
+
+function fileRow(m, isTest = false) {
+  const parts = m.relativePath.replace(/\\/g, '/').split('/');
+  const name  = parts[parts.length - 1];
+  const dir   = parts.slice(0, -1).join('/');
+  const icon  = isTest ? '🧪' : (m.hasTests ? '✅' : '⬜');
+  const isActive = activePanelKey === m.id;
+  return `
+    <div class="file-row${isActive ? ' active' : ''}" data-id="${m.id}">
+      <span class="file-row-icon">${icon}</span>
+      <span class="file-row-name">${name}</span>
+      <span class="file-row-dir">${dir}</span>
+    </div>`;
 }
 
 function renderModuleGrid(c) {
@@ -757,7 +1385,8 @@ function openModulePanel(m) {
   document.getElementById('panel').classList.add('open');
 }
 
-function openUnmappedPanel(files) {
+function openUnmappedPanel(files, infraFiles) {
+  infraFiles = infraFiles || [];
   activePanelKey = '__unmapped__';
   renderContent();
 
@@ -771,6 +1400,9 @@ function openUnmappedPanel(files) {
   });
   const dirs = Object.keys(byDir).sort();
 
+  // Build feature list for context
+  const featureList = (D.features || []).map(f => `  • ${f.key} — ${f.label}`).join('\n');
+
   // Build plain-text list for copying to AI agent
   const plainList = files
     .map(m => '- ' + m.relativePath.replace(/\\/g, '/'))
@@ -778,26 +1410,38 @@ function openUnmappedPanel(files) {
 
   const promptText =
     `В проекте ${files.length} файлов без привязки к фичам (unmapped).\n` +
-    `Изучи список ниже и обнови viberadar.config.json:\n` +
-    `добавь эти файлы в существующие фичи или создай новые.\n\n` +
-    plainList;
+    `\nДля каждого файла из списка реши:\n` +
+    `1. Если файл относится к конкретной фиче → добавь его путь в "include" этой фичи в viberadar.config.json\n` +
+    `2. Если это инфраструктура (утилиты, конфиги, middleware, типы, бутстрап) → добавь glob в массив "ignore"\n` +
+    `3. Если файл явно бизнес-логика новой фичи → создай новую фичу\n` +
+    `4. Если непонятно — пропусти\n` +
+    `\nСуществующие фичи:\n${featureList}\n` +
+    `\nФайлы:\n${plainList}`;
+
+  const infraNote = infraFiles.length > 0
+    ? `<div style="margin-bottom:12px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--dim)">
+        🔒 <b style="color:var(--text)">${infraFiles.length} infra/system файлов</b> скрыты (добавлены в <code>ignore</code>)<br>
+        Они не считаются unmapped и не показываются в карте фич.
+      </div>`
+    : '';
 
   document.getElementById('panelContent').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <span style="font-size:16px">⚠</span>
       <div class="panel-title" style="color:var(--yellow)">Unmapped файлы</div>
     </div>
-    <div class="panel-subtitle">
-      Не входят ни в одну фичу.<br>
-      Запусти <code style="color:var(--blue)">npx viberadar init</code> — агент предложит куда добавить.
+    <div class="panel-subtitle" style="margin-bottom:12px">
+      Не входят ни в одну фичу. Скопируй список и отправь AI-агенту.
     </div>
+
+    ${infraNote}
 
     <button id="copyUnmapped" style="
       width:100%; padding:8px 12px; margin-bottom:16px;
       background:var(--bg); border:1px solid var(--border);
       border-radius:6px; color:var(--blue); font-size:12px;
       cursor:pointer; text-align:left;
-    ">📋 Скопировать список для AI-агента</button>
+    ">📋 Скопировать промпт для AI-агента (${files.length} файлов)</button>
 
     ${dirs.map(dir => `
       <div class="panel-section">
@@ -833,6 +1477,8 @@ document.querySelectorAll('.view-tab').forEach(tab => {
   tab.onclick = () => {
     if (tab.classList.contains('disabled')) return;
     view = tab.dataset.view;
+    drillFeatureKey = null;
+    drillTestType = null;
     activePanelKey = null;
     searchQuery = '';
     activeTypes.clear();
@@ -871,14 +1517,11 @@ async function refreshData() {
     renderSidebar();
     renderContent();
 
-    // Re-open panel if it was open
+    // Re-render drill-down or re-open panel
     const panelOpen = document.getElementById('panel').classList.contains('open');
     if (panelOpen && activePanelKey) {
-      if (activePanelKey === '__unmapped__') {
-        const unmapped = D.modules.filter(m =>
-          m.type !== 'test' && (!m.featureKeys || m.featureKeys.length === 0)
-        );
-        openUnmappedPanel(unmapped);
+      if (drillFeatureKey === '__unmapped__') {
+        renderContent(); // already routes to renderUnmappedDetail
       } else if (view === 'features' && D.features) {
         openFeaturePanel(activePanelKey);
       } else {
@@ -904,6 +1547,78 @@ function connectSSE() {
   es.addEventListener('data-updated', () => {
     setLiveDot('#e3b341', 'Обновляю данные…');
     refreshData();
+  });
+
+  es.addEventListener('coverage-started', () => {
+    coverageRunning  = true;
+    coverageHasError = false;
+    updateCovBtn();
+  });
+
+  es.addEventListener('coverage-done', () => {
+    coverageRunning  = false;
+    coverageHasError = false;
+    updateCovBtn();
+    // data-updated fires separately and triggers refreshData()
+  });
+
+  es.addEventListener('coverage-error', () => {
+    coverageRunning  = false;
+    coverageHasError = true;
+    updateCovBtn();
+    setTimeout(() => { coverageHasError = false; updateCovBtn(); }, 8000);
+  });
+
+  es.addEventListener('agent-started', (e) => {
+    agentRunning = true;
+    const { title } = JSON.parse(e.data);
+    document.getElementById('agentPanelTitle').textContent = '🤖 ' + title;
+    document.getElementById('agentPanelStatus').textContent = 'запускаю…';
+    document.getElementById('agentPanel').classList.add('open');
+    document.getElementById('termBtn').classList.add('term-active');
+    document.getElementById('agentTerminal').innerHTML = '';
+  });
+
+  es.addEventListener('agent-output', (e) => {
+    const { line, isError } = JSON.parse(e.data);
+    appendTerminalLine(line, !!isError);
+    document.getElementById('agentPanelStatus').textContent = 'работает…';
+  });
+
+  es.addEventListener('agent-done', () => {
+    agentRunning = false;
+    document.getElementById('agentPanelStatus').textContent = '✅ готово';
+    renderContent();
+  });
+
+  es.addEventListener('agent-summary', (e) => {
+    const { passed, failed, files } = JSON.parse(e.data);
+    const term = document.getElementById('agentTerminal');
+    const allOk = failed === 0;
+    const box = document.createElement('div');
+    box.style.cssText = `
+      margin: 10px 0 4px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid ${allOk ? 'var(--green)' : 'var(--red)'};
+      background: ${allOk ? '#0d2a1a' : '#2a0d0d'};
+      font-family: inherit;
+    `;
+    box.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:${allOk ? 'var(--green)' : 'var(--red)'}">
+        ${allOk ? '✅' : '⚠️'} Тесты: ${passed} passed${failed > 0 ? ', ' + failed + ' failed' : ''}
+      </div>
+      ${files.map(f => `<div style="font-size:11px;color:var(--dim);margin-top:3px">📄 ${f}</div>`).join('')}
+    `;
+    term.appendChild(box);
+    term.scrollTop = term.scrollHeight;
+  });
+
+  es.addEventListener('agent-error', (e) => {
+    agentRunning = false;
+    const { message } = JSON.parse(e.data);
+    document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
+    appendTerminalLine('❌ ' + (message || 'Ошибка агента'), true);
   });
 
   es.onerror = () => {
