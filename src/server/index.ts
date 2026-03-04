@@ -162,6 +162,34 @@ function buildWriteTestsPrompt(
   ].filter(l => l !== null).join('\n');
 }
 
+function buildWriteTestsForFilePrompt(
+  filePath: string,
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  testRunner: string,
+): string {
+  const normalPath = filePath.replace(/\\/g, '/');
+  const existing = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+
+  return [
+    `Напиши тесты для файла \`${normalPath}\`.`,
+    `Фича: "${feat.label}"`,
+    ``,
+    existing.length > 0
+      ? `Существующие тест-файлы фичи (следуй этим паттернам):\n${existing.join('\n')}`
+      : 'Существующих тестов в этой фиче пока нет — следуй общим паттернам проекта.',
+    ``,
+    `Требования:`,
+    `- Используй ${testRunner}`,
+    `- Создай один тест-файл для \`${normalPath}\``,
+    `- Покрой: happy path, edge cases, обработку ошибок`,
+    `- Следуй паттернам существующих тестов в проекте`,
+    `- Не изменяй существующие тесты`,
+  ].filter(Boolean).join('\n');
+}
+
 function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]): string {
   const unmapped = modules
     .filter(m => m.type !== 'test' && !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0))
@@ -359,7 +387,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     // ── Agent runner ───────────────────────────────────────────────────────────
-    function runAgent(task: 'write-tests' | 'map-unmapped', featureKey?: string) {
+    function runAgent(task: 'write-tests' | 'write-tests-file' | 'map-unmapped', featureKey?: string, filePath?: string) {
       if (agentRunning) {
         process.stdout.write('   ⏳ Agent already running\n');
         return;
@@ -375,6 +403,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       let prompt: string;
       let title: string;
 
+      const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
+
       if (task === 'write-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) {
@@ -382,10 +412,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           return;
         }
         prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest');
-        title  = `${agent === 'claude' ? 'Claude Code' : 'Codex'} — тесты для "${feat.label}"`;
+        title  = `${agentLabel} — тесты для "${feat.label}"`;
+      } else if (task === 'write-tests-file') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat || !filePath) {
+          broadcast('agent-error', { message: `Не указана фича или файл` });
+          return;
+        }
+        prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title  = `${agentLabel} — тест для "${fileName}"`;
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
-        title  = `${agent === 'claude' ? 'Claude Code' : 'Codex'} — разобрать unmapped`;
+        title  = `${agentLabel} — разобрать unmapped`;
       }
 
       agentRunning = true;
@@ -468,7 +507,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         agentRunning = false;
         if (code === 0) {
           // Auto-run created test files and show results
-          if (task === 'write-tests' && createdTestFiles.length > 0) {
+          if ((task === 'write-tests' || task === 'write-tests-file') && createdTestFiles.length > 0) {
             broadcast('agent-output', { line: '─────────────────────────────' });
             broadcast('agent-output', { line: `🧪 Запускаю тесты (${createdTestFiles.length} файлов)...` });
             const result = await runTestFiles(createdTestFiles, projectRoot);
@@ -550,9 +589,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         req.on('data', d => body += d);
         req.on('end', () => {
           try {
-            const { task, featureKey } = JSON.parse(body);
-            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey}\n`);
-            runAgent(task, featureKey);
+            const { task, featureKey, filePath } = JSON.parse(body);
+            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath}\n`);
+            runAgent(task, featureKey, filePath);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {

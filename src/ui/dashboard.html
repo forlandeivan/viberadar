@@ -458,7 +458,7 @@
     .file-rows { display: flex; flex-direction: column; gap: 2px; }
     .file-row {
       display: grid;
-      grid-template-columns: 22px 1fr auto;
+      grid-template-columns: 22px 1fr auto auto;
       align-items: center;
       gap: 8px;
       padding: 7px 10px;
@@ -472,6 +472,20 @@
     .file-row-icon { font-size: 12px; }
     .file-row-name { font-weight: 500; word-break: break-all; }
     .file-row-dir  { font-size: 11px; color: var(--dim); text-align: right; word-break: break-word; }
+    .file-row-agent-btn {
+      display: none;
+      padding: 2px 8px;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      color: var(--accent);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s;
+    }
+    .file-row:hover .file-row-agent-btn { display: inline-flex; align-items: center; gap: 3px; }
+    .file-row-agent-btn:hover { background: var(--accent); color: #000; }
 
     /* ── Agent setup banner ──────────────────────────────────────────────────── */
     .agent-setup-banner {
@@ -658,7 +672,7 @@ async function setAgent(agent) {
   // scheduleRescan will fire → data-updated → D.agent updates
 }
 
-async function runAgentTask(task, featureKey) {
+async function runAgentTask(task, featureKey, filePath) {
   if (agentRunning) return;
   document.getElementById('agentTerminal').innerHTML = '';
   document.getElementById('agentPanelStatus').textContent = 'запускаю…';
@@ -667,7 +681,7 @@ async function runAgentTask(task, featureKey) {
   await fetch('/api/run-agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, featureKey }),
+    body: JSON.stringify({ task, featureKey, filePath: filePath || undefined }),
   });
 }
 
@@ -1060,7 +1074,7 @@ function renderFeatureDetail(c) {
         ? `<div style="padding:20px;text-align:center;border:1px dashed var(--border);border-radius:8px;color:var(--dim);font-size:13px">
             ${isTestList ? 'Нет тестов этого типа для данной фичи' : 'Нет файлов — возможно паттерны в конфиге не совпадают'}
           </div>`
-        : filtered.map(m => fileRow(m, isTestList)).join('')
+        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey)).join('')
       }
     </div>`;
 
@@ -1217,17 +1231,24 @@ function renderUnmappedDetail(c) {
   });
 }
 
-function fileRow(m, isTest = false) {
+function fileRow(m, isTest = false, featureKey = null) {
   const parts = m.relativePath.replace(/\\/g, '/').split('/');
   const name  = parts[parts.length - 1];
   const dir   = parts.slice(0, -1).join('/');
   const icon  = isTest ? '🧪' : (m.hasTests ? '✅' : '⬜');
   const isActive = activePanelKey === m.id;
+  // Show per-file agent button for untested source files when agent is configured
+  const showAgentBtn = D.agent && !isTest && !m.hasTests && !m.isInfra && featureKey;
+  const agentBtn = showAgentBtn
+    ? `<button class="file-row-agent-btn" title="Написать тест для этого файла"
+         onclick="event.stopPropagation();runAgentTask('write-tests-file','${featureKey}','${m.relativePath.replace(/\\/g, '/')}')">▶ тест</button>`
+    : '';
   return `
     <div class="file-row${isActive ? ' active' : ''}" data-id="${m.id}">
       <span class="file-row-icon">${icon}</span>
       <span class="file-row-name">${name}</span>
       <span class="file-row-dir">${dir}</span>
+      ${agentBtn}
     </div>`;
 }
 
