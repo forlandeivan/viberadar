@@ -97,10 +97,22 @@ function fmtTool(name: string, input: any = {}): string {
 
 const TEST_FILE_RE = /\.(test|spec)\.(ts|tsx|js|jsx)$/;
 
+interface TestFileError {
+  testName: string;
+  message: string;
+}
+
+interface TestFileDetail {
+  passed: number;
+  failed: number;
+  errors: TestFileError[];
+}
+
 interface TestRunResult extends Record<string, unknown> {
   passed: number;
   failed: number;
   files: string[];
+  fileDetails: Record<string, TestFileDetail>; // absolute path → detail
 }
 
 function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResult> {
@@ -116,16 +128,38 @@ function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResu
         // vitest --reporter=json wraps output; find the JSON object
         const match = stdout.match(/\{[\s\S]*"testResults"[\s\S]*\}/);
         const json  = JSON.parse(match ? match[0] : stdout);
+
+        // Extract per-file failure details
+        const fileDetails: Record<string, TestFileDetail> = {};
+        for (const tr of (json.testResults ?? [])) {
+          const fp: string = tr.testFilePath ?? '';
+          const errors: TestFileError[] = [];
+          for (const ar of (tr.assertionResults ?? [])) {
+            if (ar.status === 'failed') {
+              errors.push({
+                testName: ar.fullName ?? ar.title ?? 'unknown',
+                message: (ar.failureMessages?.[0] ?? '').split('\n')[0].slice(0, 300),
+              });
+            }
+          }
+          fileDetails[fp] = {
+            passed: (tr.assertionResults ?? []).filter((a: any) => a.status === 'passed').length,
+            failed: errors.length,
+            errors,
+          };
+        }
+
         resolve({
           passed: json.numPassedTests  ?? 0,
           failed: json.numFailedTests  ?? 0,
           files,
+          fileDetails,
         });
       } catch {
-        resolve({ passed: 0, failed: 0, files });
+        resolve({ passed: 0, failed: 0, files, fileDetails: {} });
       }
     });
-    proc.on('error', () => resolve({ passed: 0, failed: 0, files }));
+    proc.on('error', () => resolve({ passed: 0, failed: 0, files, fileDetails: {} }));
   });
 }
 
@@ -240,6 +274,23 @@ function buildWriteTestsForFilePrompt(
   ].filter(Boolean).join('\n');
 }
 
+function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string {
+  const normalPath = filePath.replace(/\\/g, '/');
+  return [
+    `Исправь падающие тесты в файле \`${normalPath}\`.`,
+    ``,
+    `Упавшие тесты (${errors.length}):`,
+    ...errors.map(e => `• "${e.testName}"\n  ${e.message}`),
+    ``,
+    `Требования:`,
+    `- Исправь только падающие тесты, не трогай проходящие`,
+    `- Не удаляй тесты — исправь логику или моки`,
+    `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
+    `- Если ошибка в исходном коде, а не в тесте — исправь код`,
+    `- После исправления запусти тест, чтобы убедиться что он проходит`,
+  ].join('\n');
+}
+
 function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]): string {
   const unmapped = modules
     .filter(m => m.type !== 'test' && !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0))
@@ -337,6 +388,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let coverageRunning = false;
     let coverageError   = false;
     let agentRunning    = false;
+    // Keyed by absolute file path → per-file failure details from last test run
+    const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
     // ── SSE clients ────────────────────────────────────────────────────────────
     const sseClients = new Set<http.ServerResponse>();
@@ -437,7 +490,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     // ── Agent runner ───────────────────────────────────────────────────────────
-    function runAgent(task: 'write-tests' | 'write-tests-file' | 'map-unmapped', featureKey?: string, filePath?: string) {
+    function runAgent(task: 'write-tests' | 'write-tests-file' | 'fix-tests' | 'map-unmapped', featureKey?: string, filePath?: string) {
       if (agentRunning) {
         process.stdout.write('   ⏳ Agent already running\n');
         return;
@@ -472,6 +525,27 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
         const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
         title  = `${agentLabel} — тест для "${fileName}"`;
+      } else if (task === 'fix-tests') {
+        if (!filePath) {
+          broadcast('agent-error', { message: 'Не указан файл для исправления' });
+          return;
+        }
+        // Look up stored errors for this file (match by absolute or relative path)
+        let storedErrors: TestFileError[] | undefined;
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          if (rel === filePath.replace(/\\/g, '/') || fp === filePath) {
+            storedErrors = detail.errors;
+            break;
+          }
+        }
+        if (!storedErrors || storedErrors.length === 0) {
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` });
+          return;
+        }
+        prompt = buildFixTestsPrompt(filePath, storedErrors);
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title  = `${agentLabel} — исправить тесты в "${fileName}"`;
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
         title  = `${agentLabel} — разобрать unmapped`;
@@ -556,15 +630,35 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       proc.on('close', async (code) => {
         agentRunning = false;
         if (code === 0) {
-          // Auto-run created test files and show results
-          if ((task === 'write-tests' || task === 'write-tests-file') && createdTestFiles.length > 0) {
+          // Auto-run created/fixed test files and show results
+          const testFilesToRun = task === 'fix-tests' && filePath ? [filePath] : createdTestFiles;
+          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests') && testFilesToRun.length > 0) {
             broadcast('agent-output', { line: '─────────────────────────────' });
-            broadcast('agent-output', { line: `🧪 Запускаю тесты (${createdTestFiles.length} файлов)...` });
-            const result = await runTestFiles(createdTestFiles, projectRoot);
+            broadcast('agent-output', { line: `🧪 Запускаю тесты (${testFilesToRun.length} файлов)...` });
+            const result = await runTestFiles(testFilesToRun, projectRoot);
+
+            // Store per-file results for "fix-tests" feature
+            lastTestResults.clear();
+            for (const [fp, detail] of Object.entries(result.fileDetails)) {
+              if (detail.failed > 0) lastTestResults.set(fp, { failed: detail.failed, errors: detail.errors });
+            }
+
             const summary = result.failed === 0
               ? `✅ Все тесты прошли: ${result.passed} passed`
               : `⚠️  ${result.passed} passed, ${result.failed} failed`;
             broadcast('agent-output', { line: summary });
+            if (result.failed > 0) {
+              for (const [fp, detail] of Object.entries(result.fileDetails)) {
+                if (detail.failed > 0) {
+                  const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+                  broadcast('agent-output', { line: `  ❌ ${rel} — ${detail.failed} упало` });
+                  for (const e of detail.errors.slice(0, 3)) {
+                    broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
+                  }
+                }
+              }
+              broadcast('agent-output', { line: '  → Нажми 🔧 исправить в дашборде чтобы агент починил' });
+            }
             broadcast('agent-summary', result);
           }
 
@@ -615,8 +709,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       if (url === '/api/data') {
+        // Include per-file test errors from last test run (keyed by relative path)
+        const testErrors: Record<string, { failed: number; errors: TestFileError[] }> = {};
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          testErrors[rel] = detail;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(currentData));
+        res.end(JSON.stringify({ ...currentData, testErrors }));
         return;
       }
 
