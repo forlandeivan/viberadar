@@ -473,19 +473,21 @@
     .file-row-name { font-weight: 500; word-break: break-all; }
     .file-row-dir  { font-size: 11px; color: var(--dim); text-align: right; word-break: break-word; }
     .file-row-agent-btn {
-      display: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       padding: 2px 8px;
       font-size: 11px;
       background: transparent;
-      border: 1px solid var(--accent);
+      border: 1px solid var(--border);
       border-radius: 4px;
-      color: var(--accent);
+      color: var(--dim);
       cursor: pointer;
       white-space: nowrap;
-      transition: background 0.1s, color 0.1s;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .file-row:hover .file-row-agent-btn { display: inline-flex; align-items: center; gap: 3px; }
-    .file-row-agent-btn:hover { background: var(--accent); color: #000; }
+    .file-row:hover .file-row-agent-btn { border-color: var(--accent); color: var(--accent); }
+    .file-row-agent-btn:hover { background: var(--accent); color: #000 !important; border-color: var(--accent); }
 
     /* ── Agent setup banner ──────────────────────────────────────────────────── */
     .agent-setup-banner {
