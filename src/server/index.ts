@@ -346,11 +346,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       // Spawn via shell, piping prompt from file (avoids TUI mode, supports stream-json)
       const shellCmd = buildAgentShellCmd(agent, taskFile);
+      process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
         cwd: projectRoot,
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      broadcast('agent-output', { line: `🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}` });
+      broadcast('agent-output', { line: `📄 Задача записана в .viberadar/task.md` });
 
       // Track test files written/edited by agent (for auto-run after)
       const createdTestFiles: string[] = [];
@@ -378,7 +381,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         if (!raw.trim()) return;
         trackWrittenFiles(raw);
         const parsed = agent === 'claude' ? parseClaudeEvent(raw) : raw;
-        if (!parsed) return;
+        // If parsing returned null (noise), still show raw line dimmed so user knows output is coming
+        if (!parsed) {
+          broadcast('agent-output', { line: raw.slice(0, 120), isDim: true });
+          return;
+        }
 
         if (parsed.startsWith('§RESULT§')) {
           // Full result summary — split into lines and prefix with indent
@@ -482,15 +489,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       if (url === '/api/run-agent' && req.method === 'POST') {
+        process.stdout.write('   📥 /api/run-agent received\n');
         let body = '';
         req.on('data', d => body += d);
         req.on('end', () => {
           try {
             const { task, featureKey } = JSON.parse(body);
+            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey}\n`);
             runAgent(task, featureKey);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {
+            process.stdout.write(`   ❌ run-agent parse error: ${err.message}\n`);
             res.writeHead(400);
             res.end(JSON.stringify({ error: err.message }));
           }

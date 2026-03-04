@@ -554,8 +554,9 @@
       font-size: 12px;
       line-height: 1.5;
     }
-    .agent-line     { color: #c9d1d9; }
-    .agent-line.err { color: var(--red); }
+    .agent-line      { color: #c9d1d9; }
+    .agent-line.err  { color: var(--red); }
+    .agent-line.dim  { color: var(--dim); font-size: 10px; }
 
     /* ── Misc ────────────────────────────────────────────────────────────────── */
     .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--muted); font-size: 14px; }
@@ -682,10 +683,10 @@ function toggleAgentPanel() {
   btn.classList.toggle('term-active', panel.classList.contains('open'));
 }
 
-function appendTerminalLine(line, isError) {
+function appendTerminalLine(line, isError, isDim) {
   const term = document.getElementById('agentTerminal');
   const el = document.createElement('div');
-  el.className = 'agent-line' + (isError ? ' err' : '');
+  el.className = 'agent-line' + (isError ? ' err' : isDim ? ' dim' : '');
   el.textContent = line;
   term.appendChild(el);
   term.scrollTop = term.scrollHeight;
@@ -1581,8 +1582,8 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-output', (e) => {
-    const { line, isError } = JSON.parse(e.data);
-    appendTerminalLine(line, !!isError);
+    const { line, isError, isDim } = JSON.parse(e.data);
+    appendTerminalLine(line, !!isError, !!isDim);
     document.getElementById('agentPanelStatus').textContent = 'работает…';
   });
 
