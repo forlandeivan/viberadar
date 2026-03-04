@@ -488,6 +488,8 @@
     }
     .file-row:hover .file-row-agent-btn { border-color: var(--accent); color: var(--accent); }
     .file-row-agent-btn:hover { background: var(--accent); color: #000 !important; border-color: var(--accent); }
+    .file-row-agent-btn.stale { border-color: var(--yellow); color: var(--yellow); }
+    .file-row-agent-btn.stale:hover { background: var(--yellow) !important; color: #000 !important; }
 
     /* ── Agent setup banner ──────────────────────────────────────────────────── */
     .agent-setup-banner {
@@ -1237,13 +1239,17 @@ function fileRow(m, isTest = false, featureKey = null) {
   const parts = m.relativePath.replace(/\\/g, '/').split('/');
   const name  = parts[parts.length - 1];
   const dir   = parts.slice(0, -1).join('/');
-  const icon  = isTest ? '🧪' : (m.hasTests ? '✅' : '⬜');
+  const icon  = isTest ? '🧪' : (m.testStale ? '⚠️' : m.hasTests ? '✅' : '⬜');
   const isActive = activePanelKey === m.id;
-  // Show per-file agent button for untested source files when agent is configured
-  const showAgentBtn = D.agent && !isTest && !m.hasTests && !m.isInfra && featureKey;
+  // Agent button: "написать тест" for untested, "обновить тест" for stale
+  const showAgentBtn = D.agent && !isTest && !m.isInfra && featureKey && (!m.hasTests || m.testStale);
+  const agentBtnLabel = m.testStale ? '↻ обновить' : '▶ тест';
+  const agentBtnTitle = m.testStale ? 'Файл изменился — обновить тесты' : 'Написать тест для этого файла';
+  const agentTask     = m.testStale ? 'write-tests-file' : 'write-tests-file';
   const agentBtn = showAgentBtn
-    ? `<button class="file-row-agent-btn" title="Написать тест для этого файла"
-         onclick="event.stopPropagation();runAgentTask('write-tests-file','${featureKey}','${m.relativePath.replace(/\\/g, '/')}')">▶ тест</button>`
+    ? `<button class="file-row-agent-btn${m.testStale ? ' stale' : ''}" title="${agentBtnTitle}"
+         onclick="event.stopPropagation();runAgentTask('${agentTask}','${featureKey}','${m.relativePath.replace(/\\/g, '/')}')">
+         ${agentBtnLabel}</button>`
     : '';
   return `
     <div class="file-row${isActive ? ' active' : ''}" data-id="${m.id}">
@@ -1383,6 +1389,7 @@ function openModulePanel(m) {
         <span class="badge ${m.hasTests ? 'badge-green' : 'badge-red'}">${m.hasTests ? '✓ есть' : '✗ нет'}</span>
       </div>
       ${m.testCount != null ? `<div class="detail-row"><span>Тест-кейсов</span><span style="color:var(--green);font-weight:600">${m.testCount}</span></div>` : ''}
+      ${m.testStale ? `<div class="detail-row"><span>Статус тестов</span><span style="color:var(--yellow);font-weight:600">⚠️ устарели — файл изменился</span></div>` : ''}
       ${m.testFile ? `<div class="detail-row"><span>Тест-файл</span><span class="detail-row-right">${m.testFile}</span></div>` : ''}
       ${featureLabels ? `<div class="detail-row"><span>Фичи</span><span class="detail-row-right">${featureLabels}</span></div>` : ''}
     </div>

@@ -17,6 +17,7 @@ export interface ModuleInfo {
   isInfra: boolean;        // matched by config.ignore — intentionally system/infra file
   testType?: 'unit' | 'integration' | 'e2e';  // only for test files
   testCount?: number;      // number of it()/test() cases in a test file
+  testStale?: boolean;     // source file is newer than its test file → tests may be outdated
 }
 
 export interface CoverageInfo {
@@ -231,7 +232,17 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     }
 
     let size = 0;
-    try { size = fs.statSync(filePath).size; } catch {}
+    let mtime = 0;
+    try { const st = fs.statSync(filePath); size = st.size; mtime = st.mtimeMs; } catch {}
+
+    // testStale: source file is newer than its test file → tests may need updating
+    let testStale = false;
+    if (!isTest && testFile) {
+      try {
+        const testMtime = fs.statSync(testFile).mtimeMs;
+        testStale = mtime > testMtime;
+      } catch {}
+    }
 
     return {
       id: relativePath.replace(/[/\\]/g, '_'),
@@ -248,6 +259,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       isInfra: INFRA_FILE_PATTERNS.some(p => p.test(filePath)), // .d.ts etc — always infra
       testType: isTest ? detectTestType(relativePath) : undefined,
       testCount: isTest ? countTestCases(filePath) : undefined,
+      testStale: testStale || undefined,
     };
   });
 
