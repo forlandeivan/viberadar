@@ -455,6 +455,16 @@
       background: var(--bg-hover);
       border-width: 2px;
     }
+    .tt-run-btn {
+      display: block; width: 100%; margin-top: 8px;
+      padding: 3px 0;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 4px; color: var(--muted); font-size: 10px;
+      cursor: pointer; text-align: center;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .tt-run-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+    .tt-run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .file-rows { display: flex; flex-direction: column; gap: 2px; }
     .file-row {
       display: flex;
@@ -725,6 +735,19 @@ async function runAgentTask(task, featureKey, filePath) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task, featureKey, filePath: filePath || undefined }),
+  });
+}
+
+async function runTests(featureKey, testType) {
+  document.getElementById('agentTerminal').innerHTML = '';
+  document.getElementById('agentPanelTitle').textContent = `🧪 ${testType} тесты`;
+  document.getElementById('agentPanelStatus').textContent = 'запускаю…';
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
+  await fetch('/api/run-tests', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey, testType }),
   });
 }
 
@@ -1044,9 +1067,12 @@ function renderFeatureCards(c) {
   }
 }
 
-function testTypeCard(type, label, icon, color, count, active) {
+function testTypeCard(type, label, icon, color, count, active, featureKey) {
   const empty = count === 0 && type !== 'source';
   const subLabel = empty ? 'нет тестов' : (type === 'source' ? 'код приложения' : pluralFiles(count));
+  const runBtn = !empty && type !== 'source' && featureKey
+    ? `<button class="tt-run-btn" onclick="event.stopPropagation();runTests('${featureKey}','${type}')">▶ запустить</button>`
+    : '';
   return `
     <div class="test-type-card${empty ? ' tt-empty' : ''}${active ? ' tt-active' : ''}" data-testtype="${type}"
          style="${active ? 'border-color:' + color : ''}">
@@ -1054,6 +1080,7 @@ function testTypeCard(type, label, icon, color, count, active) {
       <div class="tt-label">${icon} ${label}</div>
       <div class="tt-count" style="color:${active || !empty ? color : 'var(--dim)'}">${count}</div>
       <div class="tt-sub">${subLabel}</div>
+      ${runBtn}
     </div>`;
 }
 
@@ -1105,10 +1132,10 @@ function renderFeatureDetail(c) {
     ${feat.description ? `<div class="drill-desc">${feat.description}</div>` : ''}
 
     <div class="test-type-grid">
-      ${testTypeCard('source',      'Файлы',       '📁', feat.color, src.length,       activeTab === 'source')}
-      ${testTypeCard('unit',        'Unit',        '🧪', '#e3b341',  unitCount,        activeTab === 'unit')}
-      ${testTypeCard('integration', 'Integration', '🔗', '#58a6ff',  integrationCount, activeTab === 'integration')}
-      ${testTypeCard('e2e',         'E2E',         '🎭', '#d2a8ff',  e2eCount,         activeTab === 'e2e')}
+      ${testTypeCard('source',      'Файлы',       '📁', feat.color, src.length,       activeTab === 'source',      drillFeatureKey)}
+      ${testTypeCard('unit',        'Unit',        '🧪', '#e3b341',  unitCount,        activeTab === 'unit',        drillFeatureKey)}
+      ${testTypeCard('integration', 'Integration', '🔗', '#58a6ff',  integrationCount, activeTab === 'integration', drillFeatureKey)}
+      ${testTypeCard('e2e',         'E2E',         '🎭', '#d2a8ff',  e2eCount,         activeTab === 'e2e',         drillFeatureKey)}
     </div>
 
     <div class="drill-section-label">${listLabel}</div>
@@ -1720,6 +1747,20 @@ function connectSSE() {
     const { message } = JSON.parse(e.data);
     document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
     appendTerminalLine('❌ ' + (message || 'Ошибка агента'), true);
+  });
+
+  es.addEventListener('tests-started', (e) => {
+    const { testType, count } = JSON.parse(e.data);
+    document.getElementById('agentPanelTitle').textContent = `🧪 ${testType} тесты`;
+    document.getElementById('agentPanelStatus').textContent = `запускаю ${count} файлов…`;
+  });
+
+  es.addEventListener('tests-done', (e) => {
+    const { passed, failed } = JSON.parse(e.data);
+    document.getElementById('agentPanelStatus').textContent =
+      failed === 0 ? `✅ ${passed} passed` : `⚠️ ${passed} passed, ${failed} failed`;
+    // Refresh data to show updated error badges
+    fetch('/api/data').then(r => r.json()).then(data => { D = data; renderContent(); });
   });
 
   es.onerror = () => {

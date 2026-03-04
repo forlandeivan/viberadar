@@ -388,6 +388,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let coverageRunning = false;
     let coverageError   = false;
     let agentRunning    = false;
+    let testsRunning    = false;
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
@@ -730,6 +731,68 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         triggerCoverage();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (url === '/api/run-tests' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', async () => {
+          if (testsRunning) {
+            res.writeHead(409); res.end(JSON.stringify({ error: 'Tests already running' })); return;
+          }
+          try {
+            const { featureKey, testType } = JSON.parse(body);
+            const testFiles = (currentData.modules || [])
+              .filter(m => m.type === 'test' && m.testType === testType && m.featureKeys?.includes(featureKey))
+              .map(m => m.path);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, count: testFiles.length }));
+
+            if (testFiles.length === 0) {
+              broadcast('tests-started', { featureKey, testType, count: 0 });
+              broadcast('agent-output', { line: `Нет ${testType} тест-файлов для этой фичи` });
+              broadcast('tests-done', { passed: 0, failed: 0 });
+              return;
+            }
+
+            testsRunning = true;
+            broadcast('tests-started', { featureKey, testType, count: testFiles.length });
+            broadcast('agent-output', { line: `🧪 Запускаю ${testType} тесты (${testFiles.length} файлов)…` });
+            process.stdout.write(`   🧪 run-tests: ${testType} ×${testFiles.length}\n`);
+
+            const result = await runTestFiles(testFiles, projectRoot);
+            testsRunning = false;
+
+            // Store per-file errors
+            lastTestResults.clear();
+            for (const [fp, detail] of Object.entries(result.fileDetails)) {
+              if (detail.failed > 0) lastTestResults.set(fp, { failed: detail.failed, errors: detail.errors });
+            }
+
+            const summary = result.failed === 0
+              ? `✅ Все тесты прошли: ${result.passed} passed`
+              : `⚠️  ${result.passed} passed, ${result.failed} failed`;
+            broadcast('agent-output', { line: summary });
+            if (result.failed > 0) {
+              for (const [fp, detail] of Object.entries(result.fileDetails)) {
+                if (detail.failed > 0) {
+                  const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+                  broadcast('agent-output', { line: `  ❌ ${rel} — ${detail.failed} упало` });
+                  for (const e of detail.errors.slice(0, 3)) {
+                    broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
+                  }
+                }
+              }
+              broadcast('agent-output', { line: '  → Нажми 🔧 исправить рядом с файлом чтобы агент починил' });
+            }
+            broadcast('tests-done', { passed: result.passed, failed: result.failed });
+          } catch (err: any) {
+            testsRunning = false;
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
         return;
       }
 
