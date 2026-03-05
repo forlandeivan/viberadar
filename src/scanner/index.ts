@@ -14,6 +14,11 @@ export interface ModuleInfo {
   size: number;
   dependencies: string[];
   featureKeys: string[];
+  isInfra: boolean;        // matched by config.ignore — intentionally system/infra file
+  testType?: 'unit' | 'integration' | 'e2e';  // only for test files
+  testCount?: number;      // number of it()/test() cases in a test file
+  testStale?: boolean;     // source file is newer than its test file → tests may be outdated
+  suggestedTestType?: 'unit' | 'integration'; // recommended test type based on source imports
 }
 
 export interface CoverageInfo {
@@ -34,6 +39,8 @@ export interface FeatureConfig {
 
 export interface VibeRadarConfig {
   version: string;
+  agent?: 'claude' | 'codex';  // AI agent CLI to use
+  ignore?: string[];   // glob patterns for infra/system files (excluded from unmapped)
   features: Record<string, FeatureConfig>;
 }
 
@@ -42,10 +49,13 @@ export interface FeatureResult {
   label: string;
   description: string;
   color: string;
-  fileCount: number;     // source (non-test) files matched
-  testFileCount: number; // test files matched
-  testedCount: number;   // source files that have a test
-  coveragePct?: number;  // average line coverage
+  fileCount: number;          // source (non-test) files matched
+  testFileCount: number;      // all test files matched
+  testedCount: number;        // source files that have a test
+  coveragePct?: number;       // average line coverage
+  unitTestCount: number;      // test files of type 'unit'
+  integrationTestCount: number;
+  e2eTestCount: number;
 }
 
 export interface ScanResult {
@@ -56,6 +66,9 @@ export interface ScanResult {
   totalCoverage?: CoverageInfo;
   features: FeatureResult[] | null;
   hasConfig: boolean;
+  infraCount: number;  // files matched by config.ignore
+  agent?: 'claude' | 'codex';  // configured AI agent
+  testRunner?: string;          // detected test runner (vitest/jest)
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -66,7 +79,8 @@ const IGNORE_DIRS = [
 ];
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
-const TEST_PATTERNS = ['.test.', '.spec.', '__tests__'];
+const TEST_PATTERNS = ['.test.', '.spec.', '__tests__', '.fixture.'];
+const INFRA_FILE_PATTERNS = [/\.d\.ts$/];  // type declarations — never source files
 
 // ─── Glob pattern matcher ─────────────────────────────────────────────────────
 
@@ -90,8 +104,74 @@ function fileMatchesGlob(relPath: string, pattern: string): boolean {
   }
 }
 
+/** Expand {a,b,c} brace alternatives into multiple patterns */
+function expandBraces(pattern: string): string[] {
+  const m = pattern.match(/\{([^{}]+)\}/);
+  if (!m) return [pattern];
+  const [full, contents] = m;
+  return contents.split(',').flatMap(opt =>
+    expandBraces(pattern.replace(full, opt.trim()))
+  );
+}
+
 function fileMatchesFeature(relPath: string, include: string[]): boolean {
-  return include.some(p => fileMatchesGlob(relPath, p));
+  return include.some(p => expandBraces(p).some(exp => fileMatchesGlob(relPath, exp)));
+}
+
+// Imports that indicate a real DB / infra dependency → integration test
+const INTEGRATION_IMPORT_PATTERNS = [
+  /test-helpers/,
+  /pg-mem/,
+  /createTestDb/,
+  /\.\.\/server\/db\b/,
+  /drizzle-orm/,
+  /supertest/,
+];
+
+// Source file imports that suggest integration test is needed
+const SOURCE_INTEGRATION_PATTERNS = [
+  /drizzle-orm/,
+  /\.\/db\b/,
+  /\.\.\/db\b/,
+  /repository/i,
+  /Repository/,
+  /\.\/storage\b/,
+  /\.\.\/storage\b/,
+  /prisma/i,
+  /sequelize/i,
+  /mongoose/i,
+  /typeorm/i,
+  /knex/i,
+];
+
+/** Recommend test type for a SOURCE file based on its imports */
+function suggestTestType(filePath: string): 'unit' | 'integration' {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return SOURCE_INTEGRATION_PATTERNS.some(re => re.test(content))
+      ? 'integration'
+      : 'unit';
+  } catch {
+    return 'unit';
+  }
+}
+
+/** Classify a test file into unit / integration / e2e based on location + imports */
+function detectTestType(relativePath: string, filePath?: string): 'unit' | 'integration' | 'e2e' {
+  const p = relativePath.replace(/\\/g, '/');
+  if (p.startsWith('e2e/') || p.includes('/e2e/')) return 'e2e';
+
+  // For files in tests/ dir: check imports to distinguish unit vs integration
+  if ((p.startsWith('tests/') || p.includes('/tests/')) && filePath) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const isIntegration = INTEGRATION_IMPORT_PATTERNS.some(re => re.test(content));
+      return isIntegration ? 'integration' : 'unit';
+    } catch {}
+    return 'integration'; // fallback
+  }
+
+  return 'unit'; // co-located with source
 }
 
 // ─── Module detection helpers ─────────────────────────────────────────────────
@@ -104,6 +184,17 @@ function detectType(filePath: string): ModuleInfo['type'] {
   if (p.includes('/util') || p.includes('/helper') || p.includes('/lib')) return 'util';
   if (p.includes('config') || p.endsWith('.config.ts') || p.endsWith('.config.js')) return 'config';
   return 'other';
+}
+
+function countTestCases(filePath: string): number {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    // Match it( / it.only( / it.skip( / test( / test.only( / test.skip(
+    const re = /\b(it|test)\s*[\.(]/g;
+    return (content.match(re) || []).length;
+  } catch {
+    return 0;
+  }
 }
 
 function extractDependencies(filePath: string): string[] {
@@ -190,7 +281,19 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     }
 
     let size = 0;
-    try { size = fs.statSync(filePath).size; } catch {}
+    let mtime = 0;
+    try { const st = fs.statSync(filePath); size = st.size; mtime = st.mtimeMs; } catch {}
+
+    const isInfra = INFRA_FILE_PATTERNS.some(p => p.test(filePath));
+
+    // testStale: source file is newer than its test file → tests may need updating
+    let testStale = false;
+    if (!isTest && testFile) {
+      try {
+        const testMtime = fs.statSync(testFile).mtimeMs;
+        testStale = mtime > testMtime;
+      } catch {}
+    }
 
     return {
       id: relativePath.replace(/[/\\]/g, '_'),
@@ -204,6 +307,11 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       size,
       dependencies: extractDependencies(filePath),
       featureKeys: [], // filled below
+      isInfra,
+      testType: isTest ? detectTestType(relativePath, filePath) : undefined,
+      testCount: isTest ? countTestCases(filePath) : undefined,
+      testStale: testStale || undefined,
+      suggestedTestType: (!isTest && !isInfra) ? suggestTestType(filePath) : undefined,
     };
   });
 
@@ -219,13 +327,19 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
   }
 
   // Build map: cleanName → test file absolute path (first match wins)
+  // Indexes both the full first dot-segment AND each individual dash-part so that
+  // e.g. "webhook-send-json.test.ts" is found when searching for "webhook".
   const testByCleanName = new Map<string, string>();
   for (const tf of testFileSet) {
-    let base = path.basename(tf, path.extname(tf)); // e.g. "auth.test" or "chat.spec"
-    base = base.replace(/\.(test|spec)$/, '');       // → "auth"
-    const clean = cleanName(base.split('.')[0]);     // first dot-segment, cleaned
-    if (!testByCleanName.has(clean)) {
-      testByCleanName.set(clean, tf);
+    let base = path.basename(tf, path.extname(tf)); // e.g. "auth.test" or "webhook-send-json.test"
+    base = base.replace(/\.(test|spec)$/, '');       // → "auth" | "webhook-send-json"
+    const firstDotSeg = base.split('.')[0];          // first dot-segment
+    const segsToIndex = [firstDotSeg, ...firstDotSeg.split('-')];
+    for (const seg of segsToIndex) {
+      const clean = cleanName(seg);
+      if (clean.length >= 4 && !testByCleanName.has(clean)) {
+        testByCleanName.set(clean, tf);
+      }
     }
   }
 
@@ -258,6 +372,14 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
 
   if (config) {
     const featureEntries = Object.entries(config.features);
+    const ignorePatterns = config.ignore ?? [];
+
+    // Mark infra modules (OR with already-set isInfra from INFRA_FILE_PATTERNS)
+    if (ignorePatterns.length > 0) {
+      for (const m of modules) {
+        m.isInfra = m.isInfra || fileMatchesFeature(m.relativePath, ignorePatterns);
+      }
+    }
 
     // Assign feature keys to each module
     for (const m of modules) {
@@ -269,9 +391,27 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     const sourceModules = modules.filter(m => m.type !== 'test');
     const testModules   = modules.filter(m => m.type === 'test');
 
+    // ── Propagate feature keys from source files → their fuzzy-matched test files ──
+    // This ensures e.g. tests/auth.test.ts gets featureKey 'auth' even if
+    // it's not directly matched by the feature's include patterns.
+    const testModByRelPath = new Map<string, ModuleInfo>();
+    for (const m of testModules) {
+      testModByRelPath.set(m.relativePath.replace(/\\/g, '/'), m);
+    }
+    for (const m of sourceModules) {
+      if (m.testFile && m.featureKeys.length > 0) {
+        const testMod = testModByRelPath.get(m.testFile.replace(/\\/g, '/'));
+        if (testMod) {
+          for (const key of m.featureKeys) {
+            if (!testMod.featureKeys.includes(key)) testMod.featureKeys.push(key);
+          }
+        }
+      }
+    }
+
     features = featureEntries.map(([key, feat]) => {
-      const srcFiles = sourceModules.filter(m => fileMatchesFeature(m.relativePath, feat.include));
-      const tstFiles = testModules.filter(m => fileMatchesFeature(m.relativePath, feat.include));
+      const srcFiles = sourceModules.filter(m => m.featureKeys.includes(key));
+      const tstFiles = testModules.filter(m => m.featureKeys.includes(key));
       const testedCount = srcFiles.filter(m => m.hasTests).length;
       const covFiles = srcFiles.filter(m => m.coverage?.lines !== undefined);
       const coveragePct = covFiles.length > 0
@@ -287,9 +427,22 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
         testFileCount: tstFiles.length,
         testedCount,
         coveragePct,
+        unitTestCount:        tstFiles.filter(m => m.testType === 'unit').length,
+        integrationTestCount: tstFiles.filter(m => m.testType === 'integration').length,
+        e2eTestCount:         tstFiles.filter(m => m.testType === 'e2e').length,
       };
     });
   }
+
+  // Detect test runner from package.json
+  let testRunner: string | undefined;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const scripts = pkg.scripts || {};
+    if (deps['vitest'] || scripts['test']?.includes('vitest')) testRunner = 'vitest';
+    else if (deps['jest'] || scripts['test']?.includes('jest')) testRunner = 'jest';
+  } catch {}
 
   return {
     projectRoot,
@@ -298,5 +451,8 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     modules,
     features,
     hasConfig: config !== null,
+    infraCount: modules.filter(m => m.isInfra).length,
+    agent: config?.agent,
+    testRunner,
   };
 }

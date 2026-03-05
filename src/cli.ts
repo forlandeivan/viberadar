@@ -17,7 +17,7 @@ async function runDashboard() {
 
   console.log(`   Found ${data.modules.length} modules`);
 
-  await startServer({ data, port: PORT, projectRoot: PROJECT_ROOT });
+  const { triggerCoverage } = await startServer({ data, port: PORT, projectRoot: PROJECT_ROOT });
 
   console.log(`\n✅ Dashboard: http://localhost:${PORT}`);
   console.log('   Press Ctrl+C to stop\n');
