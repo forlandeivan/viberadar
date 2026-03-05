@@ -46,8 +46,8 @@
     .header-project { margin-left: auto; font-size: 13px; color: var(--muted); }
     .header-time    { font-size: 12px; color: var(--dim); }
 
-    /* ── Coverage button ─────────────────────────────────────────────────────── */
-    #covBtn {
+    /* ── Run All Tests button ────────────────────────────────────────────────── */
+    #runAllBtn {
       padding: 5px 12px;
       background: var(--bg);
       border: 1px solid var(--border);
@@ -61,11 +61,11 @@
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    #covBtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
-    #covBtn:disabled              { cursor: not-allowed; opacity: 0.7; }
-    #covBtn.cov-running  { color: var(--yellow); border-color: var(--yellow); }
-    #covBtn.cov-error    { color: var(--red);    border-color: var(--red); }
-    #covBtn.cov-done     { color: var(--green);  border-color: var(--green); }
+    #runAllBtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+    #runAllBtn:disabled { cursor: not-allowed; opacity: 0.7; }
+    #runAllBtn.running { color: var(--yellow); border-color: var(--yellow); }
+    #runAllBtn.done-ok { color: var(--green);  border-color: var(--green); }
+    #runAllBtn.done-fail { color: var(--red);  border-color: var(--red); }
     #termBtn {
       padding: 5px 12px;
       background: var(--bg);
@@ -794,7 +794,7 @@
   <h1>VibeRadar</h1>
   <span class="header-project" id="projectName">—</span>
   <span class="header-time" id="scannedAt"></span>
-  <button id="covBtn" onclick="runCoverage()" title="Запустить тесты с coverage">🧪 Coverage</button>
+  <button id="runAllBtn" onclick="runAllTests()" title="Запустить все unit и integration тесты">▶ Все тесты</button>
   <button id="termBtn" onclick="toggleAgentPanel()" title="Показать/скрыть терминал агента">📟 Terminal</button>
   <div style="position:relative">
     <button id="agentBtn" onclick="toggleAgentMenu()" title="Настройки агента">🤖 —</button>
@@ -876,30 +876,32 @@ let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string 
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
-let coverageRunning = false;
-let coverageHasError = false;
+// ─── Run All Tests button ──────────────────────────────────────────────────────
+let runAllRunning = false;
 
-// ─── Coverage button ───────────────────────────────────────────────────────────
-function updateCovBtn() {
-  const btn = document.getElementById('covBtn');
+function updateRunAllBtn(state) {
+  const btn = document.getElementById('runAllBtn');
   if (!btn) return;
-  btn.className = '';
-  btn.disabled = coverageRunning;
-  if (coverageRunning) {
-    btn.className = 'cov-running';
-    btn.textContent = '⏳ Running...';
-  } else if (coverageHasError) {
-    btn.className = 'cov-error';
-    btn.textContent = '❌ Coverage failed';
+  btn.className = state || '';
+  btn.disabled = state === 'running';
+  if (state === 'running') {
+    btn.textContent = '⏳ Тесты...';
+  } else if (state === 'done-ok') {
+    btn.textContent = '✅ Все прошли';
+    setTimeout(() => updateRunAllBtn(null), 5000);
+  } else if (state === 'done-fail') {
+    btn.textContent = '❌ Есть падения';
+    setTimeout(() => updateRunAllBtn(null), 8000);
   } else {
-    btn.textContent = '🧪 Coverage';
+    btn.textContent = '▶ Все тесты';
   }
 }
 
-async function runCoverage() {
-  if (coverageRunning) return;
-  await fetch('/api/run-coverage', { method: 'POST' });
-  // SSE events will update state
+async function runAllTests() {
+  if (runAllRunning) return;
+  runAllRunning = true;
+  updateRunAllBtn('running');
+  await fetch('/api/run-all-tests', { method: 'POST' });
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
@@ -1344,10 +1346,8 @@ async function init() {
 
     if (statusRes) {
       const status = await statusRes.json().catch(() => ({}));
-      coverageRunning  = status.coverageRunning  ?? false;
-      coverageHasError = status.coverageError    ?? false;
+      D.agentRunning = status.agentRunning ?? false;
     }
-    updateCovBtn();
     updateAgentBtn();
 
     document.getElementById('projectName').textContent = D.projectName;
@@ -1829,7 +1829,7 @@ function renderFeatureDetail(c) {
         <span style="color:${covColor(pct)}">${pct}% с тестами</span>
         ${feat.coveragePct != null
           ? `<span style="color:${covColor(Math.round(feat.coveragePct))};font-weight:700">${Math.round(feat.coveragePct)}% coverage</span>`
-          : `<span style="color:var(--dim);font-size:11px" title="Нажми 🧪 Coverage в шапке">coverage: нет данных</span>`
+          : `<span style="color:var(--dim);font-size:11px" title="Coverage не запускался">coverage: нет данных</span>`
         }
       </div>
     </div>
@@ -2408,26 +2408,6 @@ function connectSSE() {
     refreshData();
   });
 
-  es.addEventListener('coverage-started', () => {
-    coverageRunning  = true;
-    coverageHasError = false;
-    updateCovBtn();
-  });
-
-  es.addEventListener('coverage-done', () => {
-    coverageRunning  = false;
-    coverageHasError = false;
-    updateCovBtn();
-    // data-updated fires separately and triggers refreshData()
-  });
-
-  es.addEventListener('coverage-error', () => {
-    coverageRunning  = false;
-    coverageHasError = true;
-    updateCovBtn();
-    setTimeout(() => { coverageHasError = false; updateCovBtn(); }, 8000);
-  });
-
   es.addEventListener('agent-queued', (e) => {
     const { queueLength, title, task, featureKey, filePath } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
@@ -2561,16 +2541,24 @@ function connectSSE() {
 
   es.addEventListener('tests-started', (e) => {
     const { testType, count } = JSON.parse(e.data);
-    const id = createSession(`🧪 ${testType}`);
+    const label = testType === 'all' ? 'Все тесты' : `🧪 ${testType}`;
+    const id = createSession(label);
     runningSessionId = id;
-    appendToSession(id, `Запускаю ${testType} тесты (${count} файлов)…`);
-    document.getElementById('agentPanelTitle').textContent = `🧪 ${testType} тесты`;
+    appendToSession(id, `Запускаю ${testType === 'all' ? 'все' : testType} тесты (${count} файлов)…`);
+    document.getElementById('agentPanelTitle').textContent = label;
     document.getElementById('agentPanelStatus').textContent = `запускаю ${count} файлов…`;
+    if (testType === 'all') {
+      document.getElementById('agentPanel').classList.add('open');
+      document.getElementById('termBtn').classList.add('term-active');
+    }
   });
 
   es.addEventListener('tests-done', (e) => {
     const { passed, failed, testErrors } = JSON.parse(e.data);
     const status = failed === 0 ? 'ok' : 'error';
+    // Update Run All button state
+    runAllRunning = false;
+    updateRunAllBtn(failed === 0 ? 'done-ok' : 'done-fail');
     if (runningSessionId) {
       updateSessionStatus(runningSessionId, status);
       if (activeSessionId === runningSessionId) {

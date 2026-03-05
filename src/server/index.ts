@@ -14,7 +14,6 @@ interface ServerOptions {
 
 export interface ServerHandle {
   server: http.Server;
-  triggerCoverage: () => void;
 }
 
 const DASHBOARD_HTML = fs.readFileSync(
@@ -553,68 +552,6 @@ function buildWriteE2eTestPrompt(feat: FeatureResult, plan: E2ePlan, modules: Mo
   ].filter(Boolean).join('\n');
 }
 
-// ─── Coverage provider auto-install ──────────────────────────────────────────
-
-function autoInstallCoverageProvider(projectRoot: string): Promise<boolean> {
-  return new Promise(resolve => {
-    // Detect vitest version to install matching coverage package
-    let vitestVersion = 'latest';
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      const raw = deps['vitest'] as string | undefined;
-      if (raw) vitestVersion = raw.replace(/[\^~>=<\s]/g, '') || 'latest';
-    } catch {}
-
-    const pkg = `@vitest/coverage-v8@${vitestVersion}`;
-    process.stdout.write(`   📦 Installing ${pkg}...\n`);
-
-    const proc = spawn('npm', ['install', '--save-dev', '--legacy-peer-deps', pkg], {
-      cwd: projectRoot,
-      shell: true,
-      stdio: 'pipe',
-    });
-
-    let stderr = '';
-    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        process.stdout.write(`   ✅ Installed ${pkg}\n`);
-        resolve(true);
-      } else {
-        process.stdout.write(`   ❌ Failed to install ${pkg}: ${stderr.slice(0, 200)}\n`);
-        resolve(false);
-      }
-    });
-
-    proc.on('error', (err) => {
-      process.stdout.write(`   ❌ Install error: ${err.message}\n`);
-      resolve(false);
-    });
-  });
-}
-
-// ─── Coverage command detection ───────────────────────────────────────────────
-
-function detectCoverageCommand(projectRoot: string): { cmd: string; args: string[] } {
-  try {
-    const pkgPath = path.join(projectRoot, 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      const scripts = pkg.scripts || {};
-      if (deps['vitest'] || scripts['test']?.includes('vitest')) {
-        return { cmd: 'npx', args: ['vitest', 'run', '--coverage'] };
-      }
-      if (deps['jest'] || scripts['test']?.includes('jest')) {
-        return { cmd: 'npx', args: ['jest', '--coverage', '--coverageReporters=json-summary'] };
-      }
-    }
-  } catch {}
-  return { cmd: 'npm', args: ['test', '--', '--coverage'] };
-}
-
 // ─── Main server ──────────────────────────────────────────────────────────────
 
 export function startServer({ data: initialData, port, projectRoot }: ServerOptions): Promise<ServerHandle> {
@@ -623,8 +560,6 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let currentData = initialData;
 
     // ── State ──────────────────────────────────────────────────────────────────
-    let coverageRunning = false;
-    let coverageError   = false;
     let agentRunning    = false;
     let testsRunning    = false;
     const agentQueue: AgentQueueItem[] = [];
@@ -665,69 +600,6 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }, 600);
     }
 
-    // ── Coverage runner ────────────────────────────────────────────────────────
-    function triggerCoverage() {
-      if (coverageRunning) {
-        process.stdout.write('   ⏳ Coverage already running, skipping\n');
-        return;
-      }
-      coverageRunning = true;
-      coverageError   = false;
-      broadcast('coverage-started');
-
-      const { cmd, args } = detectCoverageCommand(projectRoot);
-      process.stdout.write(`   🧪 Running coverage: ${cmd} ${args.join(' ')}\n`);
-
-      const proc = spawn(cmd, args, { cwd: projectRoot, shell: true, stdio: 'pipe' });
-
-      let coverageStderr = '';
-      proc.stderr?.on('data', (d: Buffer) => { coverageStderr += d.toString(); });
-
-      proc.on('close', async (code) => {
-        coverageRunning = false;
-        if (code === 0) {
-          process.stdout.write('   ✅ Coverage done, rescanning...\n');
-          try {
-            currentData = await scanProject(projectRoot);
-            broadcast('data-updated');
-            broadcast('coverage-done');
-          } catch (err: any) {
-            process.stdout.write('   ❌ Rescan after coverage failed: ' + err.message + '\n');
-            broadcast('coverage-error');
-          }
-        } else {
-          const isMissingProvider =
-            coverageStderr.includes('@vitest/coverage') ||
-            coverageStderr.includes('coverage provider') ||
-            coverageStderr.includes('Cannot find package') ||
-            coverageStderr.includes('ERR_MODULE_NOT_FOUND');
-
-          if (isMissingProvider && currentData.testRunner === 'vitest') {
-            // Auto-install matching @vitest/coverage-v8
-            autoInstallCoverageProvider(projectRoot).then(ok => {
-              if (ok) {
-                process.stdout.write('   🔄 Retrying coverage after install...\n');
-                triggerCoverage();
-              } else {
-                coverageError = true;
-                broadcast('coverage-error');
-              }
-            });
-          } else {
-            coverageError = true;
-            process.stdout.write(`   ❌ Coverage failed (exit code ${code})\n`);
-            broadcast('coverage-error');
-          }
-        }
-      });
-
-      proc.on('error', (err) => {
-        coverageRunning = false;
-        coverageError   = true;
-        process.stdout.write('   ❌ Coverage spawn error: ' + err.message + '\n');
-        broadcast('coverage-error');
-      });
-    }
 
     // ── Agent runner ───────────────────────────────────────────────────────────
 
@@ -1106,14 +978,62 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (url === '/api/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ coverageRunning, coverageError, agentRunning, queueLength: agentQueue.length }));
+        res.end(JSON.stringify({ agentRunning, queueLength: agentQueue.length }));
         return;
       }
 
-      if (url === '/api/run-coverage' && req.method === 'POST') {
-        triggerCoverage();
+      if (url === '/api/run-all-tests' && req.method === 'POST') {
+        if (testsRunning) {
+          res.writeHead(409); res.end(JSON.stringify({ error: 'Tests already running' })); return;
+        }
+        const allTestFiles = (currentData.modules || [])
+          .filter(m => m.type === 'test' && m.testType !== 'e2e')
+          .map(m => m.path);
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        res.end(JSON.stringify({ ok: true, count: allTestFiles.length }));
+
+        if (allTestFiles.length === 0) {
+          broadcast('tests-started', { featureKey: null, testType: 'all', count: 0 });
+          broadcast('agent-output', { line: 'Нет unit/integration тест-файлов в проекте' });
+          broadcast('tests-done', { passed: 0, failed: 0 });
+          return;
+        }
+
+        testsRunning = true;
+        broadcast('tests-started', { featureKey: null, testType: 'all', count: allTestFiles.length });
+        broadcast('agent-output', { line: `🧪 Запускаю все тесты (${allTestFiles.length} файлов)…` });
+        process.stdout.write(`   🧪 run-all-tests: ×${allTestFiles.length}\n`);
+
+        runTestFiles(allTestFiles, projectRoot).then(result => {
+          testsRunning = false;
+          lastTestResults.clear();
+          for (const [fp, detail] of Object.entries(result.fileDetails)) {
+            if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
+          }
+          const summary = result.runError
+            ? `❌ Тесты не запустились: ${result.runError}`
+            : result.failed === 0
+              ? `✅ Все тесты прошли: ${result.passed} passed`
+              : `⚠️  ${result.passed} passed, ${result.failed} failed`;
+          broadcast('agent-output', { line: summary });
+          if (result.failed > 0) {
+            for (const [fp, detail] of Object.entries(result.fileDetails)) {
+              if (detail.failed > 0) {
+                const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+                broadcast('agent-output', { line: `  ❌ ${rel} — ${detail.failed} упало` });
+                for (const e of detail.errors.slice(0, 2)) {
+                  broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
+                }
+              }
+            }
+          }
+          const testErrorsForClient: Record<string, { failed: number; errors: TestFileError[] }> = {};
+          for (const [fp, detail] of lastTestResults) {
+            testErrorsForClient[path.relative(projectRoot, fp).replace(/\\/g, '/')] = detail;
+          }
+          broadcast('tests-done', { passed: result.passed, failed: result.failed, testErrors: testErrorsForClient });
+        });
         return;
       }
 
@@ -1416,7 +1336,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
     });
 
-    server.listen(port, '127.0.0.1', () => resolve({ server, triggerCoverage }));
+    server.listen(port, '127.0.0.1', () => resolve({ server }));
 
     process.once('SIGINT', () => {
       console.log('\n👋 VibeRadar stopped.');
