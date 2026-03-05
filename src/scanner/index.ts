@@ -40,6 +40,7 @@ export interface FeatureConfig {
 export interface VibeRadarConfig {
   version: string;
   agent?: 'claude' | 'codex';  // AI agent CLI to use
+  model?: string;               // Claude model override (e.g. claude-opus-4-5, claude-sonnet-4-6)
   ignore?: string[];   // glob patterns for infra/system files (excluded from unmapped)
   features: Record<string, FeatureConfig>;
 }
@@ -68,6 +69,7 @@ export interface ScanResult {
   hasConfig: boolean;
   infraCount: number;  // files matched by config.ignore
   agent?: 'claude' | 'codex';  // configured AI agent
+  model?: string;               // configured Claude model
   testRunner?: string;          // detected test runner (vitest/jest)
 }
 
@@ -453,6 +455,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     hasConfig: config !== null,
     infraCount: modules.filter(m => m.isInfra).length,
     agent: config?.agent,
+    model: config?.model,
     testRunner,
   };
 }

@@ -31,16 +31,17 @@ const WIN = process.platform === 'win32';
  * --output-format stream-json gives real-time events (tool calls, writes, etc.)
  * File piping avoids TUI mode in Claude Code v2+.
  */
-function buildAgentShellCmd(agent: string, taskFile: string): string {
+function buildAgentShellCmd(agent: string, taskFile: string, model?: string): string {
   const escaped = taskFile.replace(/\\/g, '\\\\');
+  const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
   if (WIN) {
-    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json`;
-    if (agent === 'codex')  return `type "${escaped}" | codex.cmd`;
+    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
+    if (agent === 'codex')  return `type "${escaped}" | codex.cmd exec - --color never --sandbox workspace-write`;
   } else {
-    if (agent === 'claude') return `claude --print --verbose --output-format stream-json < "${escaped}"`;
-    if (agent === 'codex')  return `codex < "${escaped}"`;
+    if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
+    if (agent === 'codex')  return `codex exec - --color never --sandbox workspace-write < "${escaped}"`;
   }
-  return `claude --print --verbose --output-format stream-json < "${escaped}"`;
+  return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
 }
 
 /** Parse a Claude Code stream-json event into a human-readable line, or null to skip */
@@ -113,26 +114,66 @@ interface TestRunResult extends Record<string, unknown> {
   failed: number;
   files: string[];
   fileDetails: Record<string, TestFileDetail>; // absolute path → detail
+  runError?: string; // set when tests couldn't start (import/syntax error)
+}
+
+interface AgentQueueItem {
+  task: 'write-tests' | 'write-tests-file' | 'fix-tests' | 'fix-tests-all' | 'map-unmapped';
+  featureKey?: string;
+  filePath?: string;
+  title: string;
+  agent: string;
+  // Prompt is NOT pre-built — it is constructed lazily in executeAgentItem() to save memory.
+  // For fix tasks we snapshot only the small error data at queue time (not the full prompt).
+  savedErrors?: TestFileError[];                                    // fix-tests
+  savedFailedFiles?: { filePath: string; errors: TestFileError[] }[]; // fix-tests-all
+  savedTestType?: string;                                           // fix-tests-all
+}
+
+/**
+ * Normalize a file path (possibly git-bash style /c/Users/...) to a path
+ * relative to projectRoot, so vitest can always find it regardless of OS.
+ */
+function toRelativeTestPath(filePath: string, projectRoot: string): string {
+  // Convert git-bash absolute path (/c/Users/foo) → Windows-style (c:/Users/foo)
+  const normalized = filePath.replace(/^\/([a-zA-Z])\//, '$1:/').replace(/\\/g, '/');
+  const rootNorm = projectRoot.replace(/\\/g, '/');
+  if (normalized.startsWith(rootNorm + '/')) {
+    return normalized.slice(rootNorm.length + 1); // relative, forward slashes
+  }
+  // Already relative or unrecognized format — return as-is
+  return filePath.replace(/\\/g, '/');
 }
 
 function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResult> {
   return new Promise((resolve) => {
+    const relFiles = files.map(f => toRelativeTestPath(f, projectRoot));
     const proc = spawn(
-      'npx', ['vitest', 'run', '--reporter=json', ...files],
+      'npx', ['vitest', 'run', '--reporter=json', ...relFiles],
       { cwd: projectRoot, shell: true, stdio: 'pipe' }
     );
     let stdout = '';
+    let stderr = '';
     proc.stdout?.on('data', (d: Buffer) => stdout += d.toString());
-    proc.on('close', () => {
+    proc.stderr?.on('data', (d: Buffer) => stderr += d.toString());
+    proc.on('close', (code) => {
       try {
         // vitest --reporter=json wraps output; find the JSON object
         const match = stdout.match(/\{[\s\S]*"testResults"[\s\S]*\}/);
-        const json  = JSON.parse(match ? match[0] : stdout);
+        if (!match) {
+          // JSON not found — tests likely failed to start (import error, syntax error, etc.)
+          const hint = (stderr || stdout).split('\n')
+            .filter(l => l.trim() && !l.includes('VITE') && !l.includes('Duration'))
+            .slice(0, 5).join('\n');
+          resolve({ passed: 0, failed: files.length, files, fileDetails: {}, runError: hint || `exit code ${code}` });
+          return;
+        }
+        const json = JSON.parse(match[0]);
 
         // Extract per-file failure details
         const fileDetails: Record<string, TestFileDetail> = {};
         for (const tr of (json.testResults ?? [])) {
-          const fp: string = tr.testFilePath ?? '';
+          const fp: string = tr.name ?? tr.testFilePath ?? '';
           const errors: TestFileError[] = [];
           for (const ar of (tr.assertionResults ?? [])) {
             if (ar.status === 'failed') {
@@ -155,33 +196,67 @@ function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResu
           files,
           fileDetails,
         });
-      } catch {
-        resolve({ passed: 0, failed: 0, files, fileDetails: {} });
+      } catch (e: any) {
+        const hint = (stderr || stdout).split('\n').filter(l => l.trim()).slice(0, 5).join('\n');
+        resolve({ passed: 0, failed: files.length, files, fileDetails: {}, runError: hint || e.message });
       }
     });
-    proc.on('error', () => resolve({ passed: 0, failed: 0, files, fileDetails: {} }));
+    proc.on('error', (err) => resolve({ passed: 0, failed: files.length, files, fileDetails: {}, runError: err.message }));
   });
 }
 
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
+/** Safely read a file, return null if not found */
+function tryReadFile(absPath: string): string | null {
+  try { return fs.readFileSync(absPath, 'utf-8'); } catch { return null; }
+}
+
+const FILE_BLOCK_LINE_LIMIT = 500;
+
+/** Embed file content as a fenced code block in prompt.
+ *  For large files (> FILE_BLOCK_LINE_LIMIT lines) only embeds the first 200 lines
+ *  (imports + types) and instructs the agent to read the full file by path. */
+function fileBlock(relPath: string, absPath: string): string {
+  const content = tryReadFile(absPath);
+  if (!content) return '';
+  const ext = absPath.split('.').pop() ?? 'ts';
+  const lines = content.split('\n');
+  if (lines.length > FILE_BLOCK_LINE_LIMIT) {
+    const preview = lines.slice(0, 200).join('\n');
+    return `### \`${relPath}\`\n_Файл большой (${lines.length} строк) — ниже первые 200 строк для контекста. Прочитай полный файл по пути: \`${absPath}\`_\n\`\`\`${ext}\n${preview}\n\`\`\``;
+  }
+  return `### \`${relPath}\`\n\`\`\`${ext}\n${content}\n\`\`\``;
+}
+
+/**
+ * Pick up to `n` example test files most relevant to `forRelPath`.
+ * Prefer tests in the same directory (e.g. tests/client/ for client/src/pages/).
+ */
+function pickExampleTests(forRelPath: string, testModules: ModuleInfo[], n = 2): ModuleInfo[] {
+  const isClient = forRelPath.includes('client/');
+  const preferred = testModules.filter(m =>
+    isClient ? m.relativePath.includes('client') : !m.relativePath.includes('client')
+  );
+  const pool = preferred.length > 0 ? preferred : testModules;
+  return pool.slice(0, n);
+}
+
 function buildWriteTestsPrompt(
   feat: FeatureResult,
   modules: ModuleInfo[],
   testRunner: string,
+  projectRoot: string,
 ): string {
   const untestedMods = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.hasTests && !m.isInfra);
 
-  const untestedPaths = untestedMods.map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
-
-  const existing = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
-    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  const existingTestMods = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test');
 
   const hasNoTestInfra = modules.filter(m => m.type === 'test').length === 0;
 
-  // Split by suggested type and give explicit guidance
+  // Split by suggested type
   const unitFiles = untestedMods.filter(m => (m.suggestedTestType ?? 'unit') === 'unit');
   const integrationFiles = untestedMods.filter(m => m.suggestedTestType === 'integration');
   const typeSummary = [
@@ -193,28 +268,67 @@ function buildWriteTestsPrompt(
       : '',
   ].filter(Boolean).join('\n');
 
+  // Embed source file contents (cap at 8 files to avoid huge prompts)
+  const sourceBlocks = untestedMods.slice(0, 8).map(m =>
+    fileBlock(m.relativePath.replace(/\\/g, '/'), m.path)
+  ).filter(Boolean);
+
+  // Pick example tests separately for client and server files
+  const clientMods  = untestedMods.filter(m => m.relativePath.includes('client/'));
+  const serverMods  = untestedMods.filter(m => !m.relativePath.includes('client/'));
+  const allTestMods = existingTestMods.length > 0 ? existingTestMods
+    : modules.filter(m => m.type === 'test');
+
+  const exampleSet = new Map<string, ModuleInfo>();
+  if (clientMods.length > 0) {
+    pickExampleTests(clientMods[0].relativePath, allTestMods, 1)
+      .forEach(m => exampleSet.set(m.path, m));
+  }
+  if (serverMods.length > 0) {
+    pickExampleTests(serverMods[0].relativePath, allTestMods, 1)
+      .forEach(m => exampleSet.set(m.path, m));
+  }
+  if (exampleSet.size === 0) {
+    pickExampleTests('', allTestMods, 2).forEach(m => exampleSet.set(m.path, m));
+  }
+  const exampleBlocks = [...exampleSet.values()].map(m =>
+    fileBlock(m.relativePath.replace(/\\/g, '/'), m.path)
+  ).filter(Boolean);
+
+  // Embed test infrastructure: setup.ts + test-helpers.ts
+  const infraBlocks: string[] = [];
+  const setupPath   = path.join(projectRoot, 'tests', 'setup.ts');
+  const helpersPath = path.join(projectRoot, 'tests', 'test-helpers.ts');
+  if (tryReadFile(setupPath))   infraBlocks.push(fileBlock('tests/setup.ts',        setupPath));
+  if (tryReadFile(helpersPath)) infraBlocks.push(fileBlock('tests/test-helpers.ts', helpersPath));
+
   return [
     `Напиши тесты для фичи "${feat.label}".`,
     ``,
-    `Файлов без тестов (${untestedMods.length}):`,
-    ...untestedPaths,
-    ``,
     typeSummary ? `Рекомендации по типам тестов:\n${typeSummary}` : '',
     ``,
-    existing.length > 0
-      ? `Существующие тест-файлы (для справки по паттернам):\n${existing.join('\n')}`
-      : '',
+    `## Исходные файлы для покрытия`,
+    ...sourceBlocks,
+    ``,
+    exampleBlocks.length > 0 ? `## Примеры тестов (следуй этим паттернам)` : '',
+    ...exampleBlocks,
+    ``,
+    infraBlocks.length > 0 ? `## Тестовая инфраструктура` : '',
+    ...infraBlocks,
     ``,
     hasNoTestInfra
       ? `⚠️ В проекте пока нет ни одного теста. Если нужна тестовая инфраструктура (test-helpers.ts, vitest.config.ts) — создай её сначала.`
       : '',
-    ``,
-    `Требования:`,
+    `## Требования`,
     `- Используй ${testRunner}`,
-    `- Следуй паттернам существующих тестов в проекте`,
-    `- Для каждого файла создай соответствующий тест-файл`,
+    `- Для каждого исходного файла создай соответствующий тест-файл`,
+    `- Покрой: happy path, edge cases, обработку ошибок`,
+    `- Следуй паттернам примеров выше`,
     `- Не изменяй существующие тесты`,
-  ].filter(Boolean).join('\n');
+    hasNoTestInfra
+      ? `- Если нужно — создай test-helpers.ts и vitest.config.ts перед написанием тестов`
+      : `- Если в исходном файле есть импорты типов которых нет выше — прочитай только эти файлы с типами. Не исследуй проект вширь.`,
+  ].filter(s => s !== null && s !== undefined && s !== '').join('\n');
 }
 
 function buildWriteTestsForFilePrompt(
@@ -222,56 +336,77 @@ function buildWriteTestsForFilePrompt(
   feat: FeatureResult,
   modules: ModuleInfo[],
   testRunner: string,
+  projectRoot: string,
 ): string {
   const normalPath = filePath.replace(/\\/g, '/');
 
-  // Find module info to get suggestedTestType (match by relativePath or absolute path)
+  // Find module info to get suggestedTestType and absolute path
   const sourceModule = modules.find(m =>
     m.relativePath.replace(/\\/g, '/') === normalPath || m.path === filePath
   );
   const suggestedTestType = sourceModule?.suggestedTestType ?? 'unit';
+  const absSourcePath = sourceModule?.path ?? path.join(projectRoot, filePath);
 
-  const existing = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
-    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  // Embed source file content
+  const sourceBlock = fileBlock(normalPath, absSourcePath);
 
-  const hasNoTestInfra = modules.filter(m => m.type === 'test').length === 0;
+  // Pick 1-2 example tests most relevant to this file
+  const existingTestMods = modules.filter(m => m.type === 'test');
+  const featureTestMods  = modules.filter(m => m.featureKeys.includes(feat.key) && m.type === 'test');
+  const examplePool = featureTestMods.length > 0 ? featureTestMods : existingTestMods;
+  const exampleTests = pickExampleTests(normalPath, examplePool, 2);
+  const exampleBlocks = exampleTests.map(m =>
+    fileBlock(m.relativePath.replace(/\\/g, '/'), m.path)
+  ).filter(Boolean);
+
+  // Embed test infrastructure: setup.ts + test-helpers.ts
+  const infraBlocks: string[] = [];
+  const setupPath   = path.join(projectRoot, 'tests', 'setup.ts');
+  const helpersPath = path.join(projectRoot, 'tests', 'test-helpers.ts');
+  if (tryReadFile(setupPath))   infraBlocks.push(fileBlock('tests/setup.ts',        setupPath));
+  if (tryReadFile(helpersPath)) infraBlocks.push(fileBlock('tests/test-helpers.ts', helpersPath));
 
   const testTypeBlock = suggestedTestType === 'integration'
     ? [
         `Тип теста: INTEGRATION`,
-        `Файл обращается к БД, репозиториям или внешним сервисам.`,
-        `→ Используй test-helpers или pg-mem для работы с реальной БД.`,
+        `→ Используй test-helpers или реальную БД.`,
         `→ Не мокай репозитории — проверяй реальное поведение.`,
       ].join('\n')
     : [
         `Тип теста: UNIT`,
         `→ Замокай все внешние зависимости через \`vi.mock()\`.`,
         `→ Не используй реальную БД или внешние сервисы.`,
-        `→ Тест должен работать быстро без внешних зависимостей.`,
       ].join('\n');
 
+  const hasNoTestInfra = existingTestMods.length === 0;
+
   return [
-    `Напиши тест для файла \`${normalPath}\`.`,
-    `Фича: "${feat.label}"`,
+    `Напиши тест для файла \`${normalPath}\`. Фича: "${feat.label}"`,
     ``,
     testTypeBlock,
     ``,
-    existing.length > 0
-      ? `Существующие тест-файлы фичи (следуй этим паттернам):\n${existing.join('\n')}`
-      : 'Существующих тестов в этой фиче пока нет — следуй общим паттернам проекта.',
+    `## Исходный файл`,
+    sourceBlock,
+    ``,
+    exampleBlocks.length > 0 ? `## Примеры тестов (следуй этим паттернам)` : '',
+    ...exampleBlocks,
+    ``,
+    infraBlocks.length > 0 ? `## Тестовая инфраструктура` : '',
+    ...infraBlocks,
     ``,
     hasNoTestInfra
       ? `⚠️ В проекте пока нет ни одного теста. Если нужна тестовая инфраструктура (test-helpers.ts, vitest.config.ts) — создай её сначала.`
       : '',
-    ``,
-    `Требования:`,
+    `## Требования`,
     `- Используй ${testRunner}`,
     `- Создай один тест-файл для \`${normalPath}\``,
     `- Покрой: happy path, edge cases, обработку ошибок`,
-    `- Следуй паттернам существующих тестов в проекте`,
+    `- Следуй паттернам примеров выше`,
     `- Не изменяй существующие тесты`,
-  ].filter(Boolean).join('\n');
+    hasNoTestInfra
+      ? `- Если нужно — создай test-helpers.ts и vitest.config.ts перед написанием тестов`
+      : `- Если в исходном файле есть импорты типов которых нет выше — прочитай только эти файлы с типами. Не исследуй проект вширь.`,
+  ].filter(s => s !== null && s !== undefined && s !== '').join('\n');
 }
 
 function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string {
@@ -288,6 +423,33 @@ function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string 
     `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
     `- Если ошибка в исходном коде, а не в тесте — исправь код`,
     `- После исправления запусти тест, чтобы убедиться что он проходит`,
+  ].join('\n');
+}
+
+function buildFixAllTestsPrompt(
+  failedFiles: { filePath: string; errors: TestFileError[] }[],
+  testType: string,
+): string {
+  const totalErrors = failedFiles.reduce((sum, f) => sum + f.errors.length, 0);
+  const fileBlocks = failedFiles.map(f => {
+    const normalPath = f.filePath.replace(/\\/g, '/');
+    return [
+      `### \`${normalPath}\` (${f.errors.length} упало):`,
+      ...f.errors.map(e => `• "${e.testName}"\n  ${e.message}`),
+    ].join('\n');
+  });
+
+  return [
+    `Исправь все падающие ${testType} тесты (${totalErrors} тестов в ${failedFiles.length} файлах).`,
+    ``,
+    ...fileBlocks,
+    ``,
+    `Требования:`,
+    `- Исправь только падающие тесты, не трогай проходящие`,
+    `- Не удаляй тесты — исправь логику или моки`,
+    `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
+    `- Если ошибка в исходном коде, а не в тесте — исправь код`,
+    `- После исправления каждого файла запусти его тесты, чтобы убедиться что проходят`,
   ].join('\n');
 }
 
@@ -389,6 +551,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let coverageError   = false;
     let agentRunning    = false;
     let testsRunning    = false;
+    const agentQueue: AgentQueueItem[] = [];
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
@@ -491,69 +654,90 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     // ── Agent runner ───────────────────────────────────────────────────────────
-    function runAgent(task: 'write-tests' | 'write-tests-file' | 'fix-tests' | 'map-unmapped', featureKey?: string, filePath?: string) {
-      if (agentRunning) {
-        process.stdout.write('   ⏳ Agent already running\n');
-        return;
-      }
 
-      const agent = currentData.agent;
-      if (!agent) {
-        broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
-        return;
-      }
+    /** Check if the configured agent CLI is installed; broadcast a warning if not */
+    function checkAgentInstalled(agent: string | undefined) {
+      if (!agent) return;
+      const cliName = agent === 'claude'
+        ? (WIN ? 'claude.cmd' : 'claude')
+        : (WIN ? 'codex.cmd' : 'codex');
+      const agentName = agent === 'claude' ? 'Claude Code' : 'Codex';
+      const downloadUrl = agent === 'claude' ? 'claude.ai/download' : 'github.com/openai/codex';
 
-      // Build prompt
+      const check = spawn(cliName, ['--version'], { shell: true, stdio: 'pipe' });
+      check.on('error', () => {
+        process.stdout.write(`   ⚠️  ${agentName} не найден (${cliName})\n`);
+        broadcast('agent-error', {
+          message: `${agentName} не установлен. Скачай с ${downloadUrl}`,
+          notInstalled: true,
+          agent,
+        });
+      });
+      check.on('close', (code) => {
+        if (code === 255) {
+          process.stdout.write(`   ⚠️  ${agentName} не авторизован (exit 255 при --version)\n`);
+          broadcast('agent-error', {
+            message: `${agentName} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`,
+            authRequired: true,
+            agent,
+          });
+        } else if (code === 0) {
+          process.stdout.write(`   ✅ ${agentName} доступен\n`);
+        }
+      });
+    }
+
+    /** Execute the next queued item, or broadcast agent-done if queue is empty */
+    function processNextInQueue() {
+      if (agentQueue.length > 0) {
+        const next = agentQueue.shift()!;
+        process.stdout.write(`   📋 Starting next from queue: "${next.title}" (remaining: ${agentQueue.length})\n`);
+        broadcast('agent-output', { line: `📋 Следующая задача из очереди: ${next.title}` });
+        broadcast('agent-output', { line: `   В очереди осталось: ${agentQueue.length}` });
+        executeAgentItem(next);
+      } else {
+        broadcast('agent-done', { queueLength: 0 });
+      }
+    }
+
+    /** Actually spawn the agent process for a queue item */
+    function executeAgentItem(item: AgentQueueItem) {
+      const { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType } = item;
+
+      // ── Build prompt lazily here (not pre-built in queue) to avoid holding large strings in memory ──
       let prompt: string;
-      let title: string;
-
-      const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
-
       if (task === 'write-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) {
           broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` });
-          return;
+          agentRunning = false; processNextInQueue(); return;
         }
-        prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest');
-        title  = `${agentLabel} — тесты для "${feat.label}"`;
+        prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest', projectRoot);
       } else if (task === 'write-tests-file') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat || !filePath) {
-          broadcast('agent-error', { message: `Не указана фича или файл` });
-          return;
+          broadcast('agent-error', { message: 'Не указана фича или файл' });
+          agentRunning = false; processNextInQueue(); return;
         }
-        prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
-        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-        title  = `${agentLabel} — тест для "${fileName}"`;
+        prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest', projectRoot);
       } else if (task === 'fix-tests') {
-        if (!filePath) {
-          broadcast('agent-error', { message: 'Не указан файл для исправления' });
-          return;
+        if (!filePath || !savedErrors || savedErrors.length === 0) {
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}` });
+          agentRunning = false; processNextInQueue(); return;
         }
-        // Look up stored errors for this file (match by absolute or relative path)
-        let storedErrors: TestFileError[] | undefined;
-        for (const [fp, detail] of lastTestResults) {
-          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
-          if (rel === filePath.replace(/\\/g, '/') || fp === filePath) {
-            storedErrors = detail.errors;
-            break;
-          }
+        prompt = buildFixTestsPrompt(filePath, savedErrors);
+      } else if (task === 'fix-tests-all') {
+        if (!savedFailedFiles || savedFailedFiles.length === 0) {
+          broadcast('agent-error', { message: 'Нет упавших тестов для исправления' });
+          agentRunning = false; processNextInQueue(); return;
         }
-        if (!storedErrors || storedErrors.length === 0) {
-          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` });
-          return;
-        }
-        prompt = buildFixTestsPrompt(filePath, storedErrors);
-        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-        title  = `${agentLabel} — исправить тесты в "${fileName}"`;
+        prompt = buildFixAllTestsPrompt(savedFailedFiles, savedTestType || 'unit');
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
-        title  = `${agentLabel} — разобрать unmapped`;
       }
 
       agentRunning = true;
-      broadcast('agent-started', { title, task, featureKey });
+      broadcast('agent-started', { title, task, featureKey, filePath: filePath || null, queueLength: agentQueue.length });
       process.stdout.write(`   🤖 Running agent (${agent}): ${task}\n`);
 
       // Write prompt to .viberadar/task.md for reference
@@ -565,7 +749,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } catch {}
 
       // Spawn via shell, piping prompt from file (avoids TUI mode, supports stream-json)
-      const shellCmd = buildAgentShellCmd(agent, taskFile);
+      const shellCmd = buildAgentShellCmd(agent, taskFile, currentData.model);
       process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
         cwd: projectRoot,
@@ -632,22 +816,32 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         agentRunning = false;
         if (code === 0) {
           // Auto-run created/fixed test files and show results
-          const testFilesToRun = task === 'fix-tests' && filePath ? [filePath] : createdTestFiles;
-          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests') && testFilesToRun.length > 0) {
+          let testFilesToRun: string[];
+          if (task === 'fix-tests-all') {
+            testFilesToRun = [...lastTestResults.keys()];
+          } else if (task === 'fix-tests' && filePath) {
+            testFilesToRun = [filePath];
+          } else {
+            testFilesToRun = createdTestFiles;
+          }
+          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests' || task === 'fix-tests-all') && testFilesToRun.length > 0) {
             broadcast('agent-output', { line: '─────────────────────────────' });
             broadcast('agent-output', { line: `🧪 Запускаю тесты (${testFilesToRun.length} файлов)...` });
             const result = await runTestFiles(testFilesToRun, projectRoot);
 
             // Store per-file results for "fix-tests" feature
-            // path.resolve() normalizes slashes on Windows (vitest outputs forward slashes)
             lastTestResults.clear();
             for (const [fp, detail] of Object.entries(result.fileDetails)) {
               if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
-            const summary = result.failed === 0
-              ? `✅ Все тесты прошли: ${result.passed} passed`
-              : `⚠️  ${result.passed} passed, ${result.failed} failed`;
+            const summary = result.runError
+              ? `❌ Тесты не запустились: ${result.runError}`
+              : result.failed === 0 && result.passed > 0
+                ? `✅ Все тесты прошли: ${result.passed} passed`
+                : result.failed === 0 && result.passed === 0
+                  ? `⚠️ 0 тестов запустилось — проверь файл на ошибки импорта`
+                  : `⚠️  ${result.passed} passed, ${result.failed} failed`;
             broadcast('agent-output', { line: summary });
             if (result.failed > 0) {
               for (const [fp, detail] of Object.entries(result.fileDetails)) {
@@ -669,18 +863,107 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             currentData = await scanProject(projectRoot);
             broadcast('data-updated');
           } catch {}
-          broadcast('agent-done');
+          processNextInQueue();
+        } else if (code === 255) {
+          process.stdout.write(`   ❌ Agent auth error (exit code 255)\n`);
+          broadcast('agent-error', {
+            message: `${agent === 'claude' ? 'Claude Code' : 'Codex'} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`,
+            authRequired: true,
+            agent,
+          });
+          processNextInQueue();
         } else {
           process.stdout.write(`   ❌ Agent failed (exit code ${code})\n`);
           broadcast('agent-error', { message: `Агент завершился с кодом ${code}` });
+          processNextInQueue();
         }
       });
 
-      proc.on('error', (err) => {
+      proc.on('error', (err: NodeJS.ErrnoException) => {
         agentRunning = false;
+        const isNotFound = err.code === 'ENOENT' || err.message.includes('ENOENT');
+        const agentName = agent === 'claude' ? 'Claude Code' : 'Codex';
+        const msg = isNotFound
+          ? `${agentName} не установлен. Скачай с ${agent === 'claude' ? 'claude.ai/download' : 'github.com/openai/codex'}`
+          : `Не удалось запустить ${agent}: ${err.message}`;
         process.stdout.write('   ❌ Agent spawn error: ' + err.message + '\n');
-        broadcast('agent-error', { message: `Не удалось запустить ${agent}: ${err.message}` });
+        broadcast('agent-error', { message: msg, notInstalled: isNotFound, agent });
+        processNextInQueue();
       });
+    }
+
+    /** Validate task params and enqueue (prompt is built lazily at execution time) */
+    function runAgent(task: 'write-tests' | 'write-tests-file' | 'fix-tests' | 'fix-tests-all' | 'map-unmapped', featureKey?: string, filePath?: string) {
+      const agent = currentData.agent;
+      if (!agent) {
+        broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
+        return;
+      }
+
+      // Validate params upfront and snapshot only the small error data for fix tasks.
+      // The full prompt is NOT built here — executeAgentItem() builds it lazily to save memory.
+      let title: string;
+      let savedErrors: TestFileError[] | undefined;
+      let savedFailedFiles: { filePath: string; errors: TestFileError[] }[] | undefined;
+      let savedTestType: string | undefined;
+      const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
+
+      if (task === 'write-tests') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        title = `${agentLabel} — тесты для "${feat.label}"`;
+      } else if (task === 'write-tests-file') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat || !filePath) { broadcast('agent-error', { message: 'Не указана фича или файл' }); return; }
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title = `${agentLabel} — тест для "${fileName}"`;
+      } else if (task === 'fix-tests') {
+        if (!filePath) { broadcast('agent-error', { message: 'Не указан файл для исправления' }); return; }
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          if (rel === filePath.replace(/\\/g, '/') || fp === filePath) {
+            savedErrors = detail.errors;
+            break;
+          }
+        }
+        if (!savedErrors || savedErrors.length === 0) {
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` });
+          return;
+        }
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title = `${agentLabel} — исправить тесты в "${fileName}"`;
+      } else if (task === 'fix-tests-all') {
+        savedTestType = filePath || 'unit';
+        savedFailedFiles = [];
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          const mod = currentData.modules.find(m =>
+            m.relativePath.replace(/\\/g, '/') === rel && m.testType === savedTestType
+          );
+          if (mod && detail.errors.length > 0) {
+            savedFailedFiles.push({ filePath: rel, errors: detail.errors });
+          }
+        }
+        if (savedFailedFiles.length === 0) {
+          broadcast('agent-error', { message: `Нет упавших ${savedTestType} тестов. Сначала запусти тесты.` });
+          return;
+        }
+        title = `${agentLabel} — починить все ${savedTestType} тесты (${savedFailedFiles.length} файлов)`;
+      } else {
+        title = `${agentLabel} — разобрать unmapped`;
+      }
+
+      const item: AgentQueueItem = { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType };
+
+      if (agentRunning) {
+        agentQueue.push(item);
+        const ql = agentQueue.length;
+        process.stdout.write(`   📋 Agent busy, queued: "${title}" (queue size: ${ql})\n`);
+        broadcast('agent-queued', { queueLength: ql, title, task, featureKey: featureKey || null, filePath: filePath || null });
+        return;
+      }
+
+      executeAgentItem(item);
     }
 
     // ── Chokidar watcher ───────────────────────────────────────────────────────
@@ -724,7 +1007,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (url === '/api/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ coverageRunning, coverageError, agentRunning }));
+        res.end(JSON.stringify({ coverageRunning, coverageError, agentRunning, queueLength: agentQueue.length }));
         return;
       }
 
@@ -772,9 +1055,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
               if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
-            const summary = result.failed === 0
-              ? `✅ Все тесты прошли: ${result.passed} passed`
-              : `⚠️  ${result.passed} passed, ${result.failed} failed`;
+            const summary = result.runError
+              ? `❌ Тесты не запустились: ${result.runError}`
+              : result.failed === 0 && result.passed > 0
+                ? `✅ Все тесты прошли: ${result.passed} passed`
+                : result.failed === 0 && result.passed === 0
+                  ? `⚠️ 0 тестов запустилось — проверь файл на ошибки импорта`
+                  : `⚠️  ${result.passed} passed, ${result.failed} failed`;
             broadcast('agent-output', { line: summary });
             if (result.failed > 0) {
               for (const [fp, detail] of Object.entries(result.fileDetails)) {
@@ -825,9 +1112,48 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (url === '/api/cancel-agent' && req.method === 'POST') {
         agentRunning = false;
-        process.stdout.write('   ⏹ Agent state reset by user\n');
+        agentQueue.length = 0; // clear queue too
+        process.stdout.write('   ⏹ Agent state reset by user (queue cleared)\n');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (url === '/api/get-prompt' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { task, featureKey, filePath } = JSON.parse(body);
+            let prompt = '';
+            if (task === 'write-tests-file') {
+              const feat = currentData.features?.find(f => f.key === featureKey);
+              if (!feat || !filePath) {
+                res.writeHead(400); res.end(JSON.stringify({ error: 'Missing feat or file' })); return;
+              }
+              prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest', projectRoot);
+            } else if (task === 'write-tests') {
+              const feat = currentData.features?.find(f => f.key === featureKey);
+              if (!feat) {
+                res.writeHead(400); res.end(JSON.stringify({ error: 'Feature not found' })); return;
+              }
+              prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest', projectRoot);
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ prompt }));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/clear-queue' && req.method === 'POST') {
+        const cleared = agentQueue.length;
+        agentQueue.length = 0;
+        process.stdout.write(`   🗑 Queue cleared (${cleared} items)\n`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, cleared }));
         return;
       }
 
@@ -848,6 +1174,99 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+        });
+        return;
+      }
+
+      if (url === '/api/set-model' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { model } = JSON.parse(body);
+            const configPath = path.join(projectRoot, 'viberadar.config.json');
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            config.model = model || undefined;
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+            scheduleRescan();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, model }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/agent-reauth' && req.method === 'POST') {
+        const agent = currentData.agent;
+        if (!agent) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No agent configured' }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+
+        const cliName = agent === 'claude' ? (WIN ? 'claude.cmd' : 'claude') : (WIN ? 'codex.cmd' : 'codex');
+        // Claude: `claude auth logout` / `claude auth login`
+        // Codex:  `codex logout`       / `codex login`  (no `auth` subcommand)
+        const logoutArgs = agent === 'claude' ? ['auth', 'logout'] : ['logout'];
+        const loginArgs  = agent === 'claude' ? ['auth', 'login']  : ['login'];
+
+        // Step 1: logout
+        broadcast('agent-output', { line: `🔑 Выхожу из ${agent}...` });
+        const logoutProc = spawn(cliName, logoutArgs, {
+          cwd: projectRoot, shell: true, stdio: 'pipe',
+        });
+        let logoutStderr = '';
+        logoutProc.stderr?.on('data', (d: Buffer) => { logoutStderr += d.toString(); });
+        logoutProc.stdout?.on('data', (d: Buffer) => {
+          for (const l of d.toString().split('\n').filter(Boolean)) {
+            broadcast('agent-output', { line: l });
+          }
+        });
+
+        logoutProc.on('close', (logoutCode) => {
+          if (logoutCode === 0) {
+            broadcast('agent-output', { line: '✅ Вышли из аккаунта' });
+          } else {
+            broadcast('agent-output', { line: `⚠ logout вернул код ${logoutCode}` });
+            if (logoutStderr.trim()) {
+              broadcast('agent-output', { line: logoutStderr.trim(), isDim: true });
+            }
+          }
+
+          // Step 2: login (opens browser)
+          broadcast('agent-output', { line: `🔑 Запускаю авторизацию ${agent}...` });
+          const loginProc = spawn(cliName, loginArgs, {
+            cwd: projectRoot, shell: true, stdio: 'pipe',
+          });
+          loginProc.stdout?.on('data', (d: Buffer) => {
+            for (const l of d.toString().split('\n').filter(Boolean)) {
+              broadcast('agent-output', { line: l });
+            }
+          });
+          loginProc.stderr?.on('data', (d: Buffer) => {
+            for (const l of d.toString().split('\n').filter(Boolean)) {
+              broadcast('agent-output', { line: l });
+            }
+          });
+          loginProc.on('close', (loginCode) => {
+            if (loginCode === 0) {
+              broadcast('agent-output', { line: '✅ Авторизация завершена! Можно запускать агента.' });
+            } else {
+              broadcast('agent-output', { line: `⚠ Авторизация не завершена (код ${loginCode}).` });
+              broadcast('agent-output', { line: `   Попробуй вручную: ${[cliName, ...loginArgs].join(' ')}` });
+            }
+          });
+          loginProc.on('error', () => {
+            broadcast('agent-output', { line: `❌ Не удалось запустить ${cliName} auth login` });
+          });
+        });
+        logoutProc.on('error', () => {
+          broadcast('agent-output', { line: `❌ Не удалось запустить ${cliName}. Проверь что CLI установлен.` });
         });
         return;
       }
@@ -877,7 +1296,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
     });
 
-    server.listen(port, '127.0.0.1', () => resolve({ server, triggerCoverage }));
+    server.listen(port, '127.0.0.1', () => {
+      resolve({ server, triggerCoverage });
+      // Async startup check — runs after server is up, doesn't block
+      checkAgentInstalled(currentData.agent);
+    });
 
     process.once('SIGINT', () => {
       console.log('\n👋 VibeRadar stopped.');

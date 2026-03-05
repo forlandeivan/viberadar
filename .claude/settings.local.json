@@ -1,0 +1,9 @@
+﻿{
+  "permissions": {
+    "allow": [
+      "Bash(npm whoami --registry https://registry.npmjs.org/)",
+      "Bash(npm run build)",
+      "Bash(npm publish)"
+    ]
+  }
+}
