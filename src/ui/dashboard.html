@@ -83,6 +83,68 @@
     #termBtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
     #termBtn.term-active { color: var(--accent); border-color: var(--accent); }
 
+    #agentBtn {
+      padding: 5px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }
+    #agentBtn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+
+    .agent-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      min-width: 200px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      z-index: 1000;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .agent-menu.open { display: block; }
+    .agent-menu-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--dim);
+      padding: 6px 10px 4px;
+    }
+    .agent-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.1s;
+    }
+    .agent-menu-item:hover { background: var(--bg-hover); }
+    .agent-menu-check { color: var(--green); font-weight: 700; display: none; }
+    .agent-menu-check.active { display: inline; }
+    .agent-menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
     /* ── Stats bar ───────────────────────────────────────────────────────────── */
     .stats-bar {
       display: flex;
@@ -172,7 +234,8 @@
     .type-count { margin-left: auto; font-size: 11px; color: var(--dim); }
 
     /* ── Content area ────────────────────────────────────────────────────────── */
-    .content { flex: 1; overflow-y: auto; padding: 18px 20px; }
+    .content { flex: 1; overflow-y: auto; padding: 18px 20px; transition: padding-bottom 0.25s ease; }
+    .content.panel-open { padding-bottom: 300px; }
 
     /* ── Feature cards ───────────────────────────────────────────────────────── */
     .features-grid {
@@ -420,56 +483,48 @@
     /* ── Test-type cards inside feature detail ───────────────────────────────── */
     .test-type-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 10px;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
     }
     .test-type-card {
+      display: flex;
+      flex-direction: column;
       background: var(--bg-card);
       border: 1px solid var(--border);
+      border-top: 3px solid transparent;
       border-radius: 8px;
-      padding: 14px 16px;
+      padding: 12px 14px 10px;
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s;
-      position: relative;
-      overflow: hidden;
+      min-width: 0;
     }
-    .test-type-card:hover { background: var(--bg-hover); border-color: var(--dim); }
-    .test-type-card .tt-accent {
-      position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    }
-    .test-type-card .tt-label {
-      font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
-      color: var(--muted); margin-bottom: 6px; margin-top: 2px;
-    }
-    .test-type-card .tt-count {
-      font-size: 26px; font-weight: 700; line-height: 1;
-      margin-bottom: 4px;
-    }
-    .test-type-card .tt-sub {
-      font-size: 11px; color: var(--dim);
-    }
-    .test-type-card.tt-empty .tt-count { color: var(--dim); }
-    .test-type-card.tt-empty { opacity: 0.7; }
-    .test-type-card.tt-active {
-      background: var(--bg-hover);
-      border-width: 2px;
-    }
+    .test-type-card:hover { background: var(--bg-hover); }
+    .test-type-card.tt-active { background: var(--bg-hover); border-color: var(--border); }
+    .test-type-card.tt-empty { opacity: 0.6; }
     .test-type-card.tt-failed {
       border-color: var(--red) !important;
-      border-width: 2px;
-      background: rgba(248, 81, 73, 0.06);
+      background: rgba(248, 81, 73, 0.05);
     }
+    .tt-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .tt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+    .tt-failed-badge { font-size: 10px; color: var(--red); font-weight: 700; }
+    .tt-count { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 2px; }
+    .tt-sub { font-size: 11px; color: var(--dim); }
+    .tt-card-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
     .tt-run-btn {
-      display: block; width: 100%; margin-top: 8px;
-      padding: 3px 0;
+      width: 100%; padding: 5px 10px;
       background: transparent; border: 1px solid var(--border);
-      border-radius: 4px; color: var(--muted); font-size: 10px;
+      border-radius: 5px; color: var(--muted); font-size: 11px;
       cursor: pointer; text-align: center;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
     .tt-run-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
     .tt-run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .tt-fix-btn { border-color: var(--yellow); color: var(--yellow); font-weight: 600; }
+    .tt-fix-btn:hover { background: rgba(255,200,0,0.1); color: var(--yellow); border-color: var(--yellow); }
+    .tt-write-btn { border-color: var(--accent); color: var(--accent); }
+    .tt-write-btn:hover { background: rgba(88,166,255,0.1); color: var(--accent); border-color: var(--accent); }
     .file-rows { display: flex; flex-direction: column; gap: 2px; }
     .file-row {
       display: flex;
@@ -521,6 +576,10 @@
       background: rgba(248, 81, 73, 0.07);
     }
     .file-row.has-errors:hover { background: rgba(248, 81, 73, 0.12); }
+    .file-agent-spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .file-agent-spinner.running { border: 2px solid var(--yellow); border-top-color: transparent; animation: spin 0.7s linear infinite; }
+    .file-agent-spinner.queued  { border: 2px solid var(--dim);    border-top-color: transparent; animation: spin 1.5s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .file-row-errors {
       padding: 4px 10px 6px 32px;
       display: flex; flex-direction: column; gap: 3px;
@@ -602,11 +661,74 @@
       font-size: 14px; padding: 3px 6px; border-radius: 4px; line-height: 1;
     }
     .agent-panel-close:hover { background: var(--border); color: var(--text); }
+    .agent-panel-copy {
+      background: none; border: none; color: var(--dim); cursor: pointer;
+      font-size: 13px; padding: 3px 7px; border-radius: 4px; line-height: 1;
+    }
+    .agent-panel-copy:hover { background: var(--border); color: var(--text); }
+    .agent-panel-copy.copied { color: var(--green); }
     .agent-panel-cancel {
       background: none; border: 1px solid var(--yellow); color: var(--yellow);
       cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 4px;
     }
     .agent-panel-cancel:hover { background: var(--yellow); color: #000; }
+    .agent-queue-badge {
+      font-size: 11px; color: var(--yellow); background: rgba(255,200,0,0.1);
+      border: 1px solid var(--yellow); border-radius: 4px; padding: 2px 8px;
+    }
+    /* ── Console Tabs ───────────────────────────────────────────────────────── */
+    .agent-tabs-bar {
+      display: flex; align-items: stretch; overflow-x: auto;
+      background: #0a0e15; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; min-height: 30px;
+      scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    }
+    .agent-tabs-bar::-webkit-scrollbar { height: 3px; }
+    .agent-tabs-bar::-webkit-scrollbar-thumb { background: var(--border); }
+    .agent-tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 8px 0 10px; cursor: pointer;
+      white-space: nowrap; border-right: 1px solid var(--border);
+      font-size: 11px; color: var(--muted); background: transparent;
+      max-width: 200px; flex-shrink: 0; user-select: none;
+      transition: background 0.1s, color 0.1s;
+      border-bottom: 2px solid transparent;
+    }
+    .agent-tab:hover { background: var(--bg-hover); color: var(--text); }
+    .agent-tab.active { background: var(--bg-card); color: var(--text); border-bottom-color: var(--accent); }
+    .agent-tab-title { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+    .agent-tab-close {
+      background: none; border: none; cursor: pointer; color: var(--dim);
+      font-size: 13px; padding: 0 2px; line-height: 1; flex-shrink: 0;
+      border-radius: 3px; margin-left: 2px; opacity: 0;
+    }
+    .agent-tab:hover .agent-tab-close { opacity: 1; }
+    .agent-tab-close:hover { background: var(--border); color: var(--text); }
+    .tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .tab-dot-running { background: var(--yellow); animation: tab-pulse 1s ease-in-out infinite; }
+    .tab-dot-ok      { background: var(--green); }
+    .tab-dot-error   { background: var(--red); }
+    .tab-dot-info    { background: var(--muted); }
+    @keyframes tab-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    #termBtn.term-error { color: var(--red); border-color: var(--red); }
+    .file-row-more-btn {
+      background: none; border: none; cursor: pointer; font-size: 14px; color: var(--dim);
+      padding: 0 4px; line-height: 1; opacity: 0; transition: opacity 0.1s;
+    }
+    .file-row:hover .file-row-more-btn { opacity: 1; }
+    .file-row-more-wrap { position: relative; display: inline-block; }
+    .file-row-more-dropdown {
+      display: none; position: absolute; right: 0; top: 100%; z-index: 200;
+      background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+      min-width: 220px; padding: 4px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .file-row-more-dropdown.open { display: block; }
+    .file-row-more-item {
+      display: block; width: 100%; text-align: left; background: none; border: none;
+      cursor: pointer; padding: 7px 14px; font-size: 12px; color: var(--text);
+      white-space: nowrap;
+    }
+    .file-row-more-item:hover { background: var(--border); }
     .agent-terminal {
       flex: 1;
       overflow-y: auto;
@@ -622,6 +744,47 @@
     /* ── Misc ────────────────────────────────────────────────────────────────── */
     .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--muted); font-size: 14px; }
     .empty   { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
+  /* ─── E2E Plan UI ─────────────────────────────────────────────────── */
+  .e2e-plan-container { padding: 16px 0; }
+  .e2e-batch-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+  .e2e-stats { font-size:12px; color:var(--dim); margin-left:auto; }
+  .e2e-btn { padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-size:12px; cursor:pointer; transition:background 0.15s; }
+  .e2e-btn:hover { background:var(--surface3); }
+  .e2e-btn-approve { border-color:#2ea043; color:#2ea043; }
+  .e2e-btn-approve:hover { background:rgba(46,160,67,0.15); }
+  .e2e-btn-reject { border-color:#f85149; color:#f85149; }
+  .e2e-btn-reject:hover { background:rgba(248,81,73,0.15); }
+  .e2e-btn-primary { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  .e2e-btn-primary:hover { background:#388bfd; }
+  .e2e-btn-secondary { background:var(--surface3); }
+  .e2e-case { border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:10px; transition:border-color 0.2s; }
+  .e2e-case.approved  { border-color:#2ea043; background:rgba(46,160,67,0.05); }
+  .e2e-case.rejected  { border-color:#f85149; background:rgba(248,81,73,0.05); opacity:0.6; }
+  .e2e-case.written   { border-color:#58a6ff; background:rgba(88,166,255,0.05); }
+  .e2e-case.passed    { border-color:#2ea043; background:rgba(46,160,67,0.08); }
+  .e2e-case.failed    { border-color:#f85149; background:rgba(248,81,73,0.08); }
+  .e2e-case-header { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .e2e-case-name { font-weight:600; font-size:13px; flex:1; }
+  .e2e-status-badge { font-size:11px; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .e2e-status-badge.pending  { background:var(--surface3); color:var(--dim); }
+  .e2e-status-badge.approved { background:rgba(46,160,67,0.2); color:#2ea043; }
+  .e2e-status-badge.rejected { background:rgba(248,81,73,0.2); color:#f85149; }
+  .e2e-status-badge.written  { background:rgba(88,166,255,0.2); color:#58a6ff; }
+  .e2e-status-badge.passed   { background:rgba(46,160,67,0.2); color:#2ea043; }
+  .e2e-status-badge.failed   { background:rgba(248,81,73,0.2); color:#f85149; }
+  .e2e-case-desc { font-size:12px; color:var(--dim); margin-bottom:8px; }
+  .e2e-steps { font-size:12px; color:var(--text); margin:4px 0; }
+  .e2e-steps ol { margin:4px 0 0 16px; padding:0; }
+  .e2e-steps li { margin-bottom:2px; }
+  .e2e-expected { font-size:12px; color:var(--dim); margin-top:4px; }
+  .e2e-case-actions { display:flex; gap:6px; margin-top:10px; }
+  .e2e-error { font-size:11px; color:#f85149; margin-top:6px; font-family:monospace; }
+  .e2e-screenshot-strip { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .e2e-screenshot { width:80px; height:60px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; transition:opacity 0.15s; }
+  .e2e-screenshot:hover { opacity:0.8; }
+  .e2e-screenshot-modal { position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .e2e-screenshot-modal img { max-width:90vw; max-height:90vh; border-radius:8px; }
+  .e2e-plan-indicator { font-size:10px; color:#d2a8ff; margin-left:4px; }
   </style>
 </head>
 <body>
@@ -633,6 +796,31 @@
   <span class="header-time" id="scannedAt"></span>
   <button id="covBtn" onclick="runCoverage()" title="Запустить тесты с coverage">🧪 Coverage</button>
   <button id="termBtn" onclick="toggleAgentPanel()" title="Показать/скрыть терминал агента">📟 Terminal</button>
+  <div style="position:relative">
+    <button id="agentBtn" onclick="toggleAgentMenu()" title="Настройки агента">🤖 —</button>
+    <div id="agentMenu" class="agent-menu">
+      <div class="agent-menu-label">AI Агент</div>
+      <button class="agent-menu-item" id="amClaude" onclick="setAgent('claude');closeAgentMenu()">
+        <span>⚡ Claude Code</span><span class="agent-menu-check" id="amClaudeCheck">✓</span>
+      </button>
+      <button class="agent-menu-item" id="amCodex" onclick="setAgent('codex');closeAgentMenu()">
+        <span>🟢 Codex</span><span class="agent-menu-check" id="amCodexCheck">✓</span>
+      </button>
+      <div class="agent-menu-divider" id="amModelDivider"></div>
+      <div class="agent-menu-label" id="amModelLabel">Модель Claude</div>
+      <button class="agent-menu-item" id="amSonnet46" onclick="setModel('claude-sonnet-4-6');closeAgentMenu()">
+        <span>sonnet-4-6 <span style="color:var(--dim);font-size:10px">быстрый</span></span><span class="agent-menu-check" id="amSonnet46Check">✓</span>
+      </button>
+      <button class="agent-menu-item" id="amOpus45" onclick="setModel('claude-opus-4-5');closeAgentMenu()">
+        <span>opus-4-5 <span style="color:var(--dim);font-size:10px">умный</span></span><span class="agent-menu-check" id="amOpus45Check">✓</span>
+      </button>
+      <button class="agent-menu-item" id="amHaiku35" onclick="setModel('claude-haiku-3-5');closeAgentMenu()">
+        <span>haiku-3-5 <span style="color:var(--dim);font-size:10px">дешёвый</span></span><span class="agent-menu-check" id="amHaiku35Check">✓</span>
+      </button>
+      <div class="agent-menu-divider"></div>
+      <button class="agent-menu-item" onclick="reauthAgent();closeAgentMenu()">🔑 Перелогиниться</button>
+    </div>
+  </div>
   <span id="liveDot" title="Connecting…" style="
     width:8px; height:8px; border-radius:50%;
     background:var(--dim); display:inline-block;
@@ -667,9 +855,13 @@
   <div class="agent-panel-header">
     <span class="agent-panel-title" id="agentPanelTitle">🤖 Agent</span>
     <span class="agent-panel-status" id="agentPanelStatus">running…</span>
+    <span class="agent-queue-badge" id="agentQueueBadge" style="display:none">📋 <span id="agentQueueCount">0</span> в очереди</span>
+    <button class="agent-panel-cancel" id="agentQueueClearBtn" onclick="clearAgentQueue()" title="Очистить очередь" style="display:none">🗑 очередь</button>
     <button class="agent-panel-cancel" id="agentCancelBtn" onclick="cancelAgent()" title="Сбросить состояние агента" style="display:none">⏹ сброс</button>
+    <button class="agent-panel-copy" id="agentCopyBtn" onclick="copyTerminalContent()" title="Скопировать содержимое вкладки в буфер обмена">⎘</button>
     <button class="agent-panel-close" onclick="closeAgentPanel()">✕</button>
   </div>
+  <div class="agent-tabs-bar" id="agentTabsBar"></div>
   <div class="agent-terminal" id="agentTerminal"></div>
 </div>
 
@@ -682,6 +874,8 @@ let activeTypes = new Set();
 let activePanelKey = null;
 let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string = feature key
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
+let e2ePlan         = null;   // current E2E plan object
+let e2ePlanLoading  = false;
 let coverageRunning = false;
 let coverageHasError = false;
 
@@ -710,6 +904,182 @@ async function runCoverage() {
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 let agentRunning = false;
+const agentRunningPaths = new Set(); // paths of files currently being processed by agent
+const agentQueuedPaths  = new Set(); // paths of files waiting in queue
+
+// ─── Console Sessions ─────────────────────────────────────────────────────────
+const consoleSessions  = [];   // { id, title, lines, status, startTime }
+let activeSessionId    = null; // currently viewed tab
+let runningSessionId   = null; // tab that is currently receiving output
+const SESSION_MAX      = 25;
+const SESSIONS_KEY     = 'viberadar_sessions';
+
+function _sessionId() {
+  return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+}
+
+function saveSessions() {
+  try {
+    const data = consoleSessions.slice(-SESSION_MAX).map(s => ({
+      ...s, lines: s.lines.slice(-500)
+    }));
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+function restoreSessions() {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    consoleSessions.push(...saved);
+    for (const s of consoleSessions) {
+      if (s.status === 'running') {
+        s.status = 'error';
+        s.lines.push({ text: '⚡ Прервано (перезагрузка страницы)', isError: true });
+      }
+    }
+    if (consoleSessions.length > 0) {
+      activeSessionId = consoleSessions[consoleSessions.length - 1].id;
+      renderTabs();
+      renderActiveSession();
+    }
+  } catch {}
+}
+
+function createSession(title, status = 'running') {
+  if (consoleSessions.length >= SESSION_MAX) consoleSessions.shift();
+  const s = { id: _sessionId(), title, lines: [], status, startTime: Date.now() };
+  consoleSessions.push(s);
+  activeSessionId = s.id;
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
+  renderTabs();
+  renderActiveSession();
+  saveSessions();
+  return s.id;
+}
+
+function switchSession(id) {
+  activeSessionId = id;
+  const s = consoleSessions.find(s => s.id === id);
+  if (s) {
+    const statusText = s.status === 'running' ? 'работает…'
+      : s.status === 'ok'    ? '✅ готово'
+      : s.status === 'error' ? '❌ ошибка'
+      : '';
+    document.getElementById('agentPanelTitle').textContent  = s.title;
+    document.getElementById('agentPanelStatus').textContent = statusText;
+  }
+  renderTabs();
+  renderActiveSession();
+}
+
+function closeSession(id) {
+  const idx = consoleSessions.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  consoleSessions.splice(idx, 1);
+  if (activeSessionId === id) {
+    activeSessionId = consoleSessions.length > 0
+      ? consoleSessions[Math.min(idx, consoleSessions.length - 1)].id
+      : null;
+  }
+  renderTabs();
+  renderActiveSession();
+  saveSessions();
+}
+
+function appendToSession(id, lineOrNode, isError = false, isDim = false) {
+  const s = consoleSessions.find(s => s.id === id);
+  if (!s) return;
+  let stored;
+  if (typeof lineOrNode === 'string') {
+    stored = { text: lineOrNode, isError, isDim };
+  } else {
+    stored = { html: lineOrNode.outerHTML };
+  }
+  s.lines.push(stored);
+  if (activeSessionId === id) {
+    const term = document.getElementById('agentTerminal');
+    const el = document.createElement('div');
+    if (stored.html) {
+      el.innerHTML = stored.html;
+    } else {
+      el.className = 'agent-line' + (isError ? ' err' : isDim ? ' dim' : '');
+      el.textContent = lineOrNode;
+    }
+    term.appendChild(el);
+    term.scrollTop = term.scrollHeight;
+  }
+}
+
+function updateSessionStatus(id, status) {
+  const s = consoleSessions.find(s => s.id === id);
+  if (!s) return;
+  s.status = status;
+  renderTabs();
+  saveSessions();
+}
+
+function renderTabs() {
+  const bar = document.getElementById('agentTabsBar');
+  if (!bar) return;
+  bar.innerHTML = consoleSessions.map(s => {
+    const isActive = s.id === activeSessionId;
+    const safe = s.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<div class="agent-tab${isActive ? ' active' : ''}"
+        onclick="switchSession('${s.id}')"
+        onmousedown="if(event.button===1){event.preventDefault();event.stopPropagation();closeSession('${s.id}')}">
+      <span class="tab-dot tab-dot-${s.status}"></span>
+      <span class="agent-tab-title" title="${safe}">${safe}</span>
+      <button class="agent-tab-close" onclick="event.stopPropagation();closeSession('${s.id}')" title="Закрыть вкладку">×</button>
+    </div>`;
+  }).join('');
+  const active = bar.querySelector('.agent-tab.active');
+  if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function copyTerminalContent() {
+  const s = consoleSessions.find(s => s.id === activeSessionId);
+  if (!s || s.lines.length === 0) return;
+  // Extract plain text from each line (strip HTML for rich nodes)
+  const text = s.lines.map(l => {
+    if (l.text !== undefined) return l.text;
+    if (l.html) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = l.html;
+      return tmp.innerText;
+    }
+    return '';
+  }).filter(Boolean).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('agentCopyBtn');
+    if (!btn) return;
+    const prev = btn.textContent;
+    btn.textContent = '✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = prev; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+function renderActiveSession() {
+  const term = document.getElementById('agentTerminal');
+  if (!term) return;
+  term.innerHTML = '';
+  const s = consoleSessions.find(s => s.id === activeSessionId);
+  if (!s) return;
+  for (const ln of s.lines) {
+    const el = document.createElement('div');
+    if (ln.html) {
+      el.innerHTML = ln.html;
+    } else {
+      el.className = 'agent-line' + (ln.isError ? ' err' : ln.isDim ? ' dim' : '');
+      el.textContent = ln.text;
+    }
+    term.appendChild(el);
+  }
+  term.scrollTop = term.scrollHeight;
+}
 
 async function setAgent(agent) {
   await fetch('/api/set-agent', {
@@ -720,30 +1090,182 @@ async function setAgent(agent) {
   // scheduleRescan will fire → data-updated → D.agent updates
 }
 
+async function setModel(model) {
+  await fetch('/api/set-model', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  });
+  // scheduleRescan will fire → data-updated → D.model updates
+}
+
 function setAgentRunning(val) {
   agentRunning = val;
   document.getElementById('agentCancelBtn').style.display = val ? 'inline-block' : 'none';
 }
 
+// Returns array of normalized relative paths affected by a given task
+function getTaskFilePaths(task, featureKey, filePath) {
+  if ((task === 'write-tests-file' || task === 'fix-tests') && filePath) {
+    return [filePath.replace(/\\/g, '/')];
+  }
+  if ((task === 'write-tests' || task === 'fix-tests-all') && featureKey && D?.modules) {
+    return D.modules
+      .filter(m => m.featureKeys?.includes(featureKey) && m.type !== 'test' && (!m.hasTests || m.testStale))
+      .map(m => m.relativePath.replace(/\\/g, '/'));
+  }
+  return [];
+}
+
+// Returns 'running', 'queued', or null for a given relative path
+function isFileAgentActive(relPath) {
+  const n = relPath.replace(/\\/g, '/');
+  if (agentRunningPaths.has(n)) return 'running';
+  if (agentQueuedPaths.has(n))  return 'queued';
+  return null;
+}
+
+function updateQueueBadge(n) {
+  document.getElementById('agentQueueCount').textContent = n;
+  document.getElementById('agentQueueBadge').style.display = n > 0 ? 'inline' : 'none';
+  document.getElementById('agentQueueClearBtn').style.display = n > 0 ? 'inline-block' : 'none';
+}
+
 async function cancelAgent() {
   await fetch('/api/cancel-agent', { method: 'POST' });
   setAgentRunning(false);
+  updateQueueBadge(0);
   document.getElementById('agentPanelStatus').textContent = '⏹ сброшен';
-  appendTerminalLine('⏹ Состояние агента сброшено', false);
+  if (runningSessionId) {
+    appendToSession(runningSessionId, '⏹ Состояние агента сброшено (очередь очищена)', false);
+    updateSessionStatus(runningSessionId, 'error');
+    runningSessionId = null;
+  } else {
+    appendTerminalLine('⏹ Состояние агента сброшено (очередь очищена)', false);
+  }
+}
+
+async function clearAgentQueue() {
+  await fetch('/api/clear-queue', { method: 'POST' });
+  updateQueueBadge(0);
+  appendTerminalLine('🗑 Очередь очищена', false);
+}
+
+// ─── File row more menu ──────────────────────────────────────────────────────
+let _openFileMenu = null;
+
+function toggleFileMenu(btn, featureKey, relPath) {
+  const dropdown = btn.nextElementSibling;
+  const isOpen = dropdown.classList.contains('open');
+  // Close any open menu first
+  if (_openFileMenu && _openFileMenu !== dropdown) {
+    _openFileMenu.classList.remove('open');
+  }
+  dropdown.classList.toggle('open', !isOpen);
+  _openFileMenu = isOpen ? null : dropdown;
+}
+
+// Close menu on outside click
+document.addEventListener('click', () => {
+  if (_openFileMenu) { _openFileMenu.classList.remove('open'); _openFileMenu = null; }
+});
+
+async function copyPromptForFile(featureKey, relPath, dropdown) {
+  if (dropdown) { dropdown.classList.remove('open'); _openFileMenu = null; }
+  try {
+    const res = await fetch('/api/get-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'write-tests-file', featureKey, filePath: relPath }),
+    });
+    const { prompt, error } = await res.json();
+    if (error || !prompt) { alert('Не удалось получить промпт: ' + (error || 'пустой')); return; }
+    await navigator.clipboard.writeText(prompt);
+    // Brief visual feedback in terminal
+    document.getElementById('agentPanel').classList.add('open');
+    document.getElementById('termBtn').classList.add('term-active');
+    appendTerminalLine(`📋 Промпт для "${relPath.split('/').pop()}" скопирован в буфер обмена`, false);
+    appendTerminalLine('   Вставь его в другой агент (Claude, Codex, ChatGPT) и запусти вручную.', false);
+  } catch (e) {
+    alert('Ошибка копирования: ' + e.message);
+  }
+}
+
+// ─── Agent menu ─────────────────────────────────────────────────────────────
+const CLAUDE_MODELS = [
+  { id: 'claude-sonnet-4-6', checkId: 'amSonnet46Check' },
+  { id: 'claude-opus-4-5',   checkId: 'amOpus45Check'   },
+  { id: 'claude-haiku-3-5',  checkId: 'amHaiku35Check'  },
+];
+
+function updateAgentBtn() {
+  const btn = document.getElementById('agentBtn');
+  if (!D) return;
+  const a = D.agent;
+  const m = D.model;
+  // Button label: agent + model shortname
+  let label = a === 'claude' ? '🤖 Claude' : a === 'codex' ? '🤖 Codex' : '🤖 не выбран';
+  if (a === 'claude' && m) {
+    // Show short model name: "sonnet-4-6", "opus-4-5", "haiku-3-5"
+    const short = m.replace('claude-', '');
+    label += ` · ${short}`;
+  }
+  btn.textContent = label;
+  // Update agent checkmarks
+  document.getElementById('amClaudeCheck').classList.toggle('active', a === 'claude');
+  document.getElementById('amCodexCheck').classList.toggle('active', a === 'codex');
+  // Show/hide model section (only for claude)
+  const isClaude = a === 'claude';
+  document.getElementById('amModelDivider').style.display = isClaude ? '' : 'none';
+  document.getElementById('amModelLabel').style.display    = isClaude ? '' : 'none';
+  CLAUDE_MODELS.forEach(({ id, checkId }) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isClaude ? '' : 'none';
+    document.getElementById(checkId).classList.toggle('active', m === id);
+  });
+}
+
+function toggleAgentMenu() {
+  const menu = document.getElementById('agentMenu');
+  const isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open');
+  if (!isOpen) {
+    // Close on click outside
+    setTimeout(() => {
+      document.addEventListener('click', closeAgentMenuOnOutside, { once: true });
+    }, 0);
+  }
+}
+function closeAgentMenu() {
+  document.getElementById('agentMenu').classList.remove('open');
+}
+function closeAgentMenuOnOutside(e) {
+  if (!e.target.closest('#agentMenu') && !e.target.closest('#agentBtn')) {
+    closeAgentMenu();
+  }
+}
+
+async function reauthAgent() {
+  const agent = D?.agent;
+  if (!agent) {
+    appendTerminalLine('⚠ Сначала выбери агента (Claude или Codex)', true);
+    document.getElementById('agentPanel').classList.add('open');
+    document.getElementById('termBtn').classList.add('term-active');
+    return;
+  }
+  const id = createSession('🔑 Перелогинивание');
+  runningSessionId = id;
+  document.getElementById('agentPanelTitle').textContent = '🔑 Перелогинивание';
+  document.getElementById('agentPanelStatus').textContent = 'выполняю…';
+  await fetch('/api/agent-reauth', { method: 'POST' });
 }
 
 async function runAgentTask(task, featureKey, filePath) {
-  if (agentRunning) {
-    // Show panel so user sees cancel button
-    document.getElementById('agentPanel').classList.add('open');
-    document.getElementById('termBtn').classList.add('term-active');
-    appendTerminalLine('⚠️ Агент уже запущен. Нажми ⏹ сброс чтобы отменить.', true);
-    return;
-  }
-  document.getElementById('agentTerminal').innerHTML = '';
-  document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
+  if (!agentRunning) {
+    document.getElementById('agentPanelStatus').textContent = 'запускаю…';
+  }
   await fetch('/api/run-agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -752,11 +1274,9 @@ async function runAgentTask(task, featureKey, filePath) {
 }
 
 async function runTests(featureKey, testType) {
-  document.getElementById('agentTerminal').innerHTML = '';
-  document.getElementById('agentPanelTitle').textContent = `🧪 ${testType} тесты`;
-  document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
+  document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   await fetch('/api/run-tests', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -777,12 +1297,11 @@ function toggleAgentPanel() {
 }
 
 function appendTerminalLine(line, isError, isDim) {
-  const term = document.getElementById('agentTerminal');
-  const el = document.createElement('div');
-  el.className = 'agent-line' + (isError ? ' err' : isDim ? ' dim' : '');
-  el.textContent = line;
-  term.appendChild(el);
-  term.scrollTop = term.scrollHeight;
+  if (!activeSessionId) {
+    const id = createSession('Консоль', 'info');
+    activeSessionId = id;
+  }
+  appendToSession(activeSessionId, line, !!isError, !!isDim);
 }
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
@@ -829,6 +1348,7 @@ async function init() {
       coverageHasError = status.coverageError    ?? false;
     }
     updateCovBtn();
+    updateAgentBtn();
 
     document.getElementById('projectName').textContent = D.projectName;
     document.getElementById('scannedAt').textContent =
@@ -1080,33 +1600,191 @@ function renderFeatureCards(c) {
   }
 }
 
+// ─── E2E Plan functions ────────────────────────────────────────────────────────
+
+async function generateE2ePlan(featureKey) {
+  if (D.agentRunning) { alert('Агент уже запущен'); return; }
+  await fetch('/api/e2e/generate-plan', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey })
+  });
+}
+
+async function loadE2ePlan(featureKey) {
+  e2ePlanLoading = true;
+  e2ePlan = null;
+  try {
+    const r = await fetch(`/api/e2e/plan/${encodeURIComponent(featureKey)}`);
+    if (r.ok) e2ePlan = await r.json();
+  } catch {}
+  e2ePlanLoading = false;
+}
+
+async function reviewE2eCase(featureKey, testCaseId, status) {
+  const r = await fetch('/api/e2e/review', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey, testCaseId, status })
+  });
+  if (r.ok) { const data = await r.json(); e2ePlan = data.plan; renderContent(); }
+}
+
+async function reviewAllE2e(featureKey, status) {
+  const r = await fetch('/api/e2e/review-all', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey, status })
+  });
+  if (r.ok) { const data = await r.json(); e2ePlan = data.plan; renderContent(); }
+}
+
+async function writeE2eTests(featureKey) {
+  if (D.agentRunning) { alert('Агент уже запущен'); return; }
+  await fetch('/api/e2e/write-tests', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey })
+  });
+}
+
+async function runE2eTests(featureKey) {
+  await fetch('/api/e2e/run-tests', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey })
+  });
+}
+
+function openScreenshot(src) {
+  const modal = document.createElement('div');
+  modal.className = 'e2e-screenshot-modal';
+  modal.innerHTML = `<img src="${src}" />`;
+  modal.onclick = () => modal.remove();
+  document.body.appendChild(modal);
+}
+
+function statusBadge(status) {
+  const labels = { pending:'⏳ ожидает', approved:'✅ одобрен', rejected:'❌ отклонён', written:'✍ написан', passed:'✅ прошёл', failed:'❌ упал' };
+  return `<span class="e2e-status-badge ${status}">${labels[status] || status}</span>`;
+}
+
+function renderE2eTestCase(tc, featureKey) {
+  const screenshots = (tc.screenshotPaths || []).map(p =>
+    `<img class="e2e-screenshot" src="/api/e2e/screenshot/${encodeURIComponent(p)}" onclick="openScreenshot(this.src)" />`
+  ).join('');
+  const screenshotStrip = screenshots ? `<div class="e2e-screenshot-strip">${screenshots}</div>` : '';
+  const errorBlock = tc.lastError ? `<div class="e2e-error">❌ ${tc.lastError}</div>` : '';
+  return `
+    <div class="e2e-case ${tc.status}" id="e2e-case-${tc.id}">
+      <div class="e2e-case-header">
+        <div class="e2e-case-name">${tc.name}</div>
+        ${statusBadge(tc.status)}
+      </div>
+      <div class="e2e-case-desc">${tc.description}</div>
+      <div class="e2e-steps"><ol>${tc.steps.map(s => `<li>${s}</li>`).join('')}</ol></div>
+      <div class="e2e-expected">Ожидается: ${tc.expectedResults.join('; ')}</div>
+      ${errorBlock}
+      ${screenshotStrip}
+      <div class="e2e-case-actions">
+        <button class="e2e-btn e2e-btn-approve" onclick="reviewE2eCase('${featureKey}','${tc.id}','approved')">✅ Одобрить</button>
+        <button class="e2e-btn e2e-btn-reject"  onclick="reviewE2eCase('${featureKey}','${tc.id}','rejected')">❌ Отклонить</button>
+      </div>
+    </div>`;
+}
+
+function renderE2ePlanView(c) {
+  const featureKey = drillFeatureKey;
+  const feat = D.features.find(f => f.key === featureKey);
+
+  if (e2ePlanLoading) {
+    c.innerHTML = `<div style="padding:40px;text-align:center;color:var(--dim)">Загружаю план…</div>`;
+    return;
+  }
+
+  if (!e2ePlan) {
+    const hasPW = D.hasPlaywright;
+    c.innerHTML = `
+      <div class="drill-header">
+        <button class="back-btn" onclick="drillTestType=null;renderContent()">← Назад</button>
+        <div class="drill-title"><span>🎭 E2E план — ${feat?.label || featureKey}</span></div>
+      </div>
+      <div style="padding:40px;text-align:center;border:1px dashed var(--border);border-radius:8px;margin-top:16px">
+        ${!hasPW ? '<div style="color:#f85149;margin-bottom:12px">⚠️ @playwright/test не найден в проекте</div>' : ''}
+        <div style="color:var(--dim);margin-bottom:16px">E2E план не создан. AI проанализирует файлы фичи и предложит тест-кейсы.</div>
+        <button class="e2e-btn e2e-btn-primary" onclick="generateE2ePlan('${featureKey}')">▶ Сгенерировать план</button>
+      </div>`;
+    return;
+  }
+
+  const total    = e2ePlan.testCases.length;
+  const approved = e2ePlan.testCases.filter(t => t.status === 'approved').length;
+  const rejected = e2ePlan.testCases.filter(t => t.status === 'rejected').length;
+  const written  = e2ePlan.testCases.filter(t => ['written','passed','failed'].includes(t.status)).length;
+  const passed   = e2ePlan.testCases.filter(t => t.status === 'passed').length;
+  const failed   = e2ePlan.testCases.filter(t => t.status === 'failed').length;
+
+  c.innerHTML = `
+    <div class="drill-header">
+      <button class="back-btn" onclick="drillTestType=null;renderContent()">← Назад</button>
+      <div class="drill-title"><span>🎭 E2E план — ${feat?.label || featureKey}</span></div>
+    </div>
+    <div class="e2e-plan-container">
+      <div class="e2e-batch-bar">
+        <button class="e2e-btn e2e-btn-approve" onclick="reviewAllE2e('${featureKey}','approved')">✅ Одобрить все</button>
+        <button class="e2e-btn e2e-btn-reject"  onclick="reviewAllE2e('${featureKey}','rejected')">❌ Отклонить все</button>
+        <button class="e2e-btn e2e-btn-primary"  onclick="writeE2eTests('${featureKey}')" ${approved===0?'disabled':''}>✍ Написать тесты (${approved})</button>
+        <button class="e2e-btn e2e-btn-secondary" onclick="runE2eTests('${featureKey}')" ${written===0?'disabled':''}>▶ Запустить E2E</button>
+        <button class="e2e-btn e2e-btn-secondary" onclick="generateE2ePlan('${featureKey}')">🔄 Перегенерировать</button>
+        <span class="e2e-stats">${total} кейсов · ✅ ${passed} · ❌ ${failed} · одобрено: ${approved} · отклонено: ${rejected}</span>
+      </div>
+      ${e2ePlan.testCases.map(tc => renderE2eTestCase(tc, featureKey)).join('')}
+    </div>`;
+}
+
 function testTypeCard(type, label, icon, color, count, active, featureKey, failedCount = 0) {
-  const empty = count === 0 && type !== 'source';
+  const empty     = count === 0 && type !== 'source' && type !== 'e2e';
   const hasFailed = failedCount > 0 && type !== 'source';
-  const subLabel = empty ? 'нет тестов' : (type === 'source' ? 'код приложения' : pluralFiles(count));
-  const runBtn = !empty && type !== 'source' && featureKey
-    ? `<button class="tt-run-btn" onclick="event.stopPropagation();runTests('${featureKey}','${type}')">▶ запустить</button>`
+  const subLabel  = type === 'source' ? 'файлов'
+    : type === 'e2e' ? (count > 0 ? pluralFiles(count) : (D.e2ePlansExist?.[featureKey] ? '📋 план создан' : 'нет тестов'))
+    : (empty ? 'нет тестов' : pluralFiles(count));
+  const accentColor = hasFailed ? 'var(--red)' : color;
+  const countColor  = hasFailed ? 'var(--red)' : (active || !empty || type === 'e2e' ? color : 'var(--dim)');
+
+  const failedBadge = hasFailed
+    ? `<span class="tt-failed-badge">❌ ${failedCount}</span>`
     : '';
-  const accentColor = hasFailed && !active ? 'var(--red)' : color;
-  const countColor  = hasFailed ? 'var(--red)' : (active || !empty ? color : 'var(--dim)');
-  const failedNote  = hasFailed
-    ? `<div style="font-size:11px;color:var(--red);margin-top:2px;font-weight:600">❌ ${failedCount} упало</div>`
+
+  const runBtn = !empty && type !== 'source' && type !== 'e2e' && featureKey
+    ? `<button class="tt-run-btn" onclick="event.stopPropagation();runTests('${featureKey}','${type}')">▶ запустить тесты</button>`
     : '';
+  const fixAllBtn = hasFailed && D.agent && featureKey
+    ? `<button class="tt-run-btn tt-fix-btn" onclick="event.stopPropagation();runAgentTask('fix-tests-all','${featureKey}','${type}')">🔧 починить все</button>`
+    : '';
+  const writeBtn = type !== 'source' && type !== 'e2e' && D.agent && featureKey
+    ? `<button class="tt-run-btn tt-write-btn" onclick="event.stopPropagation();runAgentTask('write-tests','${featureKey}')">✍ написать тесты</button>`
+    : '';
+  const actions = (runBtn || fixAllBtn || writeBtn)
+    ? `<div class="tt-card-actions">${runBtn}${fixAllBtn}${writeBtn}</div>`
+    : '';
+
   return `
     <div class="test-type-card${empty ? ' tt-empty' : ''}${active ? ' tt-active' : ''}${hasFailed ? ' tt-failed' : ''}"
-         data-testtype="${type}" style="${active ? 'border-color:' + color : ''}">
-      <div class="tt-accent" style="background:${accentColor}"></div>
-      <div class="tt-label">${icon} ${label}</div>
-      <div class="tt-count" style="color:${countColor}">${count}</div>
-      <div class="tt-sub">${subLabel}</div>
-      ${failedNote}
-      ${runBtn}
+         data-testtype="${type}" style="border-top-color:${accentColor}">
+      <div class="tt-card-header">
+        <span class="tt-label">${icon} ${label}</span>
+        ${failedBadge}
+      </div>
+      <span class="tt-count" style="color:${countColor}">${count}</span>
+      <span class="tt-sub">${subLabel}</span>
+      ${actions}
     </div>`;
 }
 
 function renderFeatureDetail(c) {
   const feat = D.features.find(f => f.key === drillFeatureKey);
   if (!feat) { backToFeatures(); return; }
+
+  // E2E tab → show plan view instead of file list
+  if (drillTestType === 'e2e') {
+    renderE2ePlanView(c);
+    return;
+  }
 
   const mods = D.modules.filter(m => m.featureKeys && m.featureKeys.includes(drillFeatureKey));
   const src  = mods.filter(m => m.type !== 'test');
@@ -1175,11 +1853,14 @@ function renderFeatureDetail(c) {
     </div>`;
 
   c.querySelectorAll('.test-type-card[data-testtype]').forEach(card => {
-    card.onclick = () => {
+    card.onclick = async () => {
       const type = card.dataset.testtype;
       drillTestType = (type === 'source') ? null : type; // 'source' tab = null state
       activePanelKey = null;
       document.getElementById('panel').classList.remove('open');
+      if (type === 'e2e') {
+        await loadE2ePlan(drillFeatureKey);
+      }
       renderContent();
     };
   });
@@ -1334,12 +2015,16 @@ function fileRow(m, isTest = false, featureKey = null) {
   const dir     = parts.slice(0, -1).join('/');
 
   // Test errors from last run
-  const testErr = isTest && D.testErrors && D.testErrors[relPath];
-  const icon    = testErr ? '❌' : isTest ? '🧪' : (m.testStale ? '⚠️' : m.hasTests ? '✅' : '⬜');
+  const testErr    = isTest && D.testErrors && D.testErrors[relPath];
+  const agentState = !isTest ? isFileAgentActive(relPath) : null;
+  const icon       = agentState
+    ? `<span class="file-agent-spinner ${agentState}" title="${agentState === 'running' ? 'Агент работает…' : 'В очереди…'}"></span>`
+    : (testErr ? '❌' : isTest ? '🧪' : (m.testStale ? '⚠️' : m.hasTests ? '✅' : '⬜'));
   const isActive = activePanelKey === m.id;
 
   // Write-test button for source files
-  const showAgentBtn = D.agent && !isTest && !m.isInfra && featureKey && (!m.hasTests || m.testStale);
+  // In feature drill-down (featureKey set), show button even for isInfra files — user explicitly added them to the feature
+  const showAgentBtn = D.agent && !isTest && featureKey && (!m.hasTests || m.testStale);
   const agentBtnLabel = m.testStale ? '↻ обновить тест' : '✍ написать тест';
   const agentBtnTitle = m.testStale ? 'Файл изменился — обновить тесты' : 'Написать тест для этого файла';
   const agentBtn = showAgentBtn
@@ -1370,6 +2055,20 @@ function fileRow(m, isTest = false, featureKey = null) {
       </div>`
     : '';
 
+  // "⋯" more menu — always show for source files in feature context
+  const moreBtn = !isTest && featureKey
+    ? `<div class="file-row-more-wrap">
+        <button class="file-row-more-btn" title="Ещё"
+          onclick="event.stopPropagation();toggleFileMenu(this,'${featureKey}','${relPath}')">⋯</button>
+        <div class="file-row-more-dropdown">
+          <button class="file-row-more-item"
+            onclick="event.stopPropagation();copyPromptForFile('${featureKey}','${relPath}',this.closest('.file-row-more-dropdown'))">
+            📋 Скопировать промпт для агента
+          </button>
+        </div>
+      </div>`
+    : '';
+
   return `
     <div class="file-row${isActive ? ' active' : ''}${testErr ? ' has-errors' : ''}" data-id="${m.id}">
       <span class="file-row-icon">${icon}</span>
@@ -1377,6 +2076,7 @@ function fileRow(m, isTest = false, featureKey = null) {
       ${errBadge}
       ${agentBtn}
       ${fixBtn}
+      ${moreBtn}
       <span class="file-row-dir">${dir}</span>
     </div>
     ${errHtml}`;
@@ -1472,7 +2172,11 @@ function fileItem(m, isTest = false) {
   const parts = m.relativePath.replace(/\\/g, '/').split('/');
   const name  = parts[parts.length - 1];
   const dir   = parts.slice(0, -1).join('/');
-  const icon  = isTest ? '🧪' : (m.hasTests ? '✅' : '⬜');
+  const relPathNorm = m.relativePath.replace(/\\/g, '/');
+  const agentStateItem = !isTest ? isFileAgentActive(relPathNorm) : null;
+  const icon  = agentStateItem
+    ? `<span class="file-agent-spinner ${agentStateItem}" title="${agentStateItem === 'running' ? 'Агент работает…' : 'В очереди…'}"></span>`
+    : (isTest ? '🧪' : (m.hasTests ? '✅' : '⬜'));
   return `
     <div class="file-item">
       <span class="file-item-icon">${icon}</span>
@@ -1670,6 +2374,7 @@ async function refreshData() {
     renderStats();
     renderSidebar();
     renderContent();
+    updateAgentBtn();
 
     // Re-render drill-down or re-open panel
     const panelOpen = document.getElementById('panel').classList.contains('open');
@@ -1723,31 +2428,69 @@ function connectSSE() {
     setTimeout(() => { coverageHasError = false; updateCovBtn(); }, 8000);
   });
 
-  es.addEventListener('agent-started', (e) => {
-    setAgentRunning(true);
-    const { title } = JSON.parse(e.data);
-    document.getElementById('agentPanelTitle').textContent = '🤖 ' + title;
-    document.getElementById('agentPanelStatus').textContent = 'запускаю…';
+  es.addEventListener('agent-queued', (e) => {
+    const { queueLength, title, task, featureKey, filePath } = JSON.parse(e.data);
+    updateQueueBadge(queueLength);
     document.getElementById('agentPanel').classList.add('open');
     document.getElementById('termBtn').classList.add('term-active');
-    document.getElementById('agentTerminal').innerHTML = '';
+    // Track queued paths for spinner
+    getTaskFilePaths(task, featureKey, filePath).forEach(p => agentQueuedPaths.add(p));
+    renderContent();
+    // Append queue notification to the currently running session (or active)
+    const targetId = runningSessionId || activeSessionId;
+    if (targetId) {
+      appendToSession(targetId, `📋 В очереди (${queueLength}): ${title}`, false);
+    }
+  });
+
+  es.addEventListener('agent-started', (e) => {
+    setAgentRunning(true);
+    const { title, queueLength = 0, task, featureKey, filePath } = JSON.parse(e.data);
+    updateQueueBadge(queueLength);
+    // Move paths from queued → running (current task)
+    const startedPaths = getTaskFilePaths(task, featureKey, filePath);
+    startedPaths.forEach(p => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
+    renderContent();
+    // Close previous session (queue case: agent-done not fired between tasks)
+    if (runningSessionId) {
+      const prev = consoleSessions.find(s => s.id === runningSessionId);
+      if (prev && prev.status === 'running') updateSessionStatus(runningSessionId, 'ok');
+    }
+    const id = createSession(title);
+    runningSessionId = id;
+    document.getElementById('agentPanelTitle').textContent = '🤖 ' + title;
+    document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   });
 
   es.addEventListener('agent-output', (e) => {
     const { line, isError, isDim } = JSON.parse(e.data);
-    appendTerminalLine(line, !!isError, !!isDim);
-    document.getElementById('agentPanelStatus').textContent = 'работает…';
+    if (runningSessionId) {
+      appendToSession(runningSessionId, line, !!isError, !!isDim);
+      if (activeSessionId === runningSessionId) {
+        document.getElementById('agentPanelStatus').textContent = 'работает…';
+      }
+    } else {
+      appendTerminalLine(line, !!isError, !!isDim);
+    }
   });
 
   es.addEventListener('agent-done', () => {
     setAgentRunning(false);
-    document.getElementById('agentPanelStatus').textContent = '✅ готово';
+    updateQueueBadge(0);
+    agentRunningPaths.clear();
+    agentQueuedPaths.clear();
+    if (runningSessionId) {
+      updateSessionStatus(runningSessionId, 'ok');
+      if (activeSessionId === runningSessionId) {
+        document.getElementById('agentPanelStatus').textContent = '✅ готово';
+      }
+      runningSessionId = null;
+    }
     renderContent();
   });
 
   es.addEventListener('agent-summary', (e) => {
     const { passed, failed, files } = JSON.parse(e.data);
-    const term = document.getElementById('agentTerminal');
     const allOk = failed === 0;
     const box = document.createElement('div');
     box.style.cssText = `
@@ -1764,30 +2507,114 @@ function connectSSE() {
       </div>
       ${files.map(f => `<div style="font-size:11px;color:var(--dim);margin-top:3px">📄 ${f}</div>`).join('')}
     `;
-    term.appendChild(box);
-    term.scrollTop = term.scrollHeight;
+    const targetId = runningSessionId || activeSessionId;
+    if (targetId) {
+      appendToSession(targetId, box);
+      // Mark session status from test results immediately
+      if (runningSessionId === targetId) {
+        updateSessionStatus(targetId, failed > 0 ? 'error' : 'ok');
+      }
+    }
   });
 
   es.addEventListener('agent-error', (e) => {
     setAgentRunning(false);
-    const { message } = JSON.parse(e.data);
-    document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
-    appendTerminalLine('❌ ' + (message || 'Ошибка агента'), true);
+    agentRunningPaths.clear();
+    agentQueuedPaths.clear();
+    renderContent();
+    const { message, authRequired, notInstalled } = JSON.parse(e.data);
+
+    // Build error node (plain text or auth/install box)
+    let node = null;
+    if (authRequired || notInstalled) {
+      node = document.createElement('div');
+      node.style.cssText = 'margin:10px 0 4px;padding:10px 14px;border-radius:8px;border:1px solid var(--red);background:#2a0d0d;font-family:inherit;';
+      node.innerHTML = `
+        <div style="font-size:13px;font-weight:700;color:var(--red)">❌ ${message || 'Ошибка агента'}</div>
+        ${authRequired ? `<button onclick="reauthAgent()" style="margin-top:8px;padding:4px 12px;font-size:12px;background:none;border:1px solid var(--yellow);color:var(--yellow);border-radius:4px;cursor:pointer;">🔑 Перелогиниться</button>` : ''}
+        ${notInstalled ? `<div style="margin-top:6px;font-size:11px;color:var(--dim)">После установки перезапусти viberadar</div>` : ''}
+      `;
+    }
+
+    // If no session exists yet (startup check fires before any run), create one
+    const targetId = runningSessionId || (() => {
+      if (authRequired || notInstalled) {
+        const id = createSession('⚠️ Проверка агента', 'error');
+        return id;
+      }
+      return activeSessionId;
+    })();
+
+    if (targetId) {
+      if (node) {
+        appendToSession(targetId, node);
+      } else {
+        appendToSession(targetId, '❌ ' + (message || 'Ошибка агента'), true);
+      }
+      updateSessionStatus(targetId, 'error');
+      if (activeSessionId === targetId) {
+        document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
+      }
+    }
+    if (runningSessionId) runningSessionId = null;
   });
 
   es.addEventListener('tests-started', (e) => {
     const { testType, count } = JSON.parse(e.data);
+    const id = createSession(`🧪 ${testType}`);
+    runningSessionId = id;
+    appendToSession(id, `Запускаю ${testType} тесты (${count} файлов)…`);
     document.getElementById('agentPanelTitle').textContent = `🧪 ${testType} тесты`;
     document.getElementById('agentPanelStatus').textContent = `запускаю ${count} файлов…`;
   });
 
   es.addEventListener('tests-done', (e) => {
     const { passed, failed, testErrors } = JSON.parse(e.data);
-    document.getElementById('agentPanelStatus').textContent =
-      failed === 0 ? `✅ ${passed} passed` : `⚠️ ${passed} passed, ${failed} failed`;
-    // Apply testErrors directly from event — no separate fetch needed
+    const status = failed === 0 ? 'ok' : 'error';
+    if (runningSessionId) {
+      updateSessionStatus(runningSessionId, status);
+      if (activeSessionId === runningSessionId) {
+        document.getElementById('agentPanelStatus').textContent =
+          failed === 0 ? `✅ ${passed} passed` : `⚠️ ${passed} passed, ${failed} failed`;
+      }
+      runningSessionId = null;
+    }
     D.testErrors = testErrors || {};
     renderContent();
+  });
+
+  es.addEventListener('e2e-plan-generating', (e) => {
+    const { featureKey } = JSON.parse(e.data);
+    if (drillFeatureKey === featureKey && drillTestType === 'e2e') {
+      e2ePlanLoading = true;
+      renderContent();
+    }
+  });
+
+  es.addEventListener('e2e-plan-ready', (e) => {
+    const { featureKey, plan } = JSON.parse(e.data);
+    if (drillFeatureKey === featureKey) {
+      e2ePlan = plan;
+      e2ePlanLoading = false;
+      if (drillTestType === 'e2e') renderContent();
+    }
+  });
+
+  es.addEventListener('e2e-plan-error', (e) => {
+    const { featureKey, message } = JSON.parse(e.data);
+    e2ePlanLoading = false;
+    if (drillFeatureKey === featureKey && drillTestType === 'e2e') {
+      renderContent();
+      setTimeout(() => alert('Ошибка генерации плана: ' + message), 100);
+    }
+  });
+
+  es.addEventListener('e2e-tests-done', (e) => {
+    const { featureKey, plan } = JSON.parse(e.data);
+    if (drillFeatureKey === featureKey) {
+      e2ePlan = plan;
+      if (drillTestType === 'e2e') renderContent();
+    }
   });
 
   es.onerror = () => {
@@ -1797,7 +2624,15 @@ function connectSSE() {
   };
 }
 
-init().then(() => connectSSE());
+init().then(() => {
+  restoreSessions();
+  connectSSE();
+  // Sync content padding with terminal panel open state automatically
+  new MutationObserver(() => {
+    const isOpen = document.getElementById('agentPanel').classList.contains('open');
+    document.getElementById('content').classList.toggle('panel-open', isOpen);
+  }).observe(document.getElementById('agentPanel'), { attributes: true, attributeFilter: ['class'] });
+});
 </script>
 </body>
 </html>

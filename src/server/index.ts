@@ -31,16 +31,17 @@ const WIN = process.platform === 'win32';
  * --output-format stream-json gives real-time events (tool calls, writes, etc.)
  * File piping avoids TUI mode in Claude Code v2+.
  */
-function buildAgentShellCmd(agent: string, taskFile: string): string {
+function buildAgentShellCmd(agent: string, taskFile: string, model?: string): string {
   const escaped = taskFile.replace(/\\/g, '\\\\');
+  const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
   if (WIN) {
-    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json`;
-    if (agent === 'codex')  return `type "${escaped}" | codex.cmd`;
+    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
+    if (agent === 'codex')  return `type "${escaped}" | codex.cmd exec - --color never --sandbox workspace-write`;
   } else {
-    if (agent === 'claude') return `claude --print --verbose --output-format stream-json < "${escaped}"`;
-    if (agent === 'codex')  return `codex < "${escaped}"`;
+    if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
+    if (agent === 'codex')  return `codex exec - --color never --sandbox workspace-write < "${escaped}"`;
   }
-  return `claude --print --verbose --output-format stream-json < "${escaped}"`;
+  return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
 }
 
 /** Parse a Claude Code stream-json event into a human-readable line, or null to skip */
@@ -113,53 +114,205 @@ interface TestRunResult extends Record<string, unknown> {
   failed: number;
   files: string[];
   fileDetails: Record<string, TestFileDetail>; // absolute path → detail
+  runError?: string;
+}
+
+interface AgentQueueItem {
+  task: string;
+  featureKey?: string;
+  filePath?: string;
+  title: string;
+  agent: string;
+  savedErrors?: TestFileError[];
+  savedFailedFiles?: Array<{ filePath: string; errors: TestFileError[] }>;
+  savedTestType?: string;
+}
+
+// ─── E2E Plan types ───────────────────────────────────────────────────────────
+
+interface E2eTestCase {
+  id: string;
+  name: string;
+  description: string;
+  steps: string[];
+  expectedResults: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'written' | 'passed' | 'failed';
+  testFilePath?: string;
+  lastError?: string;
+  screenshotPaths?: string[];
+}
+
+interface E2ePlan {
+  featureKey: string;
+  featureLabel: string;
+  generatedAt: string;
+  updatedAt: string;
+  baseUrl?: string;
+  testCases: E2eTestCase[];
 }
 
 function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResult> {
   return new Promise((resolve) => {
+    // Write JSON to a temp file — avoids stdout encoding/regex issues on Windows
+    const tmpDir  = path.join(projectRoot, '.viberadar');
+    const tmpFile = path.join(tmpDir, '_test-results.json');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+    try { fs.unlinkSync(tmpFile); } catch {}
+
     const proc = spawn(
-      'npx', ['vitest', 'run', '--reporter=json', ...files],
+      'npx', ['vitest', 'run', '--reporter=json', `--outputFile=${tmpFile}`, ...files],
       { cwd: projectRoot, shell: true, stdio: 'pipe' }
     );
     let stdout = '';
-    proc.stdout?.on('data', (d: Buffer) => stdout += d.toString());
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
     proc.on('close', () => {
       try {
-        // vitest --reporter=json wraps output; find the JSON object
-        const match = stdout.match(/\{[\s\S]*"testResults"[\s\S]*\}/);
-        const json  = JSON.parse(match ? match[0] : stdout);
+        // Prefer the output file (reliable); fall back to stdout
+        let jsonStr: string;
+        if (fs.existsSync(tmpFile)) {
+          jsonStr = fs.readFileSync(tmpFile, 'utf-8').trim();
+          process.stdout.write(`   ✅ vitest outputFile: ${tmpFile} (${jsonStr.length} bytes)\n`);
+        } else {
+          process.stdout.write(`   ⚠️  vitest outputFile not found, falling back to stdout (${stdout.length} bytes)\n`);
+          const match = stdout.match(/\{[\s\S]*"testResults"[\s\S]*\}/);
+          jsonStr = match ? match[0] : stdout.trim();
+        }
+
+        const json = JSON.parse(jsonStr);
+        process.stdout.write(`   🔍 vitest JSON: passed=${json.numPassedTests} failed=${json.numFailedTests} testResults=${(json.testResults ?? []).length}\n`);
 
         // Extract per-file failure details
         const fileDetails: Record<string, TestFileDetail> = {};
         for (const tr of (json.testResults ?? [])) {
           const fp: string = tr.testFilePath ?? '';
+          if (!fp) continue;
+          const assertions: any[] = tr.assertionResults ?? tr.testResults ?? [];
           const errors: TestFileError[] = [];
-          for (const ar of (tr.assertionResults ?? [])) {
+          for (const ar of assertions) {
             if (ar.status === 'failed') {
               errors.push({
                 testName: ar.fullName ?? ar.title ?? 'unknown',
-                message: (ar.failureMessages?.[0] ?? '').split('\n')[0].slice(0, 300),
+                message: (ar.failureMessages?.[0] ?? ar.errors?.[0]?.message ?? '').split('\n')[0].slice(0, 300),
               });
             }
           }
           fileDetails[fp] = {
-            passed: (tr.assertionResults ?? []).filter((a: any) => a.status === 'passed').length,
+            passed: assertions.filter((a: any) => a.status === 'passed').length,
             failed: errors.length,
             errors,
           };
         }
 
+        const failedFiles = Object.entries(fileDetails).filter(([, d]) => d.failed > 0);
+        process.stdout.write(`   🔍 fileDetails: ${Object.keys(fileDetails).length} files, ${failedFiles.length} with failures\n`);
+        if (failedFiles.length > 0) {
+          for (const [fp, d] of failedFiles) {
+            process.stdout.write(`      ❌ ${fp} → ${d.failed} failed\n`);
+          }
+        }
+
         resolve({
-          passed: json.numPassedTests  ?? 0,
-          failed: json.numFailedTests  ?? 0,
+          passed: json.numPassedTests ?? 0,
+          failed: json.numFailedTests ?? 0,
           files,
           fileDetails,
         });
-      } catch {
-        resolve({ passed: 0, failed: 0, files, fileDetails: {} });
+      } catch (err: any) {
+        process.stdout.write(`   ❌ runTestFiles parse error: ${err.message}\n`);
+        resolve({ passed: 0, failed: files.length, files, fileDetails: {}, runError: err.message });
       }
     });
-    proc.on('error', () => resolve({ passed: 0, failed: 0, files, fileDetails: {} }));
+    proc.on('error', (err: any) => resolve({ passed: 0, failed: files.length, files, fileDetails: {}, runError: err.message }));
+  });
+}
+
+// ─── E2E plan storage ─────────────────────────────────────────────────────────
+
+function e2ePlanDir(projectRoot: string): string {
+  return path.join(projectRoot, '.viberadar', 'e2e-plans');
+}
+
+function e2ePlanPath(projectRoot: string, featureKey: string): string {
+  return path.join(e2ePlanDir(projectRoot), `${featureKey}.json`);
+}
+
+function loadE2ePlan(projectRoot: string, featureKey: string): E2ePlan | null {
+  try {
+    const p = e2ePlanPath(projectRoot, featureKey);
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch { return null; }
+}
+
+function saveE2ePlan(projectRoot: string, plan: E2ePlan): void {
+  const dir = e2ePlanDir(projectRoot);
+  fs.mkdirSync(dir, { recursive: true });
+  plan.updatedAt = new Date().toISOString();
+  fs.writeFileSync(e2ePlanPath(projectRoot, plan.featureKey), JSON.stringify(plan, null, 2), 'utf-8');
+}
+
+function e2eScreenshotDir(projectRoot: string, featureKey: string): string {
+  return path.join(projectRoot, '.viberadar', 'e2e-screenshots', featureKey);
+}
+
+function collectScreenshots(projectRoot: string, featureKey: string, testCaseId: string): string[] {
+  const dir = path.join(e2eScreenshotDir(projectRoot, featureKey), testCaseId);
+  try {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f))
+      .sort()
+      .map(f => `${featureKey}/${testCaseId}/${f}`);
+  } catch { return []; }
+}
+
+function hasPlaywright(projectRoot: string): boolean {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return !!deps['@playwright/test'] || !!deps['playwright'];
+  } catch { return false; }
+}
+
+// ─── Playwright runner ────────────────────────────────────────────────────────
+
+function runPlaywrightTests(files: string[], projectRoot: string): Promise<{ passed: number; failed: number; results: Record<string, 'passed' | 'failed'>; errors: Record<string, string> }> {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      'npx', ['playwright', 'test', '--reporter=json', ...files],
+      { cwd: projectRoot, shell: true, stdio: 'pipe' }
+    );
+    let stdout = '';
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.on('close', () => {
+      try {
+        const match = stdout.match(/\{[\s\S]*"suites"[\s\S]*\}/);
+        const json = JSON.parse(match ? match[0] : stdout);
+        const results: Record<string, 'passed' | 'failed'> = {};
+        const errors: Record<string, string> = {};
+        let passed = 0, failed = 0;
+        const walkSuites = (suites: any[]) => {
+          for (const suite of suites ?? []) {
+            for (const spec of suite.specs ?? []) {
+              const ok = spec.tests?.every((t: any) => t.results?.every((r: any) => r.status === 'passed'));
+              const title = spec.title ?? suite.title ?? 'unknown';
+              if (ok) { results[title] = 'passed'; passed++; }
+              else {
+                results[title] = 'failed'; failed++;
+                const errMsg = spec.tests?.[0]?.results?.[0]?.error?.message ?? 'Test failed';
+                errors[title] = errMsg.split('\n')[0].slice(0, 300);
+              }
+            }
+            if (suite.suites) walkSuites(suite.suites);
+          }
+        };
+        walkSuites(json.suites ?? []);
+        resolve({ passed, failed, results, errors });
+      } catch {
+        resolve({ passed: 0, failed: 0, results: {}, errors: {} });
+      }
+    });
+    proc.on('error', () => resolve({ passed: 0, failed: 0, results: {}, errors: {} }));
   });
 }
 
@@ -291,6 +444,29 @@ function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string 
   ].join('\n');
 }
 
+function buildFixAllTestsPrompt(failedFiles: Array<{ filePath: string; errors: TestFileError[] }>, testType: string): string {
+  const totalErrors = failedFiles.reduce((sum, f) => sum + f.errors.length, 0);
+  const fileBlocks = failedFiles.map(f => {
+    const normalPath = f.filePath.replace(/\\/g, '/');
+    return [
+      `### \`${normalPath}\` (${f.errors.length} упало):`,
+      ...f.errors.map(e => `• "${e.testName}"\n  ${e.message}`),
+    ].join('\n');
+  });
+  return [
+    `Исправь все падающие ${testType} тесты (${totalErrors} тестов в ${failedFiles.length} файлах).`,
+    ``,
+    ...fileBlocks,
+    ``,
+    `Требования:`,
+    `- Исправь только падающие тесты, не трогай проходящие`,
+    `- Не удаляй тесты — исправь логику или моки`,
+    `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
+    `- Если ошибка в исходном коде, а не в тесте — исправь код`,
+    `- После исправления каждого файла запусти его тесты, чтобы убедиться что проходят`,
+  ].join('\n');
+}
+
 function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]): string {
   const unmapped = modules
     .filter(m => m.type !== 'test' && !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0))
@@ -313,6 +489,68 @@ function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]
     `Файлы:`,
     ...unmapped,
   ].join('\n');
+}
+
+function buildE2ePlanPrompt(feat: FeatureResult, modules: ModuleInfo[]): string {
+  const files = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  return [
+    `Ты — QA-инженер. Проанализируй исходный код фичи "${feat.label}" и составь подробный план E2E-тестирования.`,
+    ``,
+    `Файлы фичи:`,
+    ...files,
+    ``,
+    `Прочитай эти файлы, изучи UI: формы, кнопки, навигацию, бизнес-логику.`,
+    ``,
+    `Верни ТОЛЬКО валидный JSON без markdown-блоков в формате:`,
+    `{`,
+    `  "baseUrl": "http://localhost:3000",`,
+    `  "testCases": [`,
+    `    {`,
+    `      "id": "feature-key-01",`,
+    `      "name": "Краткое название теста",`,
+    `      "description": "Что проверяет тест",`,
+    `      "steps": ["Шаг 1", "Шаг 2", "Шаг 3"],`,
+    `      "expectedResults": ["Ожидаемый результат 1", "Ожидаемый результат 2"]`,
+    `    }`,
+    `  ]`,
+    `}`,
+    ``,
+    `Требования:`,
+    `- 5-15 тест-кейсов, покрывающих основные сценарии`,
+    `- Каждый кейс: happy path, edge cases, обработка ошибок`,
+    `- id: строчные буквы и цифры через дефис, уникальный`,
+    `- Только JSON, без объяснений`,
+  ].join('\n');
+}
+
+function buildWriteE2eTestPrompt(feat: FeatureResult, plan: E2ePlan, modules: ModuleInfo[]): string {
+  const approvedCases = plan.testCases.filter(tc => tc.status === 'approved');
+  const existingE2e = modules
+    .filter(m => m.featureKeys.includes(feat.key) && (m.type as string) === 'e2e')
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  return [
+    `Напиши Playwright E2E тесты для фичи "${feat.label}".`,
+    ``,
+    `Approved тест-кейсы (${approvedCases.length}):`,
+    ...approvedCases.map(tc => [
+      `### ${tc.name} (id: ${tc.id})`,
+      `${tc.description}`,
+      `Шаги: ${tc.steps.join(' → ')}`,
+      `Ожидается: ${tc.expectedResults.join('; ')}`,
+    ].join('\n')),
+    ``,
+    existingE2e.length > 0 ? `Существующие E2E тесты (следуй паттернам):\n${existingE2e.join('\n')}` : '',
+    ``,
+    `Требования:`,
+    `- Создай файлы в директории e2e/${feat.key}/`,
+    `- Используй @playwright/test`,
+    `- baseUrl: ${plan.baseUrl || 'http://localhost:3000'}`,
+    `- После ключевых шагов добавь скриншоты: await page.screenshot({ path: '.viberadar/e2e-screenshots/${feat.key}/<testCaseId>/step-N.png' })`,
+    `- Группируй по test case id (один файл на кейс или несколько кейсов в одном файле)`,
+    `- Следуй существующим паттернам проекта`,
+  ].filter(Boolean).join('\n');
 }
 
 // ─── Coverage provider auto-install ──────────────────────────────────────────
@@ -389,6 +627,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let coverageError   = false;
     let agentRunning    = false;
     let testsRunning    = false;
+    const agentQueue: AgentQueueItem[] = [];
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
@@ -491,69 +730,73 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     // ── Agent runner ───────────────────────────────────────────────────────────
-    function runAgent(task: 'write-tests' | 'write-tests-file' | 'fix-tests' | 'map-unmapped', featureKey?: string, filePath?: string) {
-      if (agentRunning) {
-        process.stdout.write('   ⏳ Agent already running\n');
-        return;
-      }
 
-      const agent = currentData.agent;
-      if (!agent) {
-        broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
-        return;
+    /** Execute next queued item, or broadcast agent-done if queue is empty */
+    function processNextInQueue() {
+      if (agentQueue.length > 0) {
+        const next = agentQueue.shift()!;
+        process.stdout.write(`   📋 Starting next from queue: "${next.title}" (remaining: ${agentQueue.length})\n`);
+        broadcast('agent-output', { line: `📋 Следующая задача из очереди: ${next.title}` });
+        broadcast('agent-output', { line: `   В очереди осталось: ${agentQueue.length}` });
+        executeAgentItem(next);
+      } else {
+        broadcast('agent-done', { queueLength: 0 });
       }
+    }
 
-      // Build prompt
+    /** Actually spawn the agent process for a queue item */
+    function executeAgentItem(item: AgentQueueItem) {
+      const { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType } = item;
+
+      // Build prompt lazily at execution time
       let prompt: string;
-      let title: string;
-
-      const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
-
       if (task === 'write-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) {
           broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` });
-          return;
+          agentRunning = false; processNextInQueue(); return;
         }
         prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest');
-        title  = `${agentLabel} — тесты для "${feat.label}"`;
       } else if (task === 'write-tests-file') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat || !filePath) {
-          broadcast('agent-error', { message: `Не указана фича или файл` });
-          return;
+          broadcast('agent-error', { message: 'Не указана фича или файл' });
+          agentRunning = false; processNextInQueue(); return;
         }
         prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
-        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-        title  = `${agentLabel} — тест для "${fileName}"`;
       } else if (task === 'fix-tests') {
-        if (!filePath) {
-          broadcast('agent-error', { message: 'Не указан файл для исправления' });
-          return;
+        if (!filePath || !savedErrors || savedErrors.length === 0) {
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}` });
+          agentRunning = false; processNextInQueue(); return;
         }
-        // Look up stored errors for this file (match by absolute or relative path)
-        let storedErrors: TestFileError[] | undefined;
-        for (const [fp, detail] of lastTestResults) {
-          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
-          if (rel === filePath.replace(/\\/g, '/') || fp === filePath) {
-            storedErrors = detail.errors;
-            break;
-          }
+        prompt = buildFixTestsPrompt(filePath, savedErrors);
+      } else if (task === 'fix-tests-all') {
+        if (!savedFailedFiles || savedFailedFiles.length === 0) {
+          broadcast('agent-error', { message: 'Нет упавших тестов для исправления' });
+          agentRunning = false; processNextInQueue(); return;
         }
-        if (!storedErrors || storedErrors.length === 0) {
-          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` });
-          return;
+        prompt = buildFixAllTestsPrompt(savedFailedFiles, savedTestType || 'unit');
+      } else if (task === 'generate-e2e-plan') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) {
+          broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` });
+          agentRunning = false; processNextInQueue(); return;
         }
-        prompt = buildFixTestsPrompt(filePath, storedErrors);
-        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-        title  = `${agentLabel} — исправить тесты в "${fileName}"`;
+        prompt = buildE2ePlanPrompt(feat, currentData.modules);
+      } else if (task === 'write-e2e-tests') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        const plan = featureKey ? loadE2ePlan(projectRoot, featureKey) : null;
+        if (!feat || !plan) {
+          broadcast('agent-error', { message: `Фича или план не найдены: ${featureKey}` });
+          agentRunning = false; processNextInQueue(); return;
+        }
+        prompt = buildWriteE2eTestPrompt(feat, plan, currentData.modules);
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
-        title  = `${agentLabel} — разобрать unmapped`;
       }
 
       agentRunning = true;
-      broadcast('agent-started', { title, task, featureKey });
+      broadcast('agent-started', { title, task, featureKey, filePath: filePath || null, queueLength: agentQueue.length });
       process.stdout.write(`   🤖 Running agent (${agent}): ${task}\n`);
 
       // Write prompt to .viberadar/task.md for reference
@@ -565,7 +808,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } catch {}
 
       // Spawn via shell, piping prompt from file (avoids TUI mode, supports stream-json)
-      const shellCmd = buildAgentShellCmd(agent, taskFile);
+      const shellCmd = buildAgentShellCmd(agent, taskFile, (currentData as any).model);
       process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
         cwd: projectRoot,
@@ -577,6 +820,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       // Track test files written/edited by agent (for auto-run after)
       const createdTestFiles: string[] = [];
+      // Accumulate full result text for E2E plan parsing
+      let agentResultText = '';
 
       function trackWrittenFiles(raw: string) {
         try {
@@ -601,16 +846,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         if (!raw.trim()) return;
         trackWrittenFiles(raw);
         const parsed = agent === 'claude' ? parseClaudeEvent(raw) : raw;
-        // If parsing returned null (noise), still show raw line dimmed so user knows output is coming
         if (!parsed) {
           broadcast('agent-output', { line: raw.slice(0, 120), isDim: true });
           return;
         }
-
         if (parsed.startsWith('§RESULT§')) {
-          // Full result summary — split into lines and prefix with indent
+          agentResultText = parsed.slice('§RESULT§'.length).trim();
           broadcast('agent-output', { line: '─────────────────────────────' });
-          for (const l of parsed.slice('§RESULT§'.length).split('\n')) {
+          for (const l of agentResultText.split('\n')) {
             if (l.trim()) broadcast('agent-output', { line: '  ' + l });
           }
         } else {
@@ -632,22 +875,31 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         agentRunning = false;
         if (code === 0) {
           // Auto-run created/fixed test files and show results
-          const testFilesToRun = task === 'fix-tests' && filePath ? [filePath] : createdTestFiles;
-          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests') && testFilesToRun.length > 0) {
+          let testFilesToRun: string[];
+          if (task === 'fix-tests-all') {
+            testFilesToRun = [...lastTestResults.keys()];
+          } else if (task === 'fix-tests' && filePath) {
+            testFilesToRun = [filePath];
+          } else {
+            testFilesToRun = createdTestFiles;
+          }
+          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests' || task === 'fix-tests-all') && testFilesToRun.length > 0) {
             broadcast('agent-output', { line: '─────────────────────────────' });
             broadcast('agent-output', { line: `🧪 Запускаю тесты (${testFilesToRun.length} файлов)...` });
             const result = await runTestFiles(testFilesToRun, projectRoot);
 
-            // Store per-file results for "fix-tests" feature
-            // path.resolve() normalizes slashes on Windows (vitest outputs forward slashes)
             lastTestResults.clear();
             for (const [fp, detail] of Object.entries(result.fileDetails)) {
               if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
-            const summary = result.failed === 0
-              ? `✅ Все тесты прошли: ${result.passed} passed`
-              : `⚠️  ${result.passed} passed, ${result.failed} failed`;
+            const summary = result.runError
+              ? `❌ Тесты не запустились: ${result.runError}`
+              : result.failed === 0 && result.passed > 0
+                ? `✅ Все тесты прошли: ${result.passed} passed`
+                : result.failed === 0 && result.passed === 0
+                  ? `⚠️ 0 тестов запустилось — проверь файл на ошибки импорта`
+                  : `⚠️  ${result.passed} passed, ${result.failed} failed`;
             broadcast('agent-output', { line: summary });
             if (result.failed > 0) {
               for (const [fp, detail] of Object.entries(result.fileDetails)) {
@@ -664,23 +916,143 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             broadcast('agent-summary', result);
           }
 
+          // E2E plan post-processing
+          if (task === 'generate-e2e-plan' && featureKey) {
+            try {
+              const jsonMatch = agentResultText.match(/\{[\s\S]*"testCases"[\s\S]*\}/);
+              const parsedPlan = JSON.parse(jsonMatch ? jsonMatch[0] : agentResultText);
+              const feat = currentData.features?.find(f => f.key === featureKey);
+              const plan: E2ePlan = {
+                featureKey,
+                featureLabel: feat?.label || featureKey,
+                generatedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                baseUrl: parsedPlan.baseUrl,
+                testCases: (parsedPlan.testCases || []).map((tc: any) => ({ ...tc, status: 'pending' as const })),
+              };
+              saveE2ePlan(projectRoot, plan);
+              broadcast('e2e-plan-ready', { featureKey, plan });
+            } catch (err: any) {
+              broadcast('e2e-plan-error', { featureKey, message: `Не удалось распарсить план: ${err.message}` });
+            }
+          }
+
+          if (task === 'write-e2e-tests' && featureKey) {
+            const plan = loadE2ePlan(projectRoot, featureKey);
+            if (plan) {
+              for (const tc of plan.testCases) {
+                if (tc.status === 'approved') tc.status = 'written';
+              }
+              saveE2ePlan(projectRoot, plan);
+              broadcast('e2e-tests-written', { featureKey, files: createdTestFiles });
+            }
+          }
+
           process.stdout.write('   ✅ Agent done, rescanning...\n');
           try {
             currentData = await scanProject(projectRoot);
             broadcast('data-updated');
           } catch {}
-          broadcast('agent-done');
+          processNextInQueue();
+        } else if (code === 255) {
+          process.stdout.write(`   ❌ Agent auth error (exit code 255)\n`);
+          broadcast('agent-error', {
+            message: `${agent === 'claude' ? 'Claude Code' : 'Codex'} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`,
+            authRequired: true,
+            agent,
+          });
+          processNextInQueue();
         } else {
           process.stdout.write(`   ❌ Agent failed (exit code ${code})\n`);
           broadcast('agent-error', { message: `Агент завершился с кодом ${code}` });
+          processNextInQueue();
         }
       });
 
-      proc.on('error', (err) => {
+      proc.on('error', (err: any) => {
         agentRunning = false;
+        const isNotFound = err.code === 'ENOENT' || err.message.includes('ENOENT');
+        const agentName = agent === 'claude' ? 'Claude Code' : 'Codex';
+        const msg = isNotFound
+          ? `${agentName} не установлен. Скачай с ${agent === 'claude' ? 'claude.ai/download' : 'github.com/openai/codex'}`
+          : `Не удалось запустить ${agent}: ${err.message}`;
         process.stdout.write('   ❌ Agent spawn error: ' + err.message + '\n');
-        broadcast('agent-error', { message: `Не удалось запустить ${agent}: ${err.message}` });
+        broadcast('agent-error', { message: msg, notInstalled: isNotFound, agent });
+        processNextInQueue();
       });
+    }
+
+    /** Validate task params and enqueue (prompt is built lazily at execution time) */
+    function runAgent(task: string, featureKey?: string, filePath?: string) {
+      const agent = currentData.agent;
+      if (!agent) {
+        broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
+        return;
+      }
+
+      const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
+      let title: string;
+      let savedErrors: TestFileError[] | undefined;
+      let savedFailedFiles: Array<{ filePath: string; errors: TestFileError[] }> | undefined;
+      let savedTestType: string | undefined;
+
+      if (task === 'write-tests') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        title = `${agentLabel} — тесты для "${feat.label}"`;
+      } else if (task === 'write-tests-file') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat || !filePath) { broadcast('agent-error', { message: 'Не указана фича или файл' }); return; }
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title = `${agentLabel} — тест для "${fileName}"`;
+      } else if (task === 'fix-tests') {
+        if (!filePath) { broadcast('agent-error', { message: 'Не указан файл для исправления' }); return; }
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          if (rel === filePath.replace(/\\/g, '/') || fp === filePath) { savedErrors = detail.errors; break; }
+        }
+        if (!savedErrors || savedErrors.length === 0) {
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` }); return;
+        }
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+        title = `${agentLabel} — исправить тесты в "${fileName}"`;
+      } else if (task === 'fix-tests-all') {
+        savedTestType = filePath || 'unit'; // filePath param is reused for testType in this case
+        savedFailedFiles = [];
+        for (const [fp, detail] of lastTestResults) {
+          const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+          const mod = currentData.modules.find(m => m.relativePath.replace(/\\/g, '/') === rel && m.testType === savedTestType);
+          if (mod && detail.errors.length > 0) {
+            savedFailedFiles.push({ filePath: rel, errors: detail.errors });
+          }
+        }
+        if (savedFailedFiles.length === 0) {
+          broadcast('agent-error', { message: `Нет упавших ${savedTestType} тестов. Сначала запусти тесты.` }); return;
+        }
+        title = `${agentLabel} — починить все ${savedTestType} тесты (${savedFailedFiles.length} файлов)`;
+      } else if (task === 'generate-e2e-plan') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        title = `${agentLabel} — E2E план для "${feat.label}"`;
+      } else if (task === 'write-e2e-tests') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        title = `${agentLabel} — пишу E2E тесты для "${feat.label}"`;
+      } else {
+        title = `${agentLabel} — разобрать unmapped`;
+      }
+
+      const item: AgentQueueItem = { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType };
+
+      if (agentRunning) {
+        agentQueue.push(item);
+        const ql = agentQueue.length;
+        process.stdout.write(`   📋 Agent busy, queued: "${title}" (queue size: ${ql})\n`);
+        broadcast('agent-queued', { queueLength: ql, title, task, featureKey: featureKey || null, filePath: filePath || null });
+        return;
+      }
+
+      executeAgentItem(item);
     }
 
     // ── Chokidar watcher ───────────────────────────────────────────────────────
@@ -717,14 +1089,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
           testErrors[rel] = detail;
         }
+        // Check which features have E2E plans
+        const e2ePlansExist: Record<string, boolean> = {};
+        try {
+          const planDir = e2ePlanDir(projectRoot);
+          if (fs.existsSync(planDir)) {
+            for (const f of fs.readdirSync(planDir)) {
+              if (f.endsWith('.json')) e2ePlansExist[f.replace('.json', '')] = true;
+            }
+          }
+        } catch {}
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ...currentData, testErrors }));
+        res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist }));
         return;
       }
 
       if (url === '/api/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ coverageRunning, coverageError, agentRunning }));
+        res.end(JSON.stringify({ coverageRunning, coverageError, agentRunning, queueLength: agentQueue.length }));
         return;
       }
 
@@ -786,13 +1168,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                   }
                 }
               }
-              broadcast('agent-output', { line: '  → Нажми 🔧 исправить рядом с файлом чтобы агент починил' });
+                broadcast('agent-output', { line: '  → Нажми Починить рядом с файлом чтобы агент исправил' });
             }
             // Send testErrors directly in event — avoids path/timing issues with /api/data fetch
             const testErrorsForClient: Record<string, { failed: number; errors: TestFileError[] }> = {};
             for (const [fp, detail] of lastTestResults) {
               const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
               testErrorsForClient[rel] = detail;
+            }
+            const errKeys = Object.keys(testErrorsForClient);
+            process.stdout.write(`   🔍 testErrors to client: ${errKeys.length} keys: ${errKeys.slice(0, 3).join(', ')}\n`);
+            if (result.failed > 0 && errKeys.length === 0) {
+              broadcast('agent-output', { line: `⚠️ Есть ${result.failed} упавших теста, но детали по файлам не получены — проверь viberadar лог`, isDim: true });
             }
             broadcast('tests-done', { passed: result.passed, failed: result.failed, testErrors: testErrorsForClient });
           } catch (err: any) {
@@ -825,9 +1212,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (url === '/api/cancel-agent' && req.method === 'POST') {
         agentRunning = false;
-        process.stdout.write('   ⏹ Agent state reset by user\n');
+        agentQueue.length = 0; // clear queue too
+        process.stdout.write('   ⏹ Agent state reset by user (queue cleared)\n');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (url === '/api/clear-queue' && req.method === 'POST') {
+        const cleared = agentQueue.length;
+        agentQueue.length = 0;
+        process.stdout.write(`   🗑 Queue cleared (${cleared} items)\n`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, cleared }));
         return;
       }
 
@@ -862,6 +1259,148 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         res.write('data: connected\n\n');
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
+        return;
+      }
+
+      // ── E2E routes ─────────────────────────────────────────────────────────
+
+      if (url === '/api/e2e/generate-plan' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { featureKey } = JSON.parse(body);
+            broadcast('e2e-plan-generating', { featureKey });
+            runAgent('generate-e2e-plan', featureKey);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      const planMatch = url.match(/^\/api\/e2e\/plan\/(.+)$/);
+      if (planMatch && req.method === 'GET') {
+        const featureKey = decodeURIComponent(planMatch[1]);
+        const plan = loadE2ePlan(projectRoot, featureKey);
+        if (!plan) { res.writeHead(404); res.end(JSON.stringify({ error: 'Plan not found' })); return; }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(plan));
+        return;
+      }
+
+      if (url === '/api/e2e/review' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { featureKey, testCaseId, status } = JSON.parse(body);
+            const plan = loadE2ePlan(projectRoot, featureKey);
+            if (!plan) { res.writeHead(404); res.end(JSON.stringify({ error: 'Plan not found' })); return; }
+            const tc = plan.testCases.find(t => t.id === testCaseId);
+            if (tc) tc.status = status;
+            saveE2ePlan(projectRoot, plan);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, plan }));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/e2e/review-all' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { featureKey, status } = JSON.parse(body);
+            const plan = loadE2ePlan(projectRoot, featureKey);
+            if (!plan) { res.writeHead(404); res.end(JSON.stringify({ error: 'Plan not found' })); return; }
+            for (const tc of plan.testCases) tc.status = status;
+            saveE2ePlan(projectRoot, plan);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, plan }));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/e2e/write-tests' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { featureKey } = JSON.parse(body);
+            broadcast('e2e-tests-writing', { featureKey });
+            runAgent('write-e2e-tests', featureKey);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/e2e/run-tests' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', async () => {
+          try {
+            const { featureKey } = JSON.parse(body);
+            const plan = loadE2ePlan(projectRoot, featureKey);
+            if (!plan) { res.writeHead(404); res.end(JSON.stringify({ error: 'Plan not found' })); return; }
+            const writtenCases = plan.testCases.filter(tc => ['written', 'passed', 'failed'].includes(tc.status));
+            const testFiles = writtenCases
+              .map(tc => tc.testFilePath)
+              .filter((f): f is string => !!f)
+              .map(f => path.isAbsolute(f) ? f : path.join(projectRoot, f));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, count: testFiles.length }));
+
+            broadcast('e2e-tests-running', { featureKey, count: testFiles.length });
+            const result = await runPlaywrightTests(testFiles.length > 0 ? testFiles : [`e2e/${featureKey}`], projectRoot);
+
+            // Update plan with results
+            for (const tc of plan.testCases) {
+              if (result.results[tc.name]) {
+                tc.status = result.results[tc.name];
+                if (result.errors[tc.name]) tc.lastError = result.errors[tc.name];
+              }
+              tc.screenshotPaths = collectScreenshots(projectRoot, featureKey, tc.id);
+            }
+            saveE2ePlan(projectRoot, plan);
+            broadcast('e2e-tests-done', { featureKey, passed: result.passed, failed: result.failed, plan });
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url.startsWith('/api/e2e/screenshot/') && req.method === 'GET') {
+        const relPath = decodeURIComponent(url.slice('/api/e2e/screenshot/'.length));
+        // Path traversal protection
+        const screenshotBase = path.join(projectRoot, '.viberadar', 'e2e-screenshots');
+        const safePath = path.resolve(screenshotBase, relPath);
+        if (!safePath.startsWith(screenshotBase)) {
+          res.writeHead(403); res.end('Forbidden'); return;
+        }
+        try {
+          const img = fs.readFileSync(safePath);
+          const ext = path.extname(safePath).toLowerCase();
+          const mime = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/webp';
+          res.writeHead(200, { 'Content-Type': mime });
+          res.end(img);
+        } catch {
+          res.writeHead(404); res.end('Not found');
+        }
         return;
       }
 
