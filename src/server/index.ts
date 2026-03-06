@@ -147,12 +147,12 @@ function buildAgentShellCmd(agent: string, taskFile: string, codexSandboxMode: C
   if (WIN) {
     if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
     if (agent === 'codex') {
-      return `codex.cmd exec --color never --sandbox ${codexSandboxMode} --ask-for-approval never < "${escaped}"`;
+      return `codex.cmd -a never exec --color never --sandbox ${codexSandboxMode} < "${escaped}"`;
     }
   } else {
     if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
     if (agent === 'codex') {
-      return `codex exec --color never --sandbox ${codexSandboxMode} --ask-for-approval never < "${escaped}"`;
+      return `codex -a never exec --color never --sandbox ${codexSandboxMode} < "${escaped}"`;
     }
   }
   return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
