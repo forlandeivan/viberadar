@@ -36,6 +36,42 @@ function resolveCodexSandboxMode(): CodexSandboxMode {
 
 const CODEX_SANDBOX_MODE = resolveCodexSandboxMode();
 
+function readEnvInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = (process.env[name] || '').trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  const n = Math.round(parsed);
+  return Math.min(max, Math.max(min, n));
+}
+
+const AGENT_QUEUE_MAX = readEnvInt('VIBERADAR_AGENT_QUEUE_MAX', 5, 1, 100);
+const AGENT_COOLDOWN_MIN_MS = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MIN_MS', 20000, 0, 600000);
+const AGENT_COOLDOWN_MAX_MS = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MAX_MS', 60000, AGENT_COOLDOWN_MIN_MS, 600000);
+
+function randomInt(min: number, max: number): number {
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function detectQueueBlockSignal(line: string): 403 | 429 | null {
+  const s = line.toLowerCase();
+  const is403 = (
+    (s.includes('403') && (s.includes('forbidden') || s.includes('unexpected status') || s.includes('status'))) ||
+    s.includes('unable to load site') ||
+    s.includes('ray id:')
+  );
+  if (is403) return 403;
+  const is429 = (
+    s.includes('429') ||
+    s.includes('too many requests') ||
+    s.includes('rate limit') ||
+    s.includes('rate-limit')
+  );
+  if (is429) return 429;
+  return null;
+}
+
 /**
  * Build shell command that pipes task file into the agent CLI.
  * --output-format stream-json gives real-time events (tool calls, writes, etc.)
@@ -578,6 +614,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let agentRunning    = false;
     let testsRunning    = false;
     const agentQueue: AgentQueueItem[] = [];
+    let queueCooldownTimer: ReturnType<typeof setTimeout> | null = null;
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
@@ -589,6 +626,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       for (const client of sseClients) {
         try { client.write(msg); } catch { sseClients.delete(client); }
       }
+    }
+
+    function clearQueueCooldownTimer() {
+      if (!queueCooldownTimer) return;
+      clearTimeout(queueCooldownTimer);
+      queueCooldownTimer = null;
+    }
+
+    function stopQueuedTasks(reason: string) {
+      const dropped = agentQueue.length;
+      clearQueueCooldownTimer();
+      agentQueue.length = 0;
+      process.stdout.write(`   ⛔ Queue stopped: ${reason} (dropped: ${dropped})\n`);
+      broadcast('agent-output', { line: `⛔ Очередь остановлена: ${reason}`, isError: true });
+      if (dropped > 0) {
+        broadcast('agent-output', { line: `🗑 Отменено задач из очереди: ${dropped}` });
+      }
+      broadcast('agent-queue-stopped', { reason, dropped });
     }
 
     // ── File watcher + re-scan ─────────────────────────────────────────────────
@@ -619,14 +674,26 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     // ── Agent runner ───────────────────────────────────────────────────────────
 
     /** Execute next queued item, or broadcast agent-done if queue is empty */
-    function processNextInQueue() {
+    function processNextInQueue(withCooldown = false) {
+      if (agentRunning) return;
       if (agentQueue.length > 0) {
+        if (withCooldown) {
+          clearQueueCooldownTimer();
+          const delayMs = randomInt(AGENT_COOLDOWN_MIN_MS, AGENT_COOLDOWN_MAX_MS);
+          broadcast('agent-output', { line: `⏳ Пауза перед следующей задачей: ${Math.ceil(delayMs / 1000)}с` });
+          queueCooldownTimer = setTimeout(() => {
+            queueCooldownTimer = null;
+            processNextInQueue(false);
+          }, delayMs);
+          return;
+        }
         const next = agentQueue.shift()!;
         process.stdout.write(`   📋 Starting next from queue: "${next.title}" (remaining: ${agentQueue.length})\n`);
         broadcast('agent-output', { line: `📋 Следующая задача из очереди: ${next.title}` });
         broadcast('agent-output', { line: `   В очереди осталось: ${agentQueue.length}` });
         executeAgentItem(next);
       } else {
+        clearQueueCooldownTimer();
         broadcast('agent-done', { queueLength: 0 });
       }
     }
@@ -712,6 +779,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const createdTestFiles: string[] = [];
       // Accumulate full result text for E2E plan parsing
       let agentResultText = '';
+      let queueBlockSignal: 403 | 429 | null = null;
+
+      function inspectQueueBlockSignal(line: string) {
+        if (queueBlockSignal !== null) return;
+        const signal = detectQueueBlockSignal(line);
+        if (signal !== null) {
+          queueBlockSignal = signal;
+          broadcast('agent-output', {
+            line: `⚠️ Обнаружен блокирующий сигнал ${signal}. После завершения текущей задачи очередь будет остановлена.`,
+            isError: true,
+          });
+        }
+      }
 
       function trackWrittenFiles(raw: string) {
         try {
@@ -734,6 +814,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const rl = readline.createInterface({ input: proc.stdout!, crlfDelay: Infinity });
       rl.on('line', (raw: string) => {
         if (!raw.trim()) return;
+        inspectQueueBlockSignal(raw);
         trackWrittenFiles(raw);
         const parsed = agent === 'claude' ? parseClaudeEvent(raw) : raw;
         if (!parsed) {
@@ -757,6 +838,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       proc.stderr!.on('data', (chunk: Buffer) => {
         const lines = chunk.toString().split('\n').filter(Boolean);
         for (const line of lines) {
+          inspectQueueBlockSignal(line);
           broadcast('agent-output', { line, isError: true });
         }
       });
@@ -843,7 +925,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             currentData = await scanProject(projectRoot);
             broadcast('data-updated');
           } catch {}
-          processNextInQueue();
+          processNextInQueue(true);
         } else if (code === 255) {
           process.stdout.write(`   ❌ Agent auth error (exit code 255)\n`);
           broadcast('agent-error', {
@@ -851,11 +933,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             authRequired: true,
             agent,
           });
-          processNextInQueue();
+          processNextInQueue(true);
         } else {
           process.stdout.write(`   ❌ Agent failed (exit code ${code})\n`);
           broadcast('agent-error', { message: `Агент завершился с кодом ${code}` });
-          processNextInQueue();
+          if (queueBlockSignal === 403 || queueBlockSignal === 429) {
+            stopQueuedTasks(`пойман ${queueBlockSignal} от ${agent === 'claude' ? 'Claude Code' : 'Codex'}`);
+          }
+          processNextInQueue(true);
         }
       });
 
@@ -868,7 +953,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           : `Не удалось запустить ${agent}: ${err.message}`;
         process.stdout.write('   ❌ Agent spawn error: ' + err.message + '\n');
         broadcast('agent-error', { message: msg, notInstalled: isNotFound, agent });
-        processNextInQueue();
+        processNextInQueue(true);
       });
     }
 
@@ -934,7 +1019,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       const item: AgentQueueItem = { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType };
 
-      if (agentRunning) {
+      if (agentRunning || queueCooldownTimer) {
+        if (agentQueue.length >= AGENT_QUEUE_MAX) {
+          const msg = `Очередь агента ограничена (${AGENT_QUEUE_MAX}). Дождись завершения текущих задач.`;
+          broadcast('agent-error', { message: msg });
+          process.stdout.write(`   ⚠️ Queue limit reached (${AGENT_QUEUE_MAX}), rejected: "${title}"\n`);
+          return;
+        }
         agentQueue.push(item);
         const ql = agentQueue.length;
         process.stdout.write(`   📋 Agent busy, queued: "${title}" (queue size: ${ql})\n`);
@@ -1151,6 +1242,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (url === '/api/cancel-agent' && req.method === 'POST') {
         agentRunning = false;
         agentQueue.length = 0; // clear queue too
+        clearQueueCooldownTimer();
         process.stdout.write('   ⏹ Agent state reset by user (queue cleared)\n');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
@@ -1160,6 +1252,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (url === '/api/clear-queue' && req.method === 'POST') {
         const cleared = agentQueue.length;
         agentQueue.length = 0;
+        clearQueueCooldownTimer();
         process.stdout.write(`   🗑 Queue cleared (${cleared} items)\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, cleared }));
