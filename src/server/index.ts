@@ -27,9 +27,12 @@ const WIN = process.platform === 'win32';
 type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 interface RuntimeEnvSettings {
   codexSandboxMode: CodexSandboxMode;
+  approvalPolicy: 'never';
   agentQueueMax: number;
   agentCooldownMinMs: number;
   agentCooldownMaxMs: number;
+  autoFixFailedTests: boolean;
+  autoFixMaxRetries: number;
   envFilePath: string | null;
 }
 
@@ -43,6 +46,10 @@ const DEFAULT_RUNTIME_ENV_CONTENT = [
   '# Random cooldown between queued tasks, in milliseconds',
   'VIBERADAR_AGENT_COOLDOWN_MIN_MS=20000',
   'VIBERADAR_AGENT_COOLDOWN_MAX_MS=60000',
+  '',
+  '# Auto-fix tests when generated/updated tests fail',
+  'VIBERADAR_AUTO_FIX_FAILED_TESTS=true',
+  'VIBERADAR_AUTO_FIX_MAX_RETRIES=1',
   '',
   '# Codex sandbox mode: read-only | workspace-write | danger-full-access',
   'VIBERADAR_CODEX_SANDBOX=workspace-write',
@@ -95,6 +102,14 @@ function loadRuntimeEnv(projectRoot: string): RuntimeEnvSettings {
     return Math.min(max, Math.max(min, n));
   }
 
+  function readEnvBool(name: string, fallback: boolean): boolean {
+    const raw = readEnv(name).toLowerCase();
+    if (!raw) return fallback;
+    if (['1', 'true', 'yes', 'y', 'on'].includes(raw)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(raw)) return false;
+    return fallback;
+  }
+
   const sandboxRaw = readEnv('VIBERADAR_CODEX_SANDBOX');
   const codexSandboxMode: CodexSandboxMode =
     sandboxRaw === 'read-only' || sandboxRaw === 'workspace-write' || sandboxRaw === 'danger-full-access'
@@ -106,9 +121,12 @@ function loadRuntimeEnv(projectRoot: string): RuntimeEnvSettings {
 
   return {
     codexSandboxMode,
+    approvalPolicy: 'never',
     agentQueueMax: readEnvInt('VIBERADAR_AGENT_QUEUE_MAX', 5, 1, 100),
     agentCooldownMinMs,
     agentCooldownMaxMs,
+    autoFixFailedTests: readEnvBool('VIBERADAR_AUTO_FIX_FAILED_TESTS', true),
+    autoFixMaxRetries: readEnvInt('VIBERADAR_AUTO_FIX_MAX_RETRIES', 1, 0, 5),
     envFilePath: fs.existsSync(envPath) ? envPath : null,
   };
 }
@@ -240,6 +258,8 @@ interface AgentQueueItem {
   savedErrors?: TestFileError[];
   savedFailedFiles?: Array<{ filePath: string; errors: TestFileError[] }>;
   savedTestType?: string;
+  autoFixAttempt?: number;
+  autoFixSourceTask?: string;
 }
 
 // ─── E2E Plan types ───────────────────────────────────────────────────────────
@@ -675,7 +695,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let currentData = initialData;
     const runtimeEnv = loadRuntimeEnv(projectRoot);
     process.stdout.write(
-      `   ⚙️ Agent defaults: queue=${runtimeEnv.agentQueueMax}, cooldown=${runtimeEnv.agentCooldownMinMs}-${runtimeEnv.agentCooldownMaxMs}ms, codexSandbox=${runtimeEnv.codexSandboxMode}\n`
+      `   ⚙️ Agent defaults: queue=${runtimeEnv.agentQueueMax}, cooldown=${runtimeEnv.agentCooldownMinMs}-${runtimeEnv.agentCooldownMaxMs}ms, codexSandbox=${runtimeEnv.codexSandboxMode}, autoFix=${runtimeEnv.autoFixFailedTests ? 'on' : 'off'}x${runtimeEnv.autoFixMaxRetries}\n`
     );
     if (runtimeEnv.envFilePath) {
       process.stdout.write(`   📄 Loaded env: ${runtimeEnv.envFilePath}\n`);
@@ -771,7 +791,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
     /** Actually spawn the agent process for a queue item */
     function executeAgentItem(item: AgentQueueItem) {
-      const { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType } = item;
+      const {
+        task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType,
+        autoFixAttempt = 0, autoFixSourceTask,
+      } = item;
 
       // Build prompt lazily at execution time
       let prompt: string;
@@ -936,27 +959,104 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
               if (detail.failed > 0) lastTestResults.set(path.resolve(fp), { failed: detail.failed, errors: detail.errors });
             }
 
-            const summary = result.runError
-              ? `❌ Тесты не запустились: ${result.runError}`
-              : result.failed === 0 && result.passed > 0
-                ? `✅ Все тесты прошли: ${result.passed} passed`
-                : result.failed === 0 && result.passed === 0
-                  ? `⚠️ 0 тестов запустилось — проверь файл на ошибки импорта`
-                  : `⚠️  ${result.passed} passed, ${result.failed} failed`;
-            broadcast('agent-output', { line: summary });
+            const failedFiles = Object.entries(result.fileDetails)
+              .filter(([, detail]) => detail.failed > 0)
+              .map(([fp, detail]) => ({
+                abs: path.resolve(fp),
+                rel: path.relative(projectRoot, fp).replace(/\\/g, '/'),
+                detail,
+              }));
+            const testedFileCount = testFilesToRun.length;
+            const failedFileCount = failedFiles.length;
+            const passedFileCount = Math.max(0, testedFileCount - failedFileCount);
+
+            broadcast('agent-output', { line: '┌──────────────── Тест-отчёт ────────────────' });
+            if (result.runError) {
+              broadcast('agent-output', { line: `│ ❌ Ошибка запуска тестов: ${result.runError}` });
+            } else {
+              const status = result.failed === 0 ? '✅ OK' : '❌ FAILED';
+              broadcast('agent-output', { line: `│ Статус: ${status}` });
+              broadcast('agent-output', { line: `│ Файлы: ${testedFileCount}  •  passed: ${passedFileCount}  •  failed: ${failedFileCount}` });
+              broadcast('agent-output', { line: `│ Тест-кейсы: passed ${result.passed}  •  failed ${result.failed}` });
+            }
+            broadcast('agent-output', { line: '└─────────────────────────────────────────────' });
+
             if (result.failed > 0) {
-              for (const [fp, detail] of Object.entries(result.fileDetails)) {
-                if (detail.failed > 0) {
-                  const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
-                  broadcast('agent-output', { line: `  ❌ ${rel} — ${detail.failed} упало` });
-                  for (const e of detail.errors.slice(0, 3)) {
-                    broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
-                  }
+              for (const f of failedFiles) {
+                broadcast('agent-output', { line: `  ❌ ${f.rel} — ${f.detail.failed} упало` });
+                for (const e of f.detail.errors.slice(0, 3)) {
+                  broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
                 }
               }
+            }
+
+            let autoFixQueued = false;
+            if (!result.runError && result.failed > 0) {
+              const nextAttempt = autoFixAttempt + 1;
+              const sourceTask = autoFixSourceTask || task;
+              const canAutoFix = runtimeEnv.autoFixFailedTests && nextAttempt <= runtimeEnv.autoFixMaxRetries;
+
+              if (canAutoFix) {
+                let fixItem: AgentQueueItem | null = null;
+                const attemptSuffix = `(${nextAttempt}/${runtimeEnv.autoFixMaxRetries})`;
+                if (failedFiles.length === 1) {
+                  const only = failedFiles[0];
+                  const fileName = only.rel.split('/').pop() || only.rel;
+                  fixItem = {
+                    task: 'fix-tests',
+                    featureKey,
+                    filePath: only.rel,
+                    title: `${agent === 'claude' ? 'Claude Code' : 'Codex'} — автоисправление "${fileName}" ${attemptSuffix}`,
+                    agent,
+                    savedErrors: only.detail.errors,
+                    autoFixAttempt: nextAttempt,
+                    autoFixSourceTask: sourceTask,
+                  };
+                } else if (failedFiles.length > 1) {
+                  fixItem = {
+                    task: 'fix-tests-all',
+                    featureKey,
+                    title: `${agent === 'claude' ? 'Claude Code' : 'Codex'} — автоисправление ${failedFiles.length} тестов ${attemptSuffix}`,
+                    agent,
+                    savedFailedFiles: failedFiles.map(f => ({ filePath: f.rel, errors: f.detail.errors })),
+                    savedTestType: savedTestType || 'unit',
+                    autoFixAttempt: nextAttempt,
+                    autoFixSourceTask: sourceTask,
+                  };
+                }
+
+                if (fixItem) {
+                  if (agentQueue.length < runtimeEnv.agentQueueMax) {
+                    agentQueue.unshift(fixItem);
+                    autoFixQueued = true;
+                    broadcast('agent-output', { line: `🛠️ Обнаружены падения. Запускаю автоисправление ${attemptSuffix}...` });
+                    broadcast('agent-queued', {
+                      queueLength: agentQueue.length,
+                      title: fixItem.title,
+                      task: fixItem.task,
+                      featureKey: fixItem.featureKey || null,
+                      filePath: fixItem.filePath || null,
+                    });
+                  } else {
+                    broadcast('agent-output', {
+                      line: `⚠️ Автоисправление не поставлено: очередь заполнена (${runtimeEnv.agentQueueMax})`,
+                      isError: true,
+                    });
+                  }
+                }
+              } else {
+                const reason = !runtimeEnv.autoFixFailedTests
+                  ? 'автоисправление выключено'
+                  : `достигнут лимит попыток (${runtimeEnv.autoFixMaxRetries})`;
+                broadcast('agent-output', { line: `⚠️ Автоисправление не запущено: ${reason}` });
+              }
+            }
+
+            if (result.failed > 0 && !autoFixQueued) {
               broadcast('agent-output', { line: '  → Нажми 🔧 исправить в дашборде чтобы агент починил' });
             }
-            broadcast('agent-summary', result);
+
+            broadcast('agent-summary', { ...result, testedFileCount, passedFileCount, failedFileCount, autoFixQueued });
           }
 
           // E2E plan post-processing
@@ -1151,8 +1251,17 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             }
           }
         } catch {}
+        const agentRuntime = {
+          codexSandboxMode: runtimeEnv.codexSandboxMode,
+          approvalPolicy: runtimeEnv.approvalPolicy,
+          queueMax: runtimeEnv.agentQueueMax,
+          cooldownMinMs: runtimeEnv.agentCooldownMinMs,
+          cooldownMaxMs: runtimeEnv.agentCooldownMaxMs,
+          autoFixFailedTests: runtimeEnv.autoFixFailedTests,
+          autoFixMaxRetries: runtimeEnv.autoFixMaxRetries,
+        };
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist }));
+        res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist, agentRuntime }));
         return;
       }
 

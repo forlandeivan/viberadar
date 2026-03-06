@@ -45,6 +45,15 @@
     header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
     .header-project { margin-left: auto; font-size: 13px; color: var(--muted); }
     .header-time    { font-size: 12px; color: var(--dim); }
+    .header-agent-rights {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg);
+      white-space: nowrap;
+    }
 
     /* ── Run All Tests button ────────────────────────────────────────────────── */
     #runAllBtn {
@@ -794,6 +803,7 @@
   <h1>VibeRadar</h1>
   <span class="header-project" id="projectName">—</span>
   <span class="header-time" id="scannedAt"></span>
+  <span class="header-agent-rights" id="headerAgentRights" title="Права/режим выполнения агента">🔐 —</span>
   <button id="runAllBtn" onclick="runAllTests()" title="Запустить все unit и integration тесты">▶ Все тесты</button>
   <button id="termBtn" onclick="toggleAgentPanel()" title="Показать/скрыть терминал агента">📟 Terminal</button>
   <div style="position:relative">
@@ -878,6 +888,56 @@ let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 // ─── Run All Tests button ──────────────────────────────────────────────────────
 let runAllRunning = false;
+
+function clearFeatureHash() {
+  if (!window.location.hash) return;
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+function buildFeatureTabUrl(featureKey) {
+  const url = new URL(window.location.href);
+  url.hash = `feature=${encodeURIComponent(featureKey)}`;
+  return url.toString();
+}
+
+function openFeatureInNewTab(featureKey) {
+  window.open(buildFeatureTabUrl(featureKey), '_blank', 'noopener');
+}
+
+function setFeatureDrill(featureKey, syncHash = true) {
+  view = 'features';
+  drillFeatureKey = featureKey;
+  drillTestType = null;
+  activePanelKey = null;
+  document.getElementById('panel').classList.remove('open');
+  if (syncHash) {
+    if (featureKey) window.location.hash = `feature=${encodeURIComponent(featureKey)}`;
+    else clearFeatureHash();
+  }
+  renderContent();
+}
+
+function applyHashRoute() {
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (!hash) {
+    if (view === 'features' && drillFeatureKey) {
+      drillFeatureKey = null;
+      drillTestType = null;
+      activePanelKey = null;
+    }
+    return;
+  }
+  const params = new URLSearchParams(hash);
+  const featureKey = params.get('feature');
+  if (!featureKey) return;
+  const isKnownFeature = Array.isArray(D?.features) && D.features.some(f => f.key === featureKey);
+  if (featureKey === '__unmapped__' || isKnownFeature) {
+    view = 'features';
+    drillFeatureKey = featureKey;
+    drillTestType = null;
+    activePanelKey = null;
+  }
+}
 
 function updateRunAllBtn(state) {
   const btn = document.getElementById('runAllBtn');
@@ -1200,6 +1260,27 @@ const CLAUDE_MODELS = [
   { id: 'claude-haiku-3-5',  checkId: 'amHaiku35Check'  },
 ];
 
+function updateAgentRightsInfo() {
+  const el = document.getElementById('headerAgentRights');
+  if (!el || !D) return;
+  const runtime = D.agentRuntime || {};
+  const sandbox = runtime.codexSandboxMode || 'read-only';
+  const approval = runtime.approvalPolicy || 'never';
+
+  if (D.agent === 'codex') {
+    el.textContent = `🔐 Codex: ${sandbox}, approval: ${approval}`;
+    el.title = 'Права/режим выполнения Codex';
+    return;
+  }
+  if (D.agent === 'claude') {
+    el.textContent = '🔐 Claude: managed by Claude CLI';
+    el.title = 'Права определяются Claude CLI';
+    return;
+  }
+  el.textContent = '🔐 Агент не выбран';
+  el.title = 'Выбери агента в меню';
+}
+
 function updateAgentBtn() {
   const btn = document.getElementById('agentBtn');
   if (!D) return;
@@ -1349,12 +1430,14 @@ async function init() {
       D.agentRunning = status.agentRunning ?? false;
     }
     updateAgentBtn();
+    updateAgentRightsInfo();
 
     document.getElementById('projectName').textContent = D.projectName;
     document.getElementById('scannedAt').textContent =
       new Date(D.scannedAt).toLocaleTimeString();
 
     view = D.hasConfig ? 'features' : 'files';
+    applyHashRoute();
 
     if (!D.hasConfig) {
       document.querySelector('[data-view="features"]').classList.add('disabled');
@@ -1462,11 +1545,7 @@ function backToFeatureDetail() {
 }
 
 function backToFeatures() {
-  drillFeatureKey = null;
-  drillTestType = null;
-  activePanelKey = null;
-  document.getElementById('panel').classList.remove('open');
-  renderContent();
+  setFeatureDrill(null);
 }
 
 function renderFeatureCards(c) {
@@ -1543,11 +1622,21 @@ function renderFeatureCards(c) {
           ▶ Написать тесты (${f.fileCount - f.testedCount} без тестов)
         </button>` : ''}
       </div>`;
+    card.onmousedown = (e) => {
+      if (e.button === 1 && !e.target.closest('.agent-card-btn')) e.preventDefault();
+    };
+    card.onauxclick = (e) => {
+      if (e.button !== 1 || e.target.closest('.agent-card-btn')) return;
+      e.preventDefault();
+      openFeatureInNewTab(f.key);
+    };
     card.onclick = (e) => {
       if (e.target.closest('.agent-card-btn')) return; // don't drill on agent btn click
-      drillFeatureKey = f.key; activePanelKey = null;
-      document.getElementById('panel').classList.remove('open');
-      renderContent();
+      if (e.metaKey || e.ctrlKey) {
+        openFeatureInNewTab(f.key);
+        return;
+      }
+      setFeatureDrill(f.key);
     };
     const agentBtn = card.querySelector('.agent-card-btn');
     if (agentBtn) {
@@ -1589,11 +1678,20 @@ function renderFeatureCards(c) {
             <span class="feature-progress-label" style="color:var(--dim)">нет привязки</span>
           </div>
         </div>`;
-      card.onclick = () => {
-        drillFeatureKey = '__unmapped__';
-        activePanelKey = null;
-        document.getElementById('panel').classList.remove('open');
-        renderContent();
+      card.onmousedown = (e) => {
+        if (e.button === 1) e.preventDefault();
+      };
+      card.onauxclick = (e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        openFeatureInNewTab('__unmapped__');
+      };
+      card.onclick = (e) => {
+        if (e.metaKey || e.ctrlKey) {
+          openFeatureInNewTab('__unmapped__');
+          return;
+        }
+        setFeatureDrill('__unmapped__');
       };
       grid.appendChild(card);
     }
@@ -2342,6 +2440,7 @@ document.querySelectorAll('.view-tab').forEach(tab => {
     activeTypes.clear();
     document.getElementById('searchInput').value = '';
     document.getElementById('panel').classList.remove('open');
+    if (view !== 'features') clearFeatureHash();
     renderSidebar();
     renderContent();
   };
@@ -2354,6 +2453,12 @@ document.getElementById('searchInput').oninput = e => {
 
 document.getElementById('panelClose').onclick = closePanel;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+window.addEventListener('hashchange', () => {
+  if (!D) return;
+  applyHashRoute();
+  renderSidebar();
+  renderContent();
+});
 
 // ─── Live reload ──────────────────────────────────────────────────────────────
 function setLiveDot(color, title) {
@@ -2375,6 +2480,7 @@ async function refreshData() {
     renderSidebar();
     renderContent();
     updateAgentBtn();
+    updateAgentRightsInfo();
 
     // Re-render drill-down or re-open panel
     const panelOpen = document.getElementById('panel').classList.contains('open');
@@ -2470,7 +2576,13 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-summary', (e) => {
-    const { passed, failed, files } = JSON.parse(e.data);
+    const {
+      passed, failed, files = [],
+      testedFileCount = files.length,
+      passedFileCount = Math.max(0, testedFileCount - (failed > 0 ? 1 : 0)),
+      failedFileCount = failed > 0 ? 1 : 0,
+      autoFixQueued = false,
+    } = JSON.parse(e.data);
     const allOk = failed === 0;
     const box = document.createElement('div');
     box.style.cssText = `
@@ -2483,8 +2595,15 @@ function connectSSE() {
     `;
     box.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:${allOk ? 'var(--green)' : 'var(--red)'}">
-        ${allOk ? '✅' : '⚠️'} Тесты: ${passed} passed${failed > 0 ? ', ' + failed + ' failed' : ''}
+        ${allOk ? '✅' : '⚠️'} Тесты: ${allOk ? 'всё ок' : 'есть падения'}
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">
+        Файлы: ${testedFileCount} • passed: ${passedFileCount} • failed: ${failedFileCount}
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">
+        Тест-кейсы: ${passed} passed${failed > 0 ? ` • ${failed} failed` : ''}
+      </div>
+      ${autoFixQueued ? `<div style="font-size:11px;color:var(--yellow);margin-top:4px">🛠️ Автоисправление поставлено в очередь</div>` : ''}
       ${files.map(f => `<div style="font-size:11px;color:var(--dim);margin-top:3px">📄 ${f}</div>`).join('')}
     `;
     const targetId = runningSessionId || activeSessionId;
