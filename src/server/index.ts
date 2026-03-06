@@ -25,29 +25,93 @@ const DASHBOARD_HTML = fs.readFileSync(
 
 const WIN = process.platform === 'win32';
 type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+interface RuntimeEnvSettings {
+  codexSandboxMode: CodexSandboxMode;
+  agentQueueMax: number;
+  agentCooldownMinMs: number;
+  agentCooldownMaxMs: number;
+  envFilePath: string | null;
+}
 
-function resolveCodexSandboxMode(): CodexSandboxMode {
-  const value = (process.env.VIBERADAR_CODEX_SANDBOX || '').trim();
-  if (value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access') {
-    return value;
+const DEFAULT_RUNTIME_ENV_CONTENT = [
+  '# VibeRadar runtime defaults for agent execution.',
+  '# You can override any value with OS env vars.',
+  '',
+  '# Agent queue hard limit (1..100)',
+  'VIBERADAR_AGENT_QUEUE_MAX=5',
+  '',
+  '# Random cooldown between queued tasks, in milliseconds',
+  'VIBERADAR_AGENT_COOLDOWN_MIN_MS=20000',
+  'VIBERADAR_AGENT_COOLDOWN_MAX_MS=60000',
+  '',
+  '# Codex sandbox mode: read-only | workspace-write | danger-full-access',
+  'VIBERADAR_CODEX_SANDBOX=workspace-write',
+  '',
+].join('\n');
+
+function parseEnvFile(filePath: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (!fs.existsSync(filePath)) return env;
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    env[key] = value;
   }
-  return 'workspace-write';
+  return env;
 }
 
-const CODEX_SANDBOX_MODE = resolveCodexSandboxMode();
+function loadRuntimeEnv(projectRoot: string): RuntimeEnvSettings {
+  const envPath = path.join(projectRoot, '.viberadar.env');
+  if (!fs.existsSync(envPath)) {
+    try {
+      fs.writeFileSync(envPath, DEFAULT_RUNTIME_ENV_CONTENT, 'utf-8');
+    } catch {}
+  }
+  const fileEnv = parseEnvFile(envPath);
 
-function readEnvInt(name: string, fallback: number, min: number, max: number): number {
-  const raw = (process.env[name] || '').trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return fallback;
-  const n = Math.round(parsed);
-  return Math.min(max, Math.max(min, n));
+  function readEnv(name: string): string {
+    const fromProcess = (process.env[name] || '').trim();
+    if (fromProcess) return fromProcess;
+    return (fileEnv[name] || '').trim();
+  }
+
+  function readEnvInt(name: string, fallback: number, min: number, max: number): number {
+    const raw = readEnv(name);
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    const n = Math.round(parsed);
+    return Math.min(max, Math.max(min, n));
+  }
+
+  const sandboxRaw = readEnv('VIBERADAR_CODEX_SANDBOX');
+  const codexSandboxMode: CodexSandboxMode =
+    sandboxRaw === 'read-only' || sandboxRaw === 'workspace-write' || sandboxRaw === 'danger-full-access'
+      ? sandboxRaw
+      : 'workspace-write';
+
+  const agentCooldownMinMs = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MIN_MS', 20000, 0, 600000);
+  const agentCooldownMaxMs = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MAX_MS', 60000, agentCooldownMinMs, 600000);
+
+  return {
+    codexSandboxMode,
+    agentQueueMax: readEnvInt('VIBERADAR_AGENT_QUEUE_MAX', 5, 1, 100),
+    agentCooldownMinMs,
+    agentCooldownMaxMs,
+    envFilePath: fs.existsSync(envPath) ? envPath : null,
+  };
 }
-
-const AGENT_QUEUE_MAX = readEnvInt('VIBERADAR_AGENT_QUEUE_MAX', 5, 1, 100);
-const AGENT_COOLDOWN_MIN_MS = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MIN_MS', 20000, 0, 600000);
-const AGENT_COOLDOWN_MAX_MS = readEnvInt('VIBERADAR_AGENT_COOLDOWN_MAX_MS', 60000, AGENT_COOLDOWN_MIN_MS, 600000);
 
 function randomInt(min: number, max: number): number {
   if (max <= min) return min;
@@ -77,18 +141,18 @@ function detectQueueBlockSignal(line: string): 403 | 429 | null {
  * --output-format stream-json gives real-time events (tool calls, writes, etc.)
  * File piping avoids TUI mode in Claude Code v2+.
  */
-function buildAgentShellCmd(agent: string, taskFile: string, model?: string): string {
+function buildAgentShellCmd(agent: string, taskFile: string, codexSandboxMode: CodexSandboxMode, model?: string): string {
   const escaped = taskFile.replace(/\\/g, '\\\\');
   const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
   if (WIN) {
     if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
     if (agent === 'codex') {
-      return `codex.cmd exec --color never --sandbox ${CODEX_SANDBOX_MODE} --ask-for-approval never < "${escaped}"`;
+      return `codex.cmd exec --color never --sandbox ${codexSandboxMode} --ask-for-approval never < "${escaped}"`;
     }
   } else {
     if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
     if (agent === 'codex') {
-      return `codex exec --color never --sandbox ${CODEX_SANDBOX_MODE} --ask-for-approval never < "${escaped}"`;
+      return `codex exec --color never --sandbox ${codexSandboxMode} --ask-for-approval never < "${escaped}"`;
     }
   }
   return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
@@ -609,6 +673,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
   return new Promise((resolve, reject) => {
 
     let currentData = initialData;
+    const runtimeEnv = loadRuntimeEnv(projectRoot);
+    process.stdout.write(
+      `   ⚙️ Agent defaults: queue=${runtimeEnv.agentQueueMax}, cooldown=${runtimeEnv.agentCooldownMinMs}-${runtimeEnv.agentCooldownMaxMs}ms, codexSandbox=${runtimeEnv.codexSandboxMode}\n`
+    );
+    if (runtimeEnv.envFilePath) {
+      process.stdout.write(`   📄 Loaded env: ${runtimeEnv.envFilePath}\n`);
+    }
 
     // ── State ──────────────────────────────────────────────────────────────────
     let agentRunning    = false;
@@ -679,7 +750,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (agentQueue.length > 0) {
         if (withCooldown) {
           clearQueueCooldownTimer();
-          const delayMs = randomInt(AGENT_COOLDOWN_MIN_MS, AGENT_COOLDOWN_MAX_MS);
+          const delayMs = randomInt(runtimeEnv.agentCooldownMinMs, runtimeEnv.agentCooldownMaxMs);
           broadcast('agent-output', { line: `⏳ Пауза перед следующей задачей: ${Math.ceil(delayMs / 1000)}с` });
           queueCooldownTimer = setTimeout(() => {
             queueCooldownTimer = null;
@@ -762,7 +833,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } catch {}
 
       // Spawn via shell, reading prompt from file
-      const shellCmd = buildAgentShellCmd(agent, taskFile, (currentData as any).model);
+      const shellCmd = buildAgentShellCmd(agent, taskFile, runtimeEnv.codexSandboxMode, (currentData as any).model);
       process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
         cwd: projectRoot,
@@ -771,7 +842,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       });
       broadcast('agent-output', { line: `🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}` });
       if (agent === 'codex') {
-        broadcast('agent-output', { line: `🔐 Codex sandbox: ${CODEX_SANDBOX_MODE}` });
+        broadcast('agent-output', { line: `🔐 Codex sandbox: ${runtimeEnv.codexSandboxMode}` });
       }
       broadcast('agent-output', { line: `📄 Задача записана в .viberadar/task.md` });
 
@@ -1020,10 +1091,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const item: AgentQueueItem = { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType };
 
       if (agentRunning || queueCooldownTimer) {
-        if (agentQueue.length >= AGENT_QUEUE_MAX) {
-          const msg = `Очередь агента ограничена (${AGENT_QUEUE_MAX}). Дождись завершения текущих задач.`;
+        if (agentQueue.length >= runtimeEnv.agentQueueMax) {
+          const msg = `Очередь агента ограничена (${runtimeEnv.agentQueueMax}). Дождись завершения текущих задач.`;
           broadcast('agent-error', { message: msg });
-          process.stdout.write(`   ⚠️ Queue limit reached (${AGENT_QUEUE_MAX}), rejected: "${title}"\n`);
+          process.stdout.write(`   ⚠️ Queue limit reached (${runtimeEnv.agentQueueMax}), rejected: "${title}"\n`);
           return;
         }
         agentQueue.push(item);

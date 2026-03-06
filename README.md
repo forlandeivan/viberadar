@@ -10,6 +10,21 @@ Run it in any project root — VibeRadar scans your source files, reads Playwrig
 npx viberadar
 ```
 
+## Agent Env Config
+
+VibeRadar reads runtime agent settings from `.viberadar.env` in the project root (where you run `npx viberadar`).
+If the file is missing, VibeRadar creates it automatically with defaults.
+OS environment variables override file values.
+
+Default file:
+
+```env
+VIBERADAR_AGENT_QUEUE_MAX=5
+VIBERADAR_AGENT_COOLDOWN_MIN_MS=20000
+VIBERADAR_AGENT_COOLDOWN_MAX_MS=60000
+VIBERADAR_CODEX_SANDBOX=workspace-write
+```
+
 Opens `http://localhost:4242` with a live map of:
 - All source modules (TypeScript, JavaScript, Vue, Svelte)
 - Which ones have tests and which don't
