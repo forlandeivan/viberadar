@@ -326,6 +326,26 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     return s.toLowerCase().replace(/[_\-]/g, '');
   }
 
+  function buildDashTokenVariants(token: string): string[] {
+    const normalized = token.trim();
+    if (!normalized) return [];
+
+    const parts = normalized.split('-').filter(Boolean);
+    if (parts.length <= 1) return [normalized];
+
+    const variants = new Set<string>([normalized, ...parts]);
+
+    // Add contiguous compound parts so "skills-page-form-schema"
+    // also produces "form-schema" and "page-form".
+    for (let start = 0; start < parts.length; start++) {
+      for (let end = start + 1; end < parts.length; end++) {
+        variants.add(parts.slice(start, end + 1).join('-'));
+      }
+    }
+
+    return Array.from(variants);
+  }
+
   // Build map: cleanName → test file absolute path (first match wins)
   // Indexes both the full first dot-segment AND each individual dash-part so that
   // e.g. "webhook-send-json.test.ts" is found when searching for "webhook".
@@ -334,7 +354,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     let base = path.basename(tf, path.extname(tf)); // e.g. "auth.test" or "webhook-send-json.test"
     base = base.replace(/\.(test|spec)$/, '');       // → "auth" | "webhook-send-json"
     const firstDotSeg = base.split('.')[0];          // first dot-segment
-    const segsToIndex = [firstDotSeg, ...firstDotSeg.split('-')];
+    const segsToIndex = buildDashTokenVariants(firstDotSeg);
     for (const seg of segsToIndex) {
       const clean = cleanName(seg);
       if (clean.length >= 4 && !testByCleanName.has(clean)) {
