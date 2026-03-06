@@ -24,6 +24,17 @@ const DASHBOARD_HTML = fs.readFileSync(
 // ─── Agent CLI commands ───────────────────────────────────────────────────────
 
 const WIN = process.platform === 'win32';
+type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+
+function resolveCodexSandboxMode(): CodexSandboxMode {
+  const value = (process.env.VIBERADAR_CODEX_SANDBOX || '').trim();
+  if (value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access') {
+    return value;
+  }
+  return 'workspace-write';
+}
+
+const CODEX_SANDBOX_MODE = resolveCodexSandboxMode();
 
 /**
  * Build shell command that pipes task file into the agent CLI.
@@ -35,10 +46,14 @@ function buildAgentShellCmd(agent: string, taskFile: string, model?: string): st
   const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
   if (WIN) {
     if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
-    if (agent === 'codex')  return `type "${escaped}" | codex.cmd exec - --color never --sandbox workspace-write`;
+    if (agent === 'codex') {
+      return `codex.cmd exec --color never --sandbox ${CODEX_SANDBOX_MODE} --ask-for-approval never < "${escaped}"`;
+    }
   } else {
     if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
-    if (agent === 'codex')  return `codex exec - --color never --sandbox workspace-write < "${escaped}"`;
+    if (agent === 'codex') {
+      return `codex exec --color never --sandbox ${CODEX_SANDBOX_MODE} --ask-for-approval never < "${escaped}"`;
+    }
   }
   return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
 }
@@ -679,7 +694,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         fs.writeFileSync(taskFile, prompt, 'utf-8');
       } catch {}
 
-      // Spawn via shell, piping prompt from file (avoids TUI mode, supports stream-json)
+      // Spawn via shell, reading prompt from file
       const shellCmd = buildAgentShellCmd(agent, taskFile, (currentData as any).model);
       process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
@@ -688,6 +703,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       broadcast('agent-output', { line: `🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}` });
+      if (agent === 'codex') {
+        broadcast('agent-output', { line: `🔐 Codex sandbox: ${CODEX_SANDBOX_MODE}` });
+      }
       broadcast('agent-output', { line: `📄 Задача записана в .viberadar/task.md` });
 
       // Track test files written/edited by agent (for auto-run after)
