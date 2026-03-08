@@ -168,6 +168,32 @@
     .stat-value { font-size: 20px; font-weight: 700; color: var(--blue); }
     .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
+
+    .observability-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .observability-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .obs-metrics { display:grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:8px; margin-bottom:10px; }
+    .obs-metric { background: var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px; }
+    .obs-metric-v { font-size:18px; font-weight:700; color: var(--blue); }
+    .obs-metric-l { font-size:10px; color: var(--muted); text-transform: uppercase; }
+    .obs-columns { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .obs-list { background: var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px; }
+    .obs-list h4 { font-size:12px; margin-bottom:6px; color: var(--text); }
+    .obs-row { font-size:12px; color: var(--muted); padding:4px 0; border-bottom:1px dashed var(--border); }
+    .obs-row:last-child { border-bottom:none; }
+    .obs-priority-high { color: var(--red); }
+    .obs-priority-medium { color: var(--yellow); }
+    .obs-priority-low { color: var(--green); }
+    .obs-catalog { margin-top:10px; background: var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px; }
+    .obs-catalog h4 { font-size:12px; margin-bottom:6px; }
+    .obs-cat-row { display:grid; grid-template-columns: 1.8fr .6fr .8fr .7fr .8fr 1fr; gap:8px; font-size:11px; color:var(--muted); padding:5px 0; border-bottom:1px dashed var(--border); }
+    .obs-cat-row.head { color: var(--text); font-weight:600; text-transform:uppercase; font-size:10px; }
+
     /* ── Layout ──────────────────────────────────────────────────────────────── */
     .layout { display: flex; flex: 1; overflow: hidden; }
 
@@ -1038,6 +1064,14 @@ function switchMode(nextMode) {
 // ─── Run All Tests button ──────────────────────────────────────────────────────
 let runAllRunning = false;
 
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+
 function clearFeatureHash() {
   if (!window.location.hash) return;
   history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -1837,6 +1871,59 @@ function backToFeatures() {
   setFeatureDrill(null);
 }
 
+
+function toPct(v) {
+  return Math.round((v || 0) * 100) + '%';
+}
+
+function renderObservabilityOverview(c) {
+  const o = D.observability;
+  if (!o) return '';
+  const metrics = [
+    ['noise_ratio', toPct(o.metrics.noise_ratio)],
+    ['error_actionability', toPct(o.metrics.error_actionability)],
+    ['structured_completeness', toPct(o.metrics.structured_completeness)],
+    ['coverage_of_key_flows', toPct(o.metrics.coverage_of_key_flows)],
+  ];
+  const noisy = (o.topNoisyPatterns || []).slice(0, 5).map(i =>
+    `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} · x${i.count} → <b>${i.recommendation}</b></div>`
+  ).join('') || '<div class="obs-row">Нет шумных паттернов</div>';
+
+  const missing = (o.missingCriticalLogs || []).slice(0, 5).map(i =>
+    `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} → <b>${i.recommendation}</b></div>`
+  ).join('') || '<div class="obs-row">Критичные логи покрыты</div>';
+
+  const catalogRows = (o.catalog || []).slice(0, 10).map(i =>
+    `<div class="obs-cat-row"><span>${escapeHtml(i.modulePath)}</span><span>${i.level}</span><span>${i.format}</span><span>${i.frequency}</span><span>${escapeHtml(i.owner)}</span><span>${i.recommendation}</span></div>`
+  ).join('');
+
+  return `
+    <div class="observability-panel">
+      <div class="observability-title">Observability</div>
+      <div class="obs-metrics">
+        ${metrics.map(([l,v]) => `<div class="obs-metric"><div class="obs-metric-v">${v}</div><div class="obs-metric-l">${l}</div></div>`).join('')}
+      </div>
+      <div class="obs-columns">
+        <div class="obs-list">
+          <h4>Top noisy patterns</h4>
+          ${noisy}
+        </div>
+        <div class="obs-list">
+          <h4>Missing critical logs</h4>
+          ${missing}
+        </div>
+      </div>
+      <div class="obs-catalog">
+        <h4>Каталог источников логов (top 10)</h4>
+        <div class="obs-cat-row head"><span>module</span><span>level</span><span>format</span><span>frequency</span><span>owner</span><span>action</span></div>
+        ${catalogRows || '<div class="obs-row">Логи не найдены</div>'}
+      </div>
+      <div class="obs-row" style="margin-top:8px">
+        Классификация: мусор ${o.classification.trash} · полезно ${o.classification.useful} · критично ${o.classification.critical}
+      </div>
+    </div>`;
+}
+
 function renderFeatureCards(c) {
   if (!D.hasConfig || !D.features) {
     c.innerHTML = `
@@ -1868,7 +1955,7 @@ function renderFeatureCards(c) {
       </div>
     </div>` : '';
 
-  c.innerHTML = renderQaOnboarding() + setupBanner + '<div class="features-grid" id="featGrid"></div>';
+  c.innerHTML = setupBanner + renderObservabilityOverview(c) + '<div class="features-grid" id="featGrid"></div>';
   const grid = document.getElementById('featGrid');
 
   list.forEach(f => {
