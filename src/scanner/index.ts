@@ -69,6 +69,44 @@ export interface ScanResult {
   infraCount: number;  // files matched by config.ignore
   agent?: 'claude' | 'codex';  // configured AI agent
   testRunner?: string;          // detected test runner (vitest/jest)
+  observability?: ObservabilityReport;
+}
+
+export interface ObservabilityCatalogItem {
+  modulePath: string;
+  level: string;
+  format: 'structured' | 'unstructured' | 'mixed';
+  frequency: 'low' | 'medium' | 'high';
+  owner: string;
+  recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
+}
+
+export interface ObservabilityMetrics {
+  noise_ratio: number;
+  error_actionability: number;
+  structured_completeness: number;
+  coverage_of_key_flows: number;
+}
+
+export interface ObservabilityRuleSummary {
+  trash: number;
+  useful: number;
+  critical: number;
+}
+
+export interface ObservabilityInsightItem {
+  pattern: string;
+  count: number;
+  priority: 'high' | 'medium' | 'low';
+  recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
+}
+
+export interface ObservabilityReport {
+  catalog: ObservabilityCatalogItem[];
+  metrics: ObservabilityMetrics;
+  classification: ObservabilityRuleSummary;
+  topNoisyPatterns: ObservabilityInsightItem[];
+  missingCriticalLogs: ObservabilityInsightItem[];
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -81,6 +119,15 @@ const IGNORE_DIRS = [
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
 const TEST_PATTERNS = ['.test.', '.spec.', '__tests__', '.fixture.'];
 const INFRA_FILE_PATTERNS = [/\.d\.ts$/];  // type declarations — never source files
+const LOG_CALL_RE = /(?:console|logger|log)\.(trace|debug|info|warn|error|fatal)\s*\(([^\n;]*)/g;
+
+interface ParsedLogCall {
+  level: string;
+  argsSnippet: string;
+  message: string;
+  structured: boolean;
+  actionableError: boolean;
+}
 
 // ─── Glob pattern matcher ─────────────────────────────────────────────────────
 
@@ -211,6 +258,162 @@ function extractDependencies(filePath: string): string[] {
   } catch {
     return [];
   }
+}
+
+
+
+function detectLogOwner(relativePath: string): string {
+  const p = relativePath.replace(/\\/g, '/');
+  if (p.startsWith('src/server/')) return 'platform';
+  if (p.startsWith('src/scanner/')) return 'data';
+  if (p.startsWith('src/ui/')) return 'frontend';
+  const seg = p.split('/')[0] || 'unknown';
+  return seg.replace(/\.[^.]+$/, '');
+}
+
+function parseLogCalls(content: string): ParsedLogCall[] {
+  const calls: ParsedLogCall[] = [];
+  const re = new RegExp(LOG_CALL_RE);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    const level = (m[1] || '').toLowerCase();
+    const argsSnippet = (m[2] || '').trim();
+    const msgMatch = argsSnippet.match(/['"`]([^'"`]{3,200})['"`]/);
+    const message = (msgMatch?.[1] || '').trim();
+    const structured = /\{[^}]*\}/.test(argsSnippet);
+    const actionableError =
+      level === 'error' &&
+      (/(id|status|code|path|url|feature|module|retry|hint|action)/i.test(argsSnippet) || structured);
+    calls.push({ level, argsSnippet, message, structured, actionableError });
+  }
+  return calls;
+}
+
+function bucketFrequency(count: number): 'low' | 'medium' | 'high' {
+  if (count >= 8) return 'high';
+  if (count >= 3) return 'medium';
+  return 'low';
+}
+
+function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string): ObservabilityReport {
+  const sourceModules = modules.filter(m => m.type !== 'test' && !m.isInfra);
+  const catalog: ObservabilityCatalogItem[] = [];
+
+  let totalLogs = 0;
+  let noiseLogs = 0;
+  let totalErrors = 0;
+  let actionableErrors = 0;
+  let requiredFieldsChecks = 0;
+  let requiredFieldsHits = 0;
+
+  const noisyMap = new Map<string, number>();
+  const criticalCoverage = new Set<string>();
+
+  for (const module of sourceModules) {
+    let content = '';
+    try {
+      content = fs.readFileSync(module.path, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    const calls = parseLogCalls(content);
+    if (calls.length === 0) continue;
+
+    const infoDebugCalls = calls.filter(c => c.level === 'info' || c.level === 'debug' || c.level === 'trace');
+    const noisyCandidates = infoDebugCalls.filter(c =>
+      !c.structured ||
+      /(todo|temp|debug|test|ping|heartbeat|started|done|ok|loaded)/i.test(c.message || c.argsSnippet) ||
+      c.message.length < 12
+    );
+
+    for (const c of calls) {
+      totalLogs += 1;
+      if (c.level === 'error') {
+        totalErrors += 1;
+        if (c.actionableError) actionableErrors += 1;
+      }
+      requiredFieldsChecks += 3;
+      if (/(module|feature|service)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
+      if (/(event|type|action)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
+      if (/(requestId|traceId|correlationId|id)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
+    }
+
+    noiseLogs += noisyCandidates.length;
+
+    const format: ObservabilityCatalogItem['format'] =
+      calls.every(c => c.structured) ? 'structured' : calls.some(c => c.structured) ? 'mixed' : 'unstructured';
+
+    const levelRank: Record<string, number> = { trace: 0, debug: 1, info: 2, warn: 3, error: 4, fatal: 5 };
+    const level = calls.reduce((best, c) => levelRank[c.level] > levelRank[best] ? c.level : best, 'info');
+
+    let recommendation: ObservabilityCatalogItem['recommendation'] = 'enrich fields';
+    if (noisyCandidates.length >= Math.max(2, Math.ceil(calls.length * 0.6))) recommendation = 'suppress';
+    else if (format !== 'structured') recommendation = 'enrich fields';
+    else if (level === 'debug' || level === 'trace') recommendation = 'downgrade level';
+
+    catalog.push({
+      modulePath: module.relativePath,
+      level,
+      format,
+      frequency: bucketFrequency(calls.length),
+      owner: detectLogOwner(module.relativePath),
+      recommendation,
+    });
+
+    for (const noisy of noisyCandidates) {
+      const key = (noisy.message || noisy.argsSnippet || '[unknown]').slice(0, 90);
+      noisyMap.set(key, (noisyMap.get(key) || 0) + 1);
+    }
+
+    if (calls.some(c => c.level === 'error' || c.level === 'warn')) {
+      criticalCoverage.add(module.relativePath);
+    }
+  }
+
+  const classifiedTrash = noiseLogs;
+  const classifiedCritical = actionableErrors;
+  const classifiedUseful = Math.max(0, totalLogs - classifiedTrash - classifiedCritical);
+
+  const topNoisyPatterns: ObservabilityInsightItem[] = Array.from(noisyMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([pattern, count], i) => ({
+      pattern,
+      count,
+      priority: i < 3 ? 'high' : i < 6 ? 'medium' : 'low',
+      recommendation: count >= 3 ? 'suppress' : 'downgrade level',
+    }));
+
+  const missingCriticalLogs: ObservabilityInsightItem[] = sourceModules
+    .filter(m => !criticalCoverage.has(m.relativePath))
+    .slice(0, 8)
+    .map((m, i) => ({
+      pattern: `${m.relativePath}: нет warn/error событий`,
+      count: 1,
+      priority: i < 3 ? 'high' : 'medium',
+      recommendation: 'add event',
+    }));
+
+  const totalSource = sourceModules.length || 1;
+  const metrics: ObservabilityMetrics = {
+    noise_ratio: totalLogs ? noiseLogs / totalLogs : 0,
+    error_actionability: totalErrors ? actionableErrors / totalErrors : 0,
+    structured_completeness: requiredFieldsChecks ? requiredFieldsHits / requiredFieldsChecks : 0,
+    coverage_of_key_flows: criticalCoverage.size / totalSource,
+  };
+
+  return {
+    catalog: catalog.sort((a, b) => a.modulePath.localeCompare(b.modulePath)),
+    metrics,
+    classification: {
+      trash: classifiedTrash,
+      useful: classifiedUseful,
+      critical: classifiedCritical,
+    },
+    topNoisyPatterns,
+    missingCriticalLogs,
+  };
 }
 
 function loadCoverageMap(projectRoot: string): Map<string, CoverageInfo> {
@@ -474,5 +677,6 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     infraCount: modules.filter(m => m.isInfra).length,
     agent: config?.agent,
     testRunner,
+    observability: computeObservabilityReport(modules, projectRoot),
   };
 }
