@@ -56,6 +56,15 @@ npx jest --coverage
 npx playwright test
 ```
 
+## Logging standard
+
+Repository includes an observability baseline for structured logs:
+
+- Standard document: `docs/observability/logging-standard.md`
+- Error code dictionary: `config/logging-error-codes.json`
+- CI/lint command: `npm run lint:logs`
+- Lint self-check tests: `npm run test:lint-logs`
+
 ## Tech
 
 - CLI: TypeScript + Node.js
