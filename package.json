@@ -10,7 +10,9 @@
     "build": "tsc && node scripts/bundle-ui.js",
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint:logs": "node scripts/lint-logs.js",
+    "test:lint-logs": "node scripts/test-lint-logs.js"
   },
   "type": "commonjs",
   "keywords": [
