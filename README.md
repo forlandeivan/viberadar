@@ -56,12 +56,44 @@ npx jest --coverage
 npx playwright test
 ```
 
+## Logging standard
+
+Repository includes an observability baseline for structured logs:
+
+- Standard document: `docs/observability/logging-standard.md`
+- Error code dictionary: `config/logging-error-codes.json`
+- CI/lint command: `npm run lint:logs`
+- Lint self-check tests: `npm run test:lint-logs`
+
 ## Tech
 
 - CLI: TypeScript + Node.js
 - Dashboard: vanilla HTML/JS (zero dependencies in browser)
 - Server: Node.js `http` module
 - Port: `4242`
+
+## Release to npm
+
+To avoid forgetting npm publication after changes, use release scripts:
+
+```bash
+# Patch release (0.3.56 -> 0.3.57)
+npm run release:patch
+
+# Minor release (0.3.x -> 0.4.0)
+npm run release:minor
+
+# Major release (0.x -> 1.0.0)
+npm run release:major
+```
+
+Each command runs typecheck + build first, then bumps version and publishes to npm.
+
+Before running release scripts, make sure you are authenticated:
+
+```bash
+npm whoami
+```
 
 ## License
 

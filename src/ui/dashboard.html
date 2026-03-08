@@ -209,6 +209,30 @@
       gap: 14px;
     }
 
+    .mode-switch {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mode-switch-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.1s, background 0.1s, color 0.1s;
+    }
+    .mode-switch-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .mode-switch-btn.active { border-color: var(--blue); color: var(--text); }
+    .mode-switch-hint { font-size: 10px; color: var(--dim); }
+
     .view-tabs {
       display: flex;
       background: var(--bg);
@@ -271,6 +295,33 @@
     /* ── Content area ────────────────────────────────────────────────────────── */
     .content { flex: 1; overflow-y: auto; padding: 18px 20px; transition: padding-bottom 0.25s ease; }
     .content.panel-open { padding-bottom: 300px; }
+
+    .onboarding-block {
+      background: linear-gradient(135deg, rgba(88,166,255,0.12), rgba(63,185,80,0.08));
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .onboarding-block h3 { font-size: 14px; margin-bottom: 6px; }
+    .onboarding-block p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    .obs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .obs-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .obs-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+    .obs-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .obs-sub { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .obs-list { display: flex; flex-direction: column; gap: 6px; }
+    .obs-list-item { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 
     /* ── Feature cards ───────────────────────────────────────────────────────── */
     .features-grid {
@@ -574,6 +625,13 @@
     .file-row:hover  { background: var(--bg-card); }
     .file-row.active { background: var(--bg-hover); border-left: 2px solid var(--blue); padding-left: 8px; }
     .file-row-icon { font-size: 12px; flex-shrink: 0; }
+    .file-row-select {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--blue);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
     .file-row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .file-row-dir  { font-size: 11px; color: var(--dim); margin-left: auto; white-space: nowrap; flex-shrink: 0; }
     .file-row-agent-btn {
@@ -764,6 +822,34 @@
       white-space: nowrap;
     }
     .file-row-more-item:hover { background: var(--border); }
+
+    .bulk-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      padding: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .bulk-actions-count { font-size: 12px; color: var(--muted); }
+    .bulk-actions-btn {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .bulk-actions-btn.primary {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .bulk-actions-btn:hover:not(:disabled) { background: var(--bg-hover); }
+    .bulk-actions-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .agent-terminal {
       flex: 1;
       overflow-y: auto;
@@ -869,6 +955,7 @@
 
 <div class="layout">
   <aside class="sidebar">
+    <div class="mode-switch" id="modeSwitch"></div>
     <div class="view-tabs" id="viewTabs">
       <div class="view-tab" data-view="features">Features</div>
       <div class="view-tab" data-view="files">Files</div>
@@ -904,14 +991,76 @@
 <script>
 // ─── State ────────────────────────────────────────────────────────────────────
 let D = null;
+let contextMode = 'qa';
 let view = 'features';
 let searchQuery = '';
 let activeTypes = new Set();
 let activePanelKey = null;
 let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string = feature key
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
+const selectedSourceFiles = new Set(); // normalized relative paths for batch actions
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
+const modeStore = {
+  qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null },
+  observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null },
+};
+
+function getModeFromPath(pathname = window.location.pathname) {
+  if (pathname.startsWith('/radar/observability')) return 'observability';
+  return 'qa';
+}
+
+function routePathForMode(mode) {
+  return mode === 'observability' ? '/radar/observability' : '/radar/qa';
+}
+
+function setModeRoute(mode, replace = false) {
+  const target = routePathForMode(mode) + window.location.search + window.location.hash;
+  if (replace) history.replaceState(null, '', target);
+  else history.pushState(null, '', target);
+}
+
+function saveModeState(mode) {
+  modeStore[mode] = {
+    view,
+    searchQuery,
+    activeTypes: new Set(activeTypes),
+    drillFeatureKey,
+    drillTestType,
+    activePanelKey,
+  };
+}
+
+function restoreModeState(mode) {
+  const state = modeStore[mode];
+  view = state.view;
+  searchQuery = state.searchQuery;
+  activeTypes = new Set(state.activeTypes);
+  drillFeatureKey = state.drillFeatureKey;
+  drillTestType = state.drillTestType;
+  activePanelKey = state.activePanelKey;
+}
+
+function switchMode(nextMode) {
+  if (nextMode === contextMode) return;
+  saveModeState(contextMode);
+  contextMode = nextMode;
+  restoreModeState(contextMode);
+  if (contextMode === 'observability') {
+    view = 'files';
+    drillFeatureKey = null;
+    drillTestType = null;
+    activePanelKey = null;
+    clearFeatureHash();
+  }
+  setModeRoute(contextMode);
+  document.getElementById('searchInput').value = searchQuery;
+  document.getElementById('panel').classList.remove('open');
+  renderStats();
+  renderSidebar();
+  renderContent();
+}
 // ─── Run All Tests button ──────────────────────────────────────────────────────
 let runAllRunning = false;
 
@@ -943,12 +1092,22 @@ function setFeatureDrill(featureKey, syncHash = true) {
   drillFeatureKey = featureKey;
   drillTestType = null;
   activePanelKey = null;
+  selectedSourceFiles.clear();
   document.getElementById('panel').classList.remove('open');
   if (syncHash) {
     if (featureKey) window.location.hash = `feature=${encodeURIComponent(featureKey)}`;
     else clearFeatureHash();
   }
   renderContent();
+}
+
+function selectedFilesForFeature(featureKey, visibleSourceFiles = null) {
+  const visibleSet = visibleSourceFiles ? new Set(visibleSourceFiles.map(p => p.replace(/\\/g, '/'))) : null;
+  return Array.from(selectedSourceFiles).filter((relPath) => {
+    if (visibleSet && !visibleSet.has(relPath)) return false;
+    const mod = D?.modules?.find((m) => m.relativePath.replace(/\\/g, '/') === relPath);
+    return !!mod && mod.type !== 'test' && mod.featureKeys?.includes(featureKey);
+  });
 }
 
 function applyHashRoute() {
@@ -1201,9 +1360,12 @@ function setAgentRunning(val) {
 }
 
 // Returns array of normalized relative paths affected by a given task
-function getTaskFilePaths(task, featureKey, filePath) {
+function getTaskFilePaths(task, featureKey, filePath, selectedFilePaths) {
   if ((task === 'write-tests-file' || task === 'fix-tests') && filePath) {
     return [filePath.replace(/\\/g, '/')];
+  }
+  if ((task === 'write-tests-selected' || task === 'refresh-tests-selected') && Array.isArray(selectedFilePaths)) {
+    return selectedFilePaths.map(p => p.replace(/\\/g, '/'));
   }
   if ((task === 'write-tests' || task === 'fix-tests-all') && featureKey && D?.modules) {
     return D.modules
@@ -1377,7 +1539,7 @@ async function reauthAgent() {
   await fetch('/api/agent-reauth', { method: 'POST' });
 }
 
-async function runAgentTask(task, featureKey, filePath) {
+async function runAgentTask(task, featureKey, filePath, selectedFilePaths) {
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
   if (!agentRunning) {
@@ -1386,7 +1548,12 @@ async function runAgentTask(task, featureKey, filePath) {
   await fetch('/api/run-agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, featureKey, filePath: filePath || undefined }),
+    body: JSON.stringify({
+      task,
+      featureKey,
+      filePath: filePath || undefined,
+      selectedFilePaths: Array.isArray(selectedFilePaths) ? selectedFilePaths : undefined,
+    }),
   });
 }
 
@@ -1470,12 +1637,24 @@ async function init() {
     document.getElementById('scannedAt').textContent =
       new Date(D.scannedAt).toLocaleTimeString();
 
+    contextMode = getModeFromPath();
     view = D.hasConfig ? 'features' : 'files';
     applyHashRoute();
 
     if (!D.hasConfig) {
       document.querySelector('[data-view="features"]').classList.add('disabled');
+      modeStore.qa.view = 'files';
     }
+    modeStore.qa.view = D.hasConfig ? modeStore.qa.view : 'files';
+    restoreModeState(contextMode);
+    if (contextMode === 'observability') {
+      view = 'files';
+      drillFeatureKey = null;
+      drillTestType = null;
+      activePanelKey = null;
+    }
+    setModeRoute(contextMode, true);
+    document.getElementById('searchInput').value = searchQuery;
 
     document.getElementById('loading').style.display = 'none';
     renderStats();
@@ -1494,7 +1673,21 @@ function renderStats() {
   const pct = src.length ? Math.round(tested / src.length * 100) : 0;
 
   let items;
-  if (D.hasConfig && D.features) {
+  if (contextMode === 'observability') {
+    const serviceSources = src.filter(m => m.type === 'service' || m.type === 'util' || m.type === 'other');
+    const errorSignal = Object.values(D.testErrors || {}).reduce((acc, v) => acc + (v?.failed || 0), 0);
+    const totalBytes = src.reduce((acc, m) => acc + (m.size || 0), 0);
+    const avgKb = src.length ? Math.round(totalBytes / src.length / 1024) : 0;
+    const noiseRatio = src.length ? Math.round((src.filter(m => !m.hasTests).length / src.length) * 100) : 0;
+    const missingStructured = serviceSources.filter(m => !m.hasTests).length;
+    items = [
+      { v: serviceSources.length, l: 'Log Sources' },
+      { v: avgKb + 'kb', l: 'Avg Volume/File' },
+      { v: noiseRatio + '%', l: 'Noise Ratio' },
+      { v: errorSignal, l: 'Error Signal', c: errorSignal ? '#f85149' : undefined },
+      { v: missingStructured, l: 'Missing Fields', c: missingStructured ? '#e3b341' : undefined },
+    ];
+  } else if (D.hasConfig && D.features) {
     const unmapped = src.filter(m => !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)).length;
     items = [
       { v: D.features.length,   l: 'Features' },
@@ -1520,13 +1713,44 @@ function renderStats() {
   ).join('');
 }
 
+function renderModeSwitch() {
+  const root = document.getElementById('modeSwitch');
+  const modes = [
+    { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
+    { key: 'observability', label: 'Observability', hint: 'Логи, шум, error signal' },
+  ];
+  root.innerHTML = modes.map(m => `
+    <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
+      <span>${m.label}</span>
+      <span class="mode-switch-hint">${m.hint}</span>
+    </button>
+  `).join('');
+  root.querySelectorAll('.mode-switch-btn').forEach(btn => {
+    btn.onclick = () => switchMode(btn.dataset.mode);
+  });
+}
+
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function renderSidebar() {
+  renderModeSwitch();
+  const tabs = document.getElementById('viewTabs');
+  const extra = document.getElementById('sidebarExtra');
+
+  if (contextMode === 'observability') {
+    tabs.style.display = 'none';
+    extra.innerHTML = `
+      <div class="sidebar-label">Observability focus</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
+        Источники логов и качество сигналов для triage инцидентов.
+      </div>`;
+    return;
+  }
+
+  tabs.style.display = 'flex';
   document.querySelectorAll('.view-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.view === view)
   );
 
-  const extra = document.getElementById('sidebarExtra');
   if (view !== 'files') { extra.innerHTML = ''; return; }
 
   const types = [...new Set(D.modules.map(m => m.type))].sort();
@@ -1562,6 +1786,11 @@ function renderSidebar() {
 // ─── Content ──────────────────────────────────────────────────────────────────
 function renderContent() {
   const c = document.getElementById('content');
+  if (contextMode === 'observability') {
+    renderObservability(c);
+    return;
+  }
+
   if (view === 'features') {
     if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
     else if (drillFeatureKey) renderFeatureDetail(c);
@@ -1569,6 +1798,66 @@ function renderContent() {
   } else {
     renderModuleGrid(c);
   }
+}
+
+function renderQaOnboarding() {
+  return `<div class="onboarding-block"><h3>QA Coverage: что это?</h3><p>Этот экран помогает найти пробелы в тестах: сначала проверь покрытие по фичам, затем открой критичные непокрытые файлы и запусти генерацию/фиксы тестов.</p></div>`;
+}
+
+function renderObservability(c) {
+  const src = D.modules.filter(m => m.type !== 'test');
+  const sourceGroups = [
+    { label: 'Service', count: src.filter(m => m.type === 'service').length },
+    { label: 'Util', count: src.filter(m => m.type === 'util').length },
+    { label: 'Other', count: src.filter(m => m.type === 'other').length },
+  ].filter(x => x.count > 0);
+  const errorSignal = Object.values(D.testErrors || {}).reduce((acc, v) => acc + (v?.failed || 0), 0);
+  const missingStructured = src.filter(m => (m.type === 'service' || m.type === 'util') && !m.hasTests).slice(0, 8);
+  const noisy = [...src]
+    .sort((a, b) => (b.size || 0) - (a.size || 0))
+    .slice(0, 5)
+    .map(m => ({ name: m.name, rel: m.relativePath, kb: Math.round((m.size || 0) / 1024) }));
+
+  c.innerHTML = `
+    <div class="onboarding-block">
+      <h3>Observability: что это?</h3>
+      <p>Экран для контроля signal-to-noise: откуда идут логи, где растёт объём, сколько шума и какие поля/сигналы нужно структурировать в первую очередь.</p>
+    </div>
+
+    <div class="obs-grid">
+      <div class="obs-card">
+        <div class="obs-title">Источники логов</div>
+        <div class="obs-list">
+          ${sourceGroups.map(g => `<div class="obs-list-item"><span>${g.label}</span><strong>${g.count}</strong></div>`).join('') || '<div class="obs-sub">Нет данных</div>'}
+        </div>
+      </div>
+
+      <div class="obs-card">
+        <div class="obs-title">Volume (top files)</div>
+        <div class="obs-list">
+          ${noisy.map(n => `<div class="obs-list-item"><span title="${n.rel}">${n.name}</span><strong>${n.kb}kb</strong></div>`).join('') || '<div class="obs-sub">Нет файлов</div>'}
+        </div>
+      </div>
+
+      <div class="obs-card">
+        <div class="obs-title">Noise ratio</div>
+        <div class="obs-value">${src.length ? Math.round((src.filter(m => !m.hasTests).length / src.length) * 100) : 0}%</div>
+        <div class="obs-sub">Доля источников без тестового контроля (proxy для noisy логирования).</div>
+      </div>
+
+      <div class="obs-card">
+        <div class="obs-title">Error signal</div>
+        <div class="obs-value" style="color:${errorSignal ? 'var(--red)' : 'var(--green)'}">${errorSignal}</div>
+        <div class="obs-sub">Сумма упавших тестов из последнего прогона как индикатор нестабильности сигналов.</div>
+      </div>
+
+      <div class="obs-card" style="grid-column:1 / -1">
+        <div class="obs-title">Missing structured fields (candidates)</div>
+        <div class="obs-list">
+          ${missingStructured.map(m => `<div class="obs-list-item"><span>${m.relativePath}</span><strong>needs schema</strong></div>`).join('') || '<div class="obs-sub">Явных кандидатов не найдено</div>'}
+        </div>
+      </div>
+    </div>`;
 }
 
 function backToFeatureDetail() {
@@ -2001,6 +2290,12 @@ function renderFeatureDetail(c) {
   const filtered = q ? listFiles.filter(m =>
     m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
   ) : listFiles;
+  const selectableSource = !isTestList && !!D.agent;
+  const visibleSourcePaths = selectableSource
+    ? filtered.map(m => m.relativePath.replace(/\\/g, '/'))
+    : [];
+  const selectedVisible = selectableSource ? selectedFilesForFeature(drillFeatureKey, filtered.map(m => m.relativePath)) : [];
+  const selectedCount = selectedVisible.length;
 
   c.innerHTML = `
     <div class="drill-header">
@@ -2028,14 +2323,59 @@ function renderFeatureDetail(c) {
     </div>
 
     <div class="drill-section-label">${listLabel}</div>
+    ${selectableSource ? `
+      <div class="bulk-actions">
+        <span class="bulk-actions-count">Выбрано файлов: <b>${selectedCount}</b></span>
+        <button class="bulk-actions-btn" id="bulkSelectAllBtn" ${visibleSourcePaths.length === 0 ? 'disabled' : ''}>☑ Выбрать все (${visibleSourcePaths.length})</button>
+        <button class="bulk-actions-btn" id="bulkClearBtn" ${selectedCount === 0 ? 'disabled' : ''}>Снять выбор</button>
+        <button class="bulk-actions-btn primary" id="bulkWriteTestsBtn" ${selectedCount === 0 ? 'disabled' : ''}>✍ Написать тесты для выбранных</button>
+        <button class="bulk-actions-btn" id="bulkRefreshTestsBtn" ${selectedCount === 0 ? 'disabled' : ''}>↻ Актуализировать тесты</button>
+      </div>` : ''}
     <div class="file-rows" id="fileRows">
       ${filtered.length === 0
         ? `<div style="padding:20px;text-align:center;border:1px dashed var(--border);border-radius:8px;color:var(--dim);font-size:13px">
             ${isTestList ? 'Нет тестов этого типа для данной фичи' : 'Нет файлов — возможно паттерны в конфиге не совпадают'}
           </div>`
-        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey)).join('')
+        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey, selectableSource)).join('')
       }
     </div>`;
+
+  if (selectableSource) {
+    const allVisibleSelected = visibleSourcePaths.length > 0 && visibleSourcePaths.every((p) => selectedSourceFiles.has(p));
+    const bulkSelectAllBtn = document.getElementById('bulkSelectAllBtn');
+    if (bulkSelectAllBtn) {
+      bulkSelectAllBtn.textContent = allVisibleSelected
+        ? `☑ Выбраны все (${visibleSourcePaths.length})`
+        : `☑ Выбрать все (${visibleSourcePaths.length})`;
+      bulkSelectAllBtn.onclick = () => {
+        visibleSourcePaths.forEach((p) => selectedSourceFiles.add(p));
+        renderContent();
+      };
+    }
+    const bulkClearBtn = document.getElementById('bulkClearBtn');
+    if (bulkClearBtn) {
+      bulkClearBtn.onclick = () => {
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+    const bulkWriteTestsBtn = document.getElementById('bulkWriteTestsBtn');
+    if (bulkWriteTestsBtn) {
+      bulkWriteTestsBtn.onclick = () => {
+        runAgentTask('write-tests-selected', drillFeatureKey, null, selectedVisible);
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+    const bulkRefreshTestsBtn = document.getElementById('bulkRefreshTestsBtn');
+    if (bulkRefreshTestsBtn) {
+      bulkRefreshTestsBtn.onclick = () => {
+        runAgentTask('refresh-tests-selected', drillFeatureKey, null, selectedVisible);
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+  }
 
   c.querySelectorAll('.test-type-card[data-testtype]').forEach(card => {
     card.onclick = async () => {
@@ -2193,7 +2533,7 @@ function renderUnmappedDetail(c) {
   });
 }
 
-function fileRow(m, isTest = false, featureKey = null) {
+function fileRow(m, isTest = false, featureKey = null, selectable = false) {
   const relPath = m.relativePath.replace(/\\/g, '/');
   const parts   = relPath.split('/');
   const name    = parts[parts.length - 1];
@@ -2206,6 +2546,7 @@ function fileRow(m, isTest = false, featureKey = null) {
     ? `<span class="file-agent-spinner ${agentState}" title="${agentState === 'running' ? 'Агент работает…' : 'В очереди…'}"></span>`
     : (testErr ? '❌' : isTest ? '🧪' : (m.testStale ? '⚠️' : m.hasTests ? '✅' : '⬜'));
   const isActive = activePanelKey === m.id;
+  const isSelected = selectedSourceFiles.has(relPath);
 
   // Write-test button for source files
   // In feature drill-down (featureKey set), show button even for isInfra files — user explicitly added them to the feature
@@ -2254,8 +2595,14 @@ function fileRow(m, isTest = false, featureKey = null) {
       </div>`
     : '';
 
+  const selectBox = selectable
+    ? `<input type="checkbox" class="file-row-select" ${isSelected ? 'checked' : ''}
+         onclick="event.stopPropagation();toggleSourceSelection('${relPath}', this.checked)">`
+    : '';
+
   return `
     <div class="file-row${isActive ? ' active' : ''}${testErr ? ' has-errors' : ''}" data-id="${m.id}">
+      ${selectBox}
       <span class="file-row-icon">${icon}</span>
       <span class="file-row-name">${name}</span>
       ${errBadge}
@@ -2265,6 +2612,13 @@ function fileRow(m, isTest = false, featureKey = null) {
       <span class="file-row-dir">${dir}</span>
     </div>
     ${errHtml}`;
+}
+
+function toggleSourceSelection(relPath, checked) {
+  const n = relPath.replace(/\\/g, '/');
+  if (checked) selectedSourceFiles.add(n);
+  else selectedSourceFiles.delete(n);
+  renderContent();
 }
 
 function renderModuleGrid(c) {
@@ -2518,10 +2872,12 @@ function closePanel() {
 // ─── Events ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('.view-tab').forEach(tab => {
   tab.onclick = () => {
+    if (contextMode !== 'qa') return;
     if (tab.classList.contains('disabled')) return;
     view = tab.dataset.view;
     drillFeatureKey = null;
     drillTestType = null;
+    selectedSourceFiles.clear();
     activePanelKey = null;
     searchQuery = '';
     activeTypes.clear();
@@ -2541,8 +2897,24 @@ document.getElementById('searchInput').oninput = e => {
 document.getElementById('panelClose').onclick = closePanel;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 window.addEventListener('hashchange', () => {
-  if (!D) return;
+  if (!D || contextMode !== 'qa') return;
   applyHashRoute();
+  renderSidebar();
+  renderContent();
+});
+
+
+window.addEventListener('popstate', () => {
+  if (!D) return;
+  const routeMode = getModeFromPath();
+  if (routeMode !== contextMode) {
+    saveModeState(contextMode);
+    contextMode = routeMode;
+    restoreModeState(contextMode);
+  }
+  if (contextMode === 'qa') applyHashRoute();
+  document.getElementById('searchInput').value = searchQuery;
+  renderStats();
   renderSidebar();
   renderContent();
 });
@@ -2602,12 +2974,12 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-queued', (e) => {
-    const { queueLength, title, task, featureKey, filePath } = JSON.parse(e.data);
+    const { queueLength, title, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
     document.getElementById('agentPanel').classList.add('open');
     document.getElementById('termBtn').classList.add('term-active');
     // Track queued paths for spinner
-    getTaskFilePaths(task, featureKey, filePath).forEach(p => agentQueuedPaths.add(p));
+    getTaskFilePaths(task, featureKey, filePath, selectedFilePaths).forEach(p => agentQueuedPaths.add(p));
     renderContent();
     // Append queue notification to the currently running session (or active)
     const targetId = runningSessionId || activeSessionId;
@@ -2618,10 +2990,10 @@ function connectSSE() {
 
   es.addEventListener('agent-started', (e) => {
     setAgentRunning(true);
-    const { title, queueLength = 0, task, featureKey, filePath } = JSON.parse(e.data);
+    const { title, queueLength = 0, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
     // Move paths from queued → running (current task)
-    const startedPaths = getTaskFilePaths(task, featureKey, filePath);
+    const startedPaths = getTaskFilePaths(task, featureKey, filePath, selectedFilePaths);
     startedPaths.forEach(p => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
     renderContent();
     // Close previous session (queue case: agent-done not fired between tasks)
