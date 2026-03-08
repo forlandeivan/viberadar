@@ -72,6 +72,29 @@ Repository includes an observability baseline for structured logs:
 - Server: Node.js `http` module
 - Port: `4242`
 
+## Release to npm
+
+To avoid forgetting npm publication after changes, use release scripts:
+
+```bash
+# Patch release (0.3.56 -> 0.3.57)
+npm run release:patch
+
+# Minor release (0.3.x -> 0.4.0)
+npm run release:minor
+
+# Major release (0.x -> 1.0.0)
+npm run release:major
+```
+
+Each command runs typecheck + build first, then bumps version and publishes to npm.
+
+Before running release scripts, make sure you are authenticated:
+
+```bash
+npm whoami
+```
+
 ## License
 
 MIT
