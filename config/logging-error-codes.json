@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "codes": [
+    "VALIDATION_ERROR",
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "RESOURCE_NOT_FOUND",
+    "CONFLICT",
+    "RATE_LIMITED",
+    "DEPENDENCY_TIMEOUT",
+    "DEPENDENCY_UNAVAILABLE",
+    "DB_TIMEOUT",
+    "DB_CONSTRAINT_VIOLATION",
+    "INTERNAL_ERROR"
+  ]
+}
