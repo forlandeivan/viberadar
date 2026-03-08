@@ -1,6 +1,6 @@
 {
   "name": "viberadar",
-  "version": "0.3.56",
+  "version": "0.3.57",
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
   "bin": {
@@ -10,7 +10,11 @@
     "build": "tsc && node scripts/bundle-ui.js",
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release:check": "npm run typecheck && npm run build",
+    "release:patch": "npm run release:check && npm version patch && npm publish",
+    "release:minor": "npm run release:check && npm version minor && npm publish",
+    "release:major": "npm run release:check && npm version major && npm publish"
   },
   "type": "commonjs",
   "keywords": [

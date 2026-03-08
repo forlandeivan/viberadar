@@ -253,6 +253,7 @@ interface AgentQueueItem {
   task: string;
   featureKey?: string;
   filePath?: string;
+  selectedFilePaths?: string[];
   title: string;
   agent: string;
   savedErrors?: TestFileError[];
@@ -561,6 +562,72 @@ function buildWriteTestsForFilePrompt(
   ].filter(Boolean).join('\n');
 }
 
+function buildWriteTestsForSelectedPrompt(
+  filePaths: string[],
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  testRunner: string,
+): string {
+  const normalized = filePaths.map(p => p.replace(/\\/g, '/')).filter(Boolean);
+  const selectedModules = normalized
+    .map(p => modules.find(m => m.relativePath.replace(/\\/g, '/') === p))
+    .filter((m): m is ModuleInfo => !!m && m.type !== 'test');
+
+  const selectedLines = selectedModules.map((m) => {
+    const suggested = m.suggestedTestType === 'integration' ? 'integration' : 'unit';
+    const staleMark = m.testStale ? ' (тест устарел)' : '';
+    return `- ${m.relativePath.replace(/\\/g, '/')} — ${suggested}${staleMark}`;
+  });
+
+  return [
+    `Напиши/обнови тесты только для выбранных файлов фичи "${feat.label}".`,
+    '',
+    `Выбрано файлов (${selectedModules.length}):`,
+    ...selectedLines,
+    '',
+    `Требования:`,
+    `- Работай только с выбранными файлами из списка`,
+    `- Если теста нет — создай`,
+    `- Если тест устарел — обнови`,
+    `- Для unit файлов мокай внешние зависимости`,
+    `- Для integration файлов используй test-helpers или pg-mem`,
+    `- Используй ${testRunner}`,
+    `- Следуй текущим паттернам тестов в проекте`,
+  ].join('\n');
+}
+
+function buildRefreshTestsForSelectedPrompt(
+  filePaths: string[],
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  testRunner: string,
+): string {
+  const normalized = filePaths.map(p => p.replace(/\\/g, '/')).filter(Boolean);
+  const selectedModules = normalized
+    .map(p => modules.find(m => m.relativePath.replace(/\\/g, '/') === p))
+    .filter((m): m is ModuleInfo => !!m && m.type !== 'test');
+
+  const selectedLines = selectedModules.map((m) => {
+    const suggested = m.suggestedTestType === 'integration' ? 'integration' : 'unit';
+    const linkedTest = m.testFile ? m.testFile.replace(/\\/g, '/') : 'теста нет';
+    return `- ${m.relativePath.replace(/\\/g, '/')} — ${suggested}, текущий тест: ${linkedTest}`;
+  });
+
+  return [
+    `Актуализируй тесты для выбранных файлов фичи "${feat.label}".`,
+    '',
+    `Выбрано файлов (${selectedModules.length}):`,
+    ...selectedLines,
+    '',
+    `Для каждого выбранного файла:`,
+    `1) Проверь актуальность и качество тестов.`,
+    `2) Дополни недостающие сценарии (happy path, edge cases, ошибки).`,
+    `3) Если тест отсутствует — создай новый.`,
+    `4) Не меняй source-код без крайней необходимости; фокус на тестах.`,
+    `5) Используй ${testRunner} и паттерны проекта.`,
+  ].join('\n');
+}
+
 function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string {
   const normalPath = filePath.replace(/\\/g, '/');
   return [
@@ -792,7 +859,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     /** Actually spawn the agent process for a queue item */
     function executeAgentItem(item: AgentQueueItem) {
       const {
-        task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType,
+        task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
         autoFixAttempt = 0, autoFixSourceTask,
       } = item;
 
@@ -812,6 +879,20 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           agentRunning = false; processNextInQueue(); return;
         }
         prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
+      } else if (task === 'write-tests-selected') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat || !selectedFilePaths || selectedFilePaths.length === 0) {
+          broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' });
+          agentRunning = false; processNextInQueue(); return;
+        }
+        prompt = buildWriteTestsForSelectedPrompt(selectedFilePaths, feat, currentData.modules, currentData.testRunner || 'vitest');
+      } else if (task === 'refresh-tests-selected') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat || !selectedFilePaths || selectedFilePaths.length === 0) {
+          broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' });
+          agentRunning = false; processNextInQueue(); return;
+        }
+        prompt = buildRefreshTestsForSelectedPrompt(selectedFilePaths, feat, currentData.modules, currentData.testRunner || 'vitest');
       } else if (task === 'fix-tests') {
         if (!filePath || !savedErrors || savedErrors.length === 0) {
           broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}` });
@@ -844,7 +925,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       agentRunning = true;
-      broadcast('agent-started', { title, task, featureKey, filePath: filePath || null, queueLength: agentQueue.length });
+      broadcast('agent-started', {
+        title,
+        task,
+        featureKey,
+        filePath: filePath || null,
+        selectedFilePaths: selectedFilePaths || null,
+        queueLength: agentQueue.length,
+      });
       process.stdout.write(`   🤖 Running agent (${agent}): ${task}\n`);
 
       // Write prompt to .viberadar/task.md for reference
@@ -949,7 +1037,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           } else {
             testFilesToRun = createdTestFiles;
           }
-          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'fix-tests' || task === 'fix-tests-all') && testFilesToRun.length > 0) {
+          if ((task === 'write-tests' || task === 'write-tests-file' || task === 'write-tests-selected' || task === 'refresh-tests-selected' || task === 'fix-tests' || task === 'fix-tests-all') && testFilesToRun.length > 0) {
             broadcast('agent-output', { line: '─────────────────────────────' });
             broadcast('agent-output', { line: `🧪 Запускаю тесты (${testFilesToRun.length} файлов)...` });
             const result = await runTestFiles(testFilesToRun, projectRoot);
@@ -1129,7 +1217,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     /** Validate task params and enqueue (prompt is built lazily at execution time) */
-    function runAgent(task: string, featureKey?: string, filePath?: string) {
+    function runAgent(task: string, featureKey?: string, filePath?: string, selectedFilePaths?: string[]) {
       const agent = currentData.agent;
       if (!agent) {
         broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
@@ -1151,6 +1239,16 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         if (!feat || !filePath) { broadcast('agent-error', { message: 'Не указана фича или файл' }); return; }
         const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
         title = `${agentLabel} — тест для "${fileName}"`;
+      } else if (task === 'write-tests-selected') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        const count = selectedFilePaths?.length ?? 0;
+        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return; }
+        title = `${agentLabel} — тесты для выбранных файлов (${count})`;
+      } else if (task === 'refresh-tests-selected') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        const count = selectedFilePaths?.length ?? 0;
+        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return; }
+        title = `${agentLabel} — актуализировать тесты (${count})`;
       } else if (task === 'fix-tests') {
         if (!filePath) { broadcast('agent-error', { message: 'Не указан файл для исправления' }); return; }
         for (const [fp, detail] of lastTestResults) {
@@ -1188,7 +1286,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         title = `${agentLabel} — разобрать unmapped`;
       }
 
-      const item: AgentQueueItem = { task, featureKey, filePath, title, agent, savedErrors, savedFailedFiles, savedTestType };
+      const item: AgentQueueItem = { task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType };
 
       if (agentRunning || queueCooldownTimer) {
         if (agentQueue.length >= runtimeEnv.agentQueueMax) {
@@ -1200,7 +1298,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         agentQueue.push(item);
         const ql = agentQueue.length;
         process.stdout.write(`   📋 Agent busy, queued: "${title}" (queue size: ${ql})\n`);
-        broadcast('agent-queued', { queueLength: ql, title, task, featureKey: featureKey || null, filePath: filePath || null });
+        broadcast('agent-queued', {
+          queueLength: ql,
+          title,
+          task,
+          featureKey: featureKey || null,
+          filePath: filePath || null,
+          selectedFilePaths: selectedFilePaths || null,
+        });
         return;
       }
 
@@ -1405,9 +1510,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         req.on('data', d => body += d);
         req.on('end', () => {
           try {
-            const { task, featureKey, filePath } = JSON.parse(body);
-            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath}\n`);
-            runAgent(task, featureKey, filePath);
+            const { task, featureKey, filePath, selectedFilePaths } = JSON.parse(body);
+            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0}\n`);
+            runAgent(task, featureKey, filePath, selectedFilePaths);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {

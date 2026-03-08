@@ -548,6 +548,13 @@
     .file-row:hover  { background: var(--bg-card); }
     .file-row.active { background: var(--bg-hover); border-left: 2px solid var(--blue); padding-left: 8px; }
     .file-row-icon { font-size: 12px; flex-shrink: 0; }
+    .file-row-select {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--blue);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
     .file-row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .file-row-dir  { font-size: 11px; color: var(--dim); margin-left: auto; white-space: nowrap; flex-shrink: 0; }
     .file-row-agent-btn {
@@ -738,6 +745,34 @@
       white-space: nowrap;
     }
     .file-row-more-item:hover { background: var(--border); }
+
+    .bulk-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      padding: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .bulk-actions-count { font-size: 12px; color: var(--muted); }
+    .bulk-actions-btn {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .bulk-actions-btn.primary {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .bulk-actions-btn:hover:not(:disabled) { background: var(--bg-hover); }
+    .bulk-actions-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .agent-terminal {
       flex: 1;
       overflow-y: auto;
@@ -884,6 +919,7 @@ let activeTypes = new Set();
 let activePanelKey = null;
 let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string = feature key
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
+const selectedSourceFiles = new Set(); // normalized relative paths for batch actions
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 // ─── Run All Tests button ──────────────────────────────────────────────────────
@@ -909,12 +945,22 @@ function setFeatureDrill(featureKey, syncHash = true) {
   drillFeatureKey = featureKey;
   drillTestType = null;
   activePanelKey = null;
+  selectedSourceFiles.clear();
   document.getElementById('panel').classList.remove('open');
   if (syncHash) {
     if (featureKey) window.location.hash = `feature=${encodeURIComponent(featureKey)}`;
     else clearFeatureHash();
   }
   renderContent();
+}
+
+function selectedFilesForFeature(featureKey, visibleSourceFiles = null) {
+  const visibleSet = visibleSourceFiles ? new Set(visibleSourceFiles.map(p => p.replace(/\\/g, '/'))) : null;
+  return Array.from(selectedSourceFiles).filter((relPath) => {
+    if (visibleSet && !visibleSet.has(relPath)) return false;
+    const mod = D?.modules?.find((m) => m.relativePath.replace(/\\/g, '/') === relPath);
+    return !!mod && mod.type !== 'test' && mod.featureKeys?.includes(featureKey);
+  });
 }
 
 function applyHashRoute() {
@@ -1167,9 +1213,12 @@ function setAgentRunning(val) {
 }
 
 // Returns array of normalized relative paths affected by a given task
-function getTaskFilePaths(task, featureKey, filePath) {
+function getTaskFilePaths(task, featureKey, filePath, selectedFilePaths) {
   if ((task === 'write-tests-file' || task === 'fix-tests') && filePath) {
     return [filePath.replace(/\\/g, '/')];
+  }
+  if ((task === 'write-tests-selected' || task === 'refresh-tests-selected') && Array.isArray(selectedFilePaths)) {
+    return selectedFilePaths.map(p => p.replace(/\\/g, '/'));
   }
   if ((task === 'write-tests' || task === 'fix-tests-all') && featureKey && D?.modules) {
     return D.modules
@@ -1343,7 +1392,7 @@ async function reauthAgent() {
   await fetch('/api/agent-reauth', { method: 'POST' });
 }
 
-async function runAgentTask(task, featureKey, filePath) {
+async function runAgentTask(task, featureKey, filePath, selectedFilePaths) {
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
   if (!agentRunning) {
@@ -1352,7 +1401,12 @@ async function runAgentTask(task, featureKey, filePath) {
   await fetch('/api/run-agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, featureKey, filePath: filePath || undefined }),
+    body: JSON.stringify({
+      task,
+      featureKey,
+      filePath: filePath || undefined,
+      selectedFilePaths: Array.isArray(selectedFilePaths) ? selectedFilePaths : undefined,
+    }),
   });
 }
 
@@ -1914,6 +1968,12 @@ function renderFeatureDetail(c) {
   const filtered = q ? listFiles.filter(m =>
     m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
   ) : listFiles;
+  const selectableSource = !isTestList && !!D.agent;
+  const visibleSourcePaths = selectableSource
+    ? filtered.map(m => m.relativePath.replace(/\\/g, '/'))
+    : [];
+  const selectedVisible = selectableSource ? selectedFilesForFeature(drillFeatureKey, filtered.map(m => m.relativePath)) : [];
+  const selectedCount = selectedVisible.length;
 
   c.innerHTML = `
     <div class="drill-header">
@@ -1941,14 +2001,59 @@ function renderFeatureDetail(c) {
     </div>
 
     <div class="drill-section-label">${listLabel}</div>
+    ${selectableSource ? `
+      <div class="bulk-actions">
+        <span class="bulk-actions-count">Выбрано файлов: <b>${selectedCount}</b></span>
+        <button class="bulk-actions-btn" id="bulkSelectAllBtn" ${visibleSourcePaths.length === 0 ? 'disabled' : ''}>☑ Выбрать все (${visibleSourcePaths.length})</button>
+        <button class="bulk-actions-btn" id="bulkClearBtn" ${selectedCount === 0 ? 'disabled' : ''}>Снять выбор</button>
+        <button class="bulk-actions-btn primary" id="bulkWriteTestsBtn" ${selectedCount === 0 ? 'disabled' : ''}>✍ Написать тесты для выбранных</button>
+        <button class="bulk-actions-btn" id="bulkRefreshTestsBtn" ${selectedCount === 0 ? 'disabled' : ''}>↻ Актуализировать тесты</button>
+      </div>` : ''}
     <div class="file-rows" id="fileRows">
       ${filtered.length === 0
         ? `<div style="padding:20px;text-align:center;border:1px dashed var(--border);border-radius:8px;color:var(--dim);font-size:13px">
             ${isTestList ? 'Нет тестов этого типа для данной фичи' : 'Нет файлов — возможно паттерны в конфиге не совпадают'}
           </div>`
-        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey)).join('')
+        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey, selectableSource)).join('')
       }
     </div>`;
+
+  if (selectableSource) {
+    const allVisibleSelected = visibleSourcePaths.length > 0 && visibleSourcePaths.every((p) => selectedSourceFiles.has(p));
+    const bulkSelectAllBtn = document.getElementById('bulkSelectAllBtn');
+    if (bulkSelectAllBtn) {
+      bulkSelectAllBtn.textContent = allVisibleSelected
+        ? `☑ Выбраны все (${visibleSourcePaths.length})`
+        : `☑ Выбрать все (${visibleSourcePaths.length})`;
+      bulkSelectAllBtn.onclick = () => {
+        visibleSourcePaths.forEach((p) => selectedSourceFiles.add(p));
+        renderContent();
+      };
+    }
+    const bulkClearBtn = document.getElementById('bulkClearBtn');
+    if (bulkClearBtn) {
+      bulkClearBtn.onclick = () => {
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+    const bulkWriteTestsBtn = document.getElementById('bulkWriteTestsBtn');
+    if (bulkWriteTestsBtn) {
+      bulkWriteTestsBtn.onclick = () => {
+        runAgentTask('write-tests-selected', drillFeatureKey, null, selectedVisible);
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+    const bulkRefreshTestsBtn = document.getElementById('bulkRefreshTestsBtn');
+    if (bulkRefreshTestsBtn) {
+      bulkRefreshTestsBtn.onclick = () => {
+        runAgentTask('refresh-tests-selected', drillFeatureKey, null, selectedVisible);
+        selectedVisible.forEach((p) => selectedSourceFiles.delete(p));
+        renderContent();
+      };
+    }
+  }
 
   c.querySelectorAll('.test-type-card[data-testtype]').forEach(card => {
     card.onclick = async () => {
@@ -2106,7 +2211,7 @@ function renderUnmappedDetail(c) {
   });
 }
 
-function fileRow(m, isTest = false, featureKey = null) {
+function fileRow(m, isTest = false, featureKey = null, selectable = false) {
   const relPath = m.relativePath.replace(/\\/g, '/');
   const parts   = relPath.split('/');
   const name    = parts[parts.length - 1];
@@ -2119,6 +2224,7 @@ function fileRow(m, isTest = false, featureKey = null) {
     ? `<span class="file-agent-spinner ${agentState}" title="${agentState === 'running' ? 'Агент работает…' : 'В очереди…'}"></span>`
     : (testErr ? '❌' : isTest ? '🧪' : (m.testStale ? '⚠️' : m.hasTests ? '✅' : '⬜'));
   const isActive = activePanelKey === m.id;
+  const isSelected = selectedSourceFiles.has(relPath);
 
   // Write-test button for source files
   // In feature drill-down (featureKey set), show button even for isInfra files — user explicitly added them to the feature
@@ -2167,8 +2273,14 @@ function fileRow(m, isTest = false, featureKey = null) {
       </div>`
     : '';
 
+  const selectBox = selectable
+    ? `<input type="checkbox" class="file-row-select" ${isSelected ? 'checked' : ''}
+         onclick="event.stopPropagation();toggleSourceSelection('${relPath}', this.checked)">`
+    : '';
+
   return `
     <div class="file-row${isActive ? ' active' : ''}${testErr ? ' has-errors' : ''}" data-id="${m.id}">
+      ${selectBox}
       <span class="file-row-icon">${icon}</span>
       <span class="file-row-name">${name}</span>
       ${errBadge}
@@ -2178,6 +2290,13 @@ function fileRow(m, isTest = false, featureKey = null) {
       <span class="file-row-dir">${dir}</span>
     </div>
     ${errHtml}`;
+}
+
+function toggleSourceSelection(relPath, checked) {
+  const n = relPath.replace(/\\/g, '/');
+  if (checked) selectedSourceFiles.add(n);
+  else selectedSourceFiles.delete(n);
+  renderContent();
 }
 
 function renderModuleGrid(c) {
@@ -2435,6 +2554,7 @@ document.querySelectorAll('.view-tab').forEach(tab => {
     view = tab.dataset.view;
     drillFeatureKey = null;
     drillTestType = null;
+    selectedSourceFiles.clear();
     activePanelKey = null;
     searchQuery = '';
     activeTypes.clear();
@@ -2515,12 +2635,12 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-queued', (e) => {
-    const { queueLength, title, task, featureKey, filePath } = JSON.parse(e.data);
+    const { queueLength, title, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
     document.getElementById('agentPanel').classList.add('open');
     document.getElementById('termBtn').classList.add('term-active');
     // Track queued paths for spinner
-    getTaskFilePaths(task, featureKey, filePath).forEach(p => agentQueuedPaths.add(p));
+    getTaskFilePaths(task, featureKey, filePath, selectedFilePaths).forEach(p => agentQueuedPaths.add(p));
     renderContent();
     // Append queue notification to the currently running session (or active)
     const targetId = runningSessionId || activeSessionId;
@@ -2531,10 +2651,10 @@ function connectSSE() {
 
   es.addEventListener('agent-started', (e) => {
     setAgentRunning(true);
-    const { title, queueLength = 0, task, featureKey, filePath } = JSON.parse(e.data);
+    const { title, queueLength = 0, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
     // Move paths from queued → running (current task)
-    const startedPaths = getTaskFilePaths(task, featureKey, filePath);
+    const startedPaths = getTaskFilePaths(task, featureKey, filePath, selectedFilePaths);
     startedPaths.forEach(p => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
     renderContent();
     // Close previous session (queue case: agent-done not fired between tasks)
