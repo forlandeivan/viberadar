@@ -1228,7 +1228,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     const server = http.createServer((req, res) => {
       const url = req.url ?? '/';
 
-      if (url === '/') {
+      if (url === '/' || url === '/radar/qa' || url === '/radar/observability') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(DASHBOARD_HTML);
         return;
