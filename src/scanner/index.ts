@@ -474,13 +474,40 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     if (!isTest) {
       const base = filePath.replace(/\.[^.]+$/, '');
       const ext = path.extname(filePath);
-      const candidates = [
+      const candidates = new Set<string>([
         `${base}.test${ext}`,
         `${base}.spec${ext}`,
+        path.join(path.dirname(filePath), '__tests__', `${name}.test${ext}`),
+        path.join(path.dirname(filePath), '__tests__', `${name}.spec${ext}`),
         filePath.replace('/src/', '/tests/').replace(ext, `.test${ext}`),
+        filePath.replace('/src/', '/tests/').replace(ext, `.spec${ext}`),
         filePath.replace('\\src\\', '\\tests\\').replace(ext, `.test${ext}`),
-      ];
-      testFile = candidates.find((c) => testFileSet.has(c));
+        filePath.replace('\\src\\', '\\tests\\').replace(ext, `.spec${ext}`),
+      ]);
+
+      const normalRel = relativePath.replace(/\\/g, '/');
+      if (normalRel.startsWith('src/')) {
+        const relFromSrc = normalRel.slice(4);
+        const relNoExt = relFromSrc.replace(/\.[^.]+$/, '');
+        candidates.add(path.join(projectRoot, 'tests', `${relNoExt}.test${ext}`));
+        candidates.add(path.join(projectRoot, 'tests', `${relNoExt}.spec${ext}`));
+        candidates.add(path.join(projectRoot, 'tests', `${name}.test${ext}`));
+        candidates.add(path.join(projectRoot, 'tests', `${name}.spec${ext}`));
+
+        if (name === 'index') {
+          const parentName = path.basename(path.dirname(filePath));
+          if (parentName) {
+            candidates.add(path.join(projectRoot, 'tests', `${parentName}.test${ext}`));
+            candidates.add(path.join(projectRoot, 'tests', `${parentName}.spec${ext}`));
+            candidates.add(path.join(path.dirname(filePath), `${parentName}.test${ext}`));
+            candidates.add(path.join(path.dirname(filePath), `${parentName}.spec${ext}`));
+            candidates.add(path.join(path.dirname(filePath), '__tests__', `${parentName}.test${ext}`));
+            candidates.add(path.join(path.dirname(filePath), '__tests__', `${parentName}.spec${ext}`));
+          }
+        }
+      }
+
+      testFile = Array.from(candidates).find((c) => testFileSet.has(c));
     }
 
     let size = 0;
@@ -560,7 +587,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     const segsToIndex = buildDashTokenVariants(firstDotSeg);
     for (const seg of segsToIndex) {
       const clean = cleanName(seg);
-      if (clean.length >= 4 && !testByCleanName.has(clean)) {
+      if (clean.length >= 3 && !testByCleanName.has(clean)) {
         testByCleanName.set(clean, tf);
       }
     }

@@ -585,14 +585,28 @@ function buildWriteTestsForSelectedPrompt(
     `Выбрано файлов (${selectedModules.length}):`,
     ...selectedLines,
     '',
-    `Требования:`,
+    `Критерии высокого стандарта (обязательно):`,
     `- Работай только с выбранными файлами из списка`,
+    `- Для КАЖДОГО выбранного файла сделай явный результат: created | updated | already-covered | blocked`,
     `- Если теста нет — создай`,
-    `- Если тест устарел — обнови`,
+    `- Если тест устарел или слабый — обнови/дополни`,
     `- Для unit файлов мокай внешние зависимости`,
     `- Для integration файлов используй test-helpers или pg-mem`,
     `- Используй ${testRunner}`,
     `- Следуй текущим паттернам тестов в проекте`,
+    `- Не завершай задачу без отчета по каждому выбранному файлу`,
+    '',
+    `Формат финального ответа (строго):`,
+    `1) "Матрица покрытия (X/${selectedModules.length})"`,
+    `   Для каждого выбранного файла отдельная строка:`,
+    `   - source: <path> | status: <created|updated|already-covered|blocked> | testFile: <path или -> | note: <что сделано/почему blocked>`,
+    `2) "Проверка"`,
+    `   - какие одноразовые команды запускал`,
+    `   - итог (сколько тестов passed/failed)`,
+    `3) "Осталось без тестов"`,
+    `   - перечисли файлы из выбранного списка, которые все еще без тестов (если есть), иначе напиши "нет"`,
+    `4) "Conventional Commit title"`,
+    `   - одна строка в формате Conventional Commits`,
   ].join('\n');
 }
 
@@ -619,12 +633,25 @@ function buildRefreshTestsForSelectedPrompt(
     `Выбрано файлов (${selectedModules.length}):`,
     ...selectedLines,
     '',
+    `Критерии высокого стандарта (обязательно):`,
+    `- Для КАЖДОГО выбранного файла дай итог: updated | already-covered | blocked`,
+    `- Не пропускай файлы молча: если не изменил, объясни почему`,
+    '',
     `Для каждого выбранного файла:`,
     `1) Проверь актуальность и качество тестов.`,
     `2) Дополни недостающие сценарии (happy path, edge cases, ошибки).`,
     `3) Если тест отсутствует — создай новый.`,
     `4) Не меняй source-код без крайней необходимости; фокус на тестах.`,
     `5) Используй ${testRunner} и паттерны проекта.`,
+    '',
+    `Формат финального ответа (строго):`,
+    `1) "Матрица покрытия (X/${selectedModules.length})"`,
+    `   - source: <path> | status: <updated|already-covered|blocked> | testFile: <path или -> | note: <кратко>`,
+    `2) "Проверка"`,
+    `   - одноразовые команды + результат`,
+    `3) "Осталось без тестов"`,
+    `   - список из выбранных, если такие остались`,
+    `4) "Conventional Commit title"`,
   ].join('\n');
 }
 
@@ -862,6 +889,21 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
         autoFixAttempt = 0, autoFixSourceTask,
       } = item;
+      const normalizeRelPath = (p: string) => p.replace(/\\/g, '/');
+      const targetSourcePaths = (() => {
+        if (task === 'write-tests-file' && filePath) {
+          return [normalizeRelPath(filePath)];
+        }
+        if ((task === 'write-tests-selected' || task === 'refresh-tests-selected') && Array.isArray(selectedFilePaths)) {
+          return Array.from(new Set(selectedFilePaths.map(normalizeRelPath)));
+        }
+        if (task === 'write-tests' && featureKey) {
+          return currentData.modules
+            .filter((m) => m.featureKeys.includes(featureKey) && m.type !== 'test' && !m.hasTests && !m.isInfra)
+            .map((m) => normalizeRelPath(m.relativePath));
+        }
+        return [] as string[];
+      })();
 
       // Build prompt lazily at execution time
       let prompt: string;
@@ -1182,6 +1224,36 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           process.stdout.write('   ✅ Agent done, rescanning...\n');
           try {
             currentData = await scanProject(projectRoot);
+            if (targetSourcePaths.length > 0) {
+              const srcByPath = new Map(
+                currentData.modules
+                  .filter((m) => m.type !== 'test')
+                  .map((m) => [normalizeRelPath(m.relativePath), m] as const)
+              );
+              const unresolved = targetSourcePaths.filter((rel) => {
+                const mod = srcByPath.get(rel);
+                return !!mod && !mod.hasTests && !mod.isInfra;
+              });
+              if (unresolved.length > 0) {
+                broadcast('agent-output', {
+                  line: `⚠️ После задачи осталось без тестов: ${unresolved.length}/${targetSourcePaths.length} файлов`,
+                  isError: true,
+                });
+                unresolved.slice(0, 20).forEach((rel) => {
+                  broadcast('agent-output', { line: `   • ${rel}`, isError: true });
+                });
+                if (unresolved.length > 20) {
+                  broadcast('agent-output', {
+                    line: `   ... и еще ${unresolved.length - 20} файлов`,
+                    isError: true,
+                  });
+                }
+              } else {
+                broadcast('agent-output', {
+                  line: `✅ Проверка: все ${targetSourcePaths.length} целевых файлов теперь отмечены как с тестами`,
+                });
+              }
+            }
             broadcast('data-updated');
           } catch {}
           processNextInQueue(true);

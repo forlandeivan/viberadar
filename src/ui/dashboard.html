@@ -1711,11 +1711,11 @@ function renderStats() {
     const noiseRatio = src.length ? Math.round((src.filter(m => !m.hasTests).length / src.length) * 100) : 0;
     const missingStructured = serviceSources.filter(m => !m.hasTests).length;
     items = [
-      { v: serviceSources.length, l: 'Log Sources' },
-      { v: avgKb + 'kb', l: 'Avg Volume/File' },
-      { v: noiseRatio + '%', l: 'Noise Ratio' },
-      { v: errorSignal, l: 'Error Signal', c: errorSignal ? '#f85149' : undefined },
-      { v: missingStructured, l: 'Missing Fields', c: missingStructured ? '#e3b341' : undefined },
+      { v: serviceSources.length, l: 'Источники логов' },
+      { v: avgKb + ' KB', l: 'Средний объём/файл' },
+      { v: noiseRatio + '%', l: 'Коэффициент шума' },
+      { v: errorSignal, l: 'Сигнал ошибок', c: errorSignal ? '#f85149' : undefined },
+      { v: missingStructured, l: 'Не хватает полей', c: missingStructured ? '#e3b341' : undefined },
     ];
   } else if (D.hasConfig && D.features) {
     const unmapped = src.filter(m => !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)).length;
@@ -1747,7 +1747,7 @@ function renderModeSwitch() {
   const root = document.getElementById('modeSwitch');
   const modes = [
     { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
-    { key: 'observability', label: 'Observability', hint: 'Логи, шум, error signal' },
+    { key: 'observability', label: 'Наблюдаемость', hint: 'Логи, шум, сигналы ошибок' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -1769,9 +1769,9 @@ function renderSidebar() {
   if (contextMode === 'observability') {
     tabs.style.display = 'none';
     extra.innerHTML = `
-      <div class="sidebar-label">Observability focus</div>
+      <div class="sidebar-label">Фокус наблюдаемости</div>
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
-        Источники логов и качество сигналов для triage инцидентов.
+        Источники логов и качество сигналов для триажа инцидентов.
       </div>`;
     return;
   }
@@ -1837,9 +1837,9 @@ function renderQaOnboarding() {
 function renderObservability(c) {
   const src = D.modules.filter(m => m.type !== 'test');
   const sourceGroups = [
-    { label: 'Service', count: src.filter(m => m.type === 'service').length },
-    { label: 'Util', count: src.filter(m => m.type === 'util').length },
-    { label: 'Other', count: src.filter(m => m.type === 'other').length },
+    { label: 'Сервисы', count: src.filter(m => m.type === 'service').length },
+    { label: 'Утилиты', count: src.filter(m => m.type === 'util').length },
+    { label: 'Прочее', count: src.filter(m => m.type === 'other').length },
   ].filter(x => x.count > 0);
   const errorSignal = Object.values(D.testErrors || {}).reduce((acc, v) => acc + (v?.failed || 0), 0);
   const missingStructured = src.filter(m => (m.type === 'service' || m.type === 'util') && !m.hasTests).slice(0, 8);
@@ -1850,8 +1850,8 @@ function renderObservability(c) {
 
   c.innerHTML = `
     <div class="onboarding-block">
-      <h3>Observability: что это?</h3>
-      <p>Экран для контроля signal-to-noise: откуда идут логи, где растёт объём, сколько шума и какие поля/сигналы нужно структурировать в первую очередь.</p>
+      <h3>Наблюдаемость: что это?</h3>
+      <p>Экран для контроля отношения сигнал/шум: откуда идут логи, где растёт объём, сколько шума и какие поля/сигналы нужно структурировать в первую очередь.</p>
     </div>
 
     <div class="obs-grid">
@@ -1863,28 +1863,28 @@ function renderObservability(c) {
       </div>
 
       <div class="obs-card">
-        <div class="obs-title">Volume (top files)</div>
+        <div class="obs-title">Объём логов (топ файлов)</div>
         <div class="obs-list">
-          ${noisy.map(n => `<div class="obs-list-item"><span title="${n.rel}">${n.name}</span><strong>${n.kb}kb</strong></div>`).join('') || '<div class="obs-sub">Нет файлов</div>'}
+          ${noisy.map(n => `<div class="obs-list-item"><span title="${n.rel}">${n.name}</span><strong>${n.kb} KB</strong></div>`).join('') || '<div class="obs-sub">Нет файлов</div>'}
         </div>
       </div>
 
       <div class="obs-card">
-        <div class="obs-title">Noise ratio</div>
+        <div class="obs-title">Коэффициент шума</div>
         <div class="obs-value">${src.length ? Math.round((src.filter(m => !m.hasTests).length / src.length) * 100) : 0}%</div>
-        <div class="obs-sub">Доля источников без тестового контроля (proxy для noisy логирования).</div>
+        <div class="obs-sub">Доля источников без тестового контроля (прокси-метрика шумного логирования).</div>
       </div>
 
       <div class="obs-card">
-        <div class="obs-title">Error signal</div>
+        <div class="obs-title">Сигнал ошибок</div>
         <div class="obs-value" style="color:${errorSignal ? 'var(--red)' : 'var(--green)'}">${errorSignal}</div>
         <div class="obs-sub">Сумма упавших тестов из последнего прогона как индикатор нестабильности сигналов.</div>
       </div>
 
       <div class="obs-card" style="grid-column:1 / -1">
-        <div class="obs-title">Missing structured fields (candidates)</div>
+        <div class="obs-title">Недостающие структурированные поля (кандидаты)</div>
         <div class="obs-list">
-          ${missingStructured.map(m => `<div class="obs-list-item"><span>${m.relativePath}</span><strong>needs schema</strong></div>`).join('') || '<div class="obs-sub">Явных кандидатов не найдено</div>'}
+          ${missingStructured.map(m => `<div class="obs-list-item"><span>${m.relativePath}</span><strong>нужна схема</strong></div>`).join('') || '<div class="obs-sub">Явных кандидатов не найдено</div>'}
         </div>
       </div>
     </div>`;
@@ -1910,10 +1910,10 @@ function renderObservabilityOverview(c) {
   const o = D.observability;
   if (!o) return '';
   const metrics = [
-    ['noise_ratio', toPct(o.metrics.noise_ratio)],
-    ['error_actionability', toPct(o.metrics.error_actionability)],
-    ['structured_completeness', toPct(o.metrics.structured_completeness)],
-    ['coverage_of_key_flows', toPct(o.metrics.coverage_of_key_flows)],
+    ['Коэффициент шума', toPct(o.metrics.noise_ratio)],
+    ['Действия по ошибкам', toPct(o.metrics.error_actionability)],
+    ['Полнота структуры', toPct(o.metrics.structured_completeness)],
+    ['Покрытие ключевых сценариев', toPct(o.metrics.coverage_of_key_flows)],
   ];
   const noisy = (o.topNoisyPatterns || []).slice(0, 5).map(i =>
     `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} · x${i.count} → <b>${i.recommendation}</b></div>`
@@ -1929,23 +1929,23 @@ function renderObservabilityOverview(c) {
 
   return `
     <div class="observability-panel">
-      <div class="observability-title">Observability</div>
+      <div class="observability-title">Наблюдаемость</div>
       <div class="obs-metrics">
         ${metrics.map(([l,v]) => `<div class="obs-metric"><div class="obs-metric-v">${v}</div><div class="obs-metric-l">${l}</div></div>`).join('')}
       </div>
       <div class="obs-columns">
         <div class="obs-list">
-          <h4>Top noisy patterns</h4>
+          <h4>Топ шумных паттернов</h4>
           ${noisy}
         </div>
         <div class="obs-list">
-          <h4>Missing critical logs</h4>
+          <h4>Отсутствующие критичные логи</h4>
           ${missing}
         </div>
       </div>
       <div class="obs-catalog">
-        <h4>Каталог источников логов (top 10)</h4>
-        <div class="obs-cat-row head"><span>module</span><span>level</span><span>format</span><span>frequency</span><span>owner</span><span>action</span></div>
+        <h4>Каталог источников логов (топ 10)</h4>
+        <div class="obs-cat-row head"><span>модуль</span><span>уровень</span><span>формат</span><span>частота</span><span>владелец</span><span>действие</span></div>
         ${catalogRows || '<div class="obs-row">Логи не найдены</div>'}
       </div>
       <div class="obs-row" style="margin-top:8px">
@@ -1985,7 +1985,7 @@ function renderFeatureCards(c) {
       </div>
     </div>` : '';
 
-  c.innerHTML = setupBanner + renderObservabilityOverview(c) + '<div class="features-grid" id="featGrid"></div>';
+  c.innerHTML = setupBanner + '<div class="features-grid" id="featGrid"></div>';
   const grid = document.getElementById('featGrid');
 
   list.forEach(f => {
