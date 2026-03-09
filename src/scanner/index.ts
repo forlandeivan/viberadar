@@ -252,12 +252,140 @@ function extractDependencies(filePath: string): string[] {
     let match;
     while ((match = importRe.exec(content)) !== null) {
       const dep = match[1];
-      if (dep.startsWith('.')) deps.push(dep);
+      if (dep.startsWith('.') || dep.startsWith('/') || dep.includes('/')) deps.push(dep);
     }
     return deps;
   } catch {
     return [];
   }
+}
+
+interface TsPathResolver {
+  hasWildcard: boolean;
+  keyPrefix: string;
+  keySuffix: string;
+  targets: string[];
+}
+
+interface TsPathConfig {
+  baseUrlAbs: string;
+  resolvers: TsPathResolver[];
+}
+
+function loadTsPathConfig(projectRoot: string): TsPathConfig {
+  const defaultConfig: TsPathConfig = { baseUrlAbs: projectRoot, resolvers: [] };
+  const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
+  if (!fs.existsSync(tsconfigPath)) return defaultConfig;
+
+  try {
+    const raw = fs.readFileSync(tsconfigPath, 'utf-8');
+    // Minimal tolerant parse: remove BOM and JS-style comments.
+    const sanitized = raw
+      .replace(/^\uFEFF/, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const json = JSON.parse(sanitized);
+    const compilerOptions = json?.compilerOptions ?? {};
+    const baseUrl = typeof compilerOptions.baseUrl === 'string'
+      ? compilerOptions.baseUrl
+      : '.';
+    const paths = compilerOptions.paths && typeof compilerOptions.paths === 'object'
+      ? compilerOptions.paths
+      : {};
+
+    const resolvers: TsPathResolver[] = Object.entries(paths)
+      .filter(([, value]) => Array.isArray(value) && value.length > 0)
+      .map(([key, value]) => {
+        const keyStr = String(key);
+        const wildcardIndex = keyStr.indexOf('*');
+        if (wildcardIndex === -1) {
+          return {
+            hasWildcard: false,
+            keyPrefix: keyStr,
+            keySuffix: '',
+            targets: (value as unknown[]).map(String),
+          };
+        }
+        return {
+          hasWildcard: true,
+          keyPrefix: keyStr.slice(0, wildcardIndex),
+          keySuffix: keyStr.slice(wildcardIndex + 1),
+          targets: (value as unknown[]).map(String),
+        };
+      });
+
+    return {
+      baseUrlAbs: path.resolve(projectRoot, baseUrl),
+      resolvers,
+    };
+  } catch {
+    return defaultConfig;
+  }
+}
+
+function expandImportBase(basePath: string): string[] {
+  const clean = basePath.replace(/[?#].*$/, '');
+  const ext = path.extname(clean).toLowerCase();
+  if (SOURCE_EXTENSIONS.includes(ext)) {
+    return [path.resolve(clean)];
+  }
+
+  return [
+    path.resolve(clean),
+    ...SOURCE_EXTENSIONS.map((e) => path.resolve(`${clean}${e}`)),
+    ...SOURCE_EXTENSIONS.map((e) => path.resolve(path.join(clean, `index${e}`))),
+  ];
+}
+
+function resolveImportCandidates(
+  dep: string,
+  fromFile: string,
+  projectRoot: string,
+  tsPathConfig: TsPathConfig,
+): string[] {
+  const raw = dep.trim();
+  if (!raw) return [];
+
+  const baseCandidates: string[] = [];
+
+  if (raw.startsWith('.')) {
+    baseCandidates.push(path.resolve(path.dirname(fromFile), raw));
+  } else if (raw.startsWith('/')) {
+    baseCandidates.push(path.resolve(projectRoot, '.' + raw));
+  } else {
+    for (const resolver of tsPathConfig.resolvers) {
+      if (!resolver.hasWildcard) {
+        if (raw !== resolver.keyPrefix) continue;
+        for (const target of resolver.targets) {
+          baseCandidates.push(path.resolve(tsPathConfig.baseUrlAbs, target));
+        }
+        continue;
+      }
+
+      if (!raw.startsWith(resolver.keyPrefix)) continue;
+      if (resolver.keySuffix && !raw.endsWith(resolver.keySuffix)) continue;
+      const wildcardValue = raw.slice(
+        resolver.keyPrefix.length,
+        raw.length - resolver.keySuffix.length
+      );
+      for (const target of resolver.targets) {
+        baseCandidates.push(path.resolve(
+          tsPathConfig.baseUrlAbs,
+          target.replace('*', wildcardValue)
+        ));
+      }
+    }
+
+    if (raw.startsWith('src/') || raw.startsWith('client/') || raw.startsWith('server/')) {
+      baseCandidates.push(path.resolve(projectRoot, raw));
+    }
+  }
+
+  return baseCandidates.flatMap(expandImportBase);
+}
+
+function normalizeAbsPath(p: string): string {
+  return path.resolve(p).replace(/\\/g, '/');
 }
 
 
@@ -545,6 +673,31 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     };
   });
 
+  // ─── Import-based source<->test linking ─────────────────────────────────────
+  // Handles aggregated test files that cover multiple source modules where
+  // filename heuristics alone are insufficient.
+  const tsPathConfig = loadTsPathConfig(projectRoot);
+  const sourceByAbsPath = new Map<string, ModuleInfo>();
+  const testModules = modules.filter((m) => m.type === 'test');
+  for (const m of modules) {
+    if (m.type === 'test') continue;
+    sourceByAbsPath.set(normalizeAbsPath(m.path), m);
+  }
+
+  for (const testMod of testModules) {
+    for (const dep of testMod.dependencies) {
+      const candidates = resolveImportCandidates(dep, testMod.path, projectRoot, tsPathConfig);
+      for (const cand of candidates) {
+        const srcMod = sourceByAbsPath.get(normalizeAbsPath(cand));
+        if (!srcMod) continue;
+        srcMod.hasTests = true;
+        if (!srcMod.testFile) {
+          srcMod.testFile = path.relative(projectRoot, testMod.path);
+        }
+      }
+    }
+  }
+
   // ─── Fuzzy test pairing for centralized test directories ─────────────────────
   // Handles patterns like: server/routes/auth.routes.ts → tests/auth.test.ts
   // Also: WorkspaceSettings.tsx → workspace-settings.test.ts
@@ -639,7 +792,6 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     }
 
     const sourceModules = modules.filter(m => m.type !== 'test');
-    const testModules   = modules.filter(m => m.type === 'test');
 
     // ── Propagate feature keys from source files → their fuzzy-matched test files ──
     // This ensures e.g. tests/auth.test.ts gets featureKey 'auth' even if

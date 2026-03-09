@@ -286,6 +286,159 @@ interface E2ePlan {
   testCases: E2eTestCase[];
 }
 
+type ParsedE2eTestCase = Omit<E2eTestCase, 'status' | 'testFilePath' | 'lastError' | 'screenshotPaths'>;
+
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, '');
+}
+
+function extractBalancedJsonObjects(text: string): string[] {
+  const result: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (start === -1) {
+      if (ch === '{') {
+        start = i;
+        depth = 1;
+        inString = false;
+        escapeNext = false;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escapeNext) {
+        escapeNext = false;
+      } else if (ch === '\\') {
+        escapeNext = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        result.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return result;
+}
+
+function toNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0);
+}
+
+function normalizeE2eCaseId(value: string, index: number): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || `e2e-case-${index + 1}`;
+}
+
+function sanitizeParsedE2eTestCases(value: unknown): ParsedE2eTestCase[] {
+  if (!Array.isArray(value)) return [];
+  const usedIds = new Set<string>();
+  const result: ParsedE2eTestCase[] = [];
+
+  for (let i = 0; i < value.length; i++) {
+    const raw = value[i];
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Record<string, unknown>;
+
+    const name = toNonEmptyString(item.name) ?? `E2E кейс ${i + 1}`;
+    const description = toNonEmptyString(item.description) ?? name;
+    const steps = toStringArray(item.steps);
+    const expectedResults = toStringArray(item.expectedResults);
+    if (steps.length === 0 || expectedResults.length === 0) continue;
+
+    let idBase = normalizeE2eCaseId(toNonEmptyString(item.id) ?? `e2e-case-${i + 1}`, i);
+    let id = idBase;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${idBase}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+
+    result.push({
+      id,
+      name,
+      description,
+      steps,
+      expectedResults,
+    });
+  }
+
+  return result;
+}
+
+function parseE2ePlanFromAgentOutput(rawOutput: string): { baseUrl?: string; testCases: ParsedE2eTestCase[] } {
+  const cleaned = stripAnsi(rawOutput).replace(/\u0000/g, '').trim();
+  if (!cleaned) {
+    throw new Error('пустой ответ агента');
+  }
+
+  const candidates: string[] = [];
+  const fencedRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let fencedMatch: RegExpExecArray | null = null;
+  while ((fencedMatch = fencedRe.exec(cleaned)) !== null) {
+    const block = fencedMatch[1]?.trim();
+    if (block) candidates.push(block);
+  }
+  candidates.push(...extractBalancedJsonObjects(cleaned));
+  candidates.push(cleaned);
+
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const candidate = candidates[i];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object') continue;
+    const obj = parsed as Record<string, unknown>;
+    const testCases = sanitizeParsedE2eTestCases(obj.testCases);
+    if (testCases.length === 0) continue;
+    const baseUrl = toNonEmptyString(obj.baseUrl) ?? undefined;
+    return { baseUrl, testCases };
+  }
+
+  const hasTestCasesKey = cleaned.toLowerCase().includes('"testcases"');
+  if (hasTestCasesKey) {
+    throw new Error('ответ похож на JSON-план, но он обрезан или повреждён');
+  }
+  throw new Error('в ответе агента не найден валидный JSON с testCases');
+}
+
 function runTestFiles(files: string[], projectRoot: string): Promise<TestRunResult> {
   return new Promise((resolve) => {
     // Write JSON to a temp file — avoids stdout encoding/regex issues on Windows
@@ -1003,6 +1156,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const createdTestFiles: string[] = [];
       // Accumulate full result text for E2E plan parsing
       let agentResultText = '';
+      let agentRawOutputText = '';
       let queueBlockSignal: 403 | 429 | null = null;
 
       function inspectQueueBlockSignal(line: string) {
@@ -1038,6 +1192,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const rl = readline.createInterface({ input: proc.stdout!, crlfDelay: Infinity });
       rl.on('line', (raw: string) => {
         if (!raw.trim()) return;
+        if (task === 'generate-e2e-plan') {
+          agentRawOutputText += raw + '\n';
+        }
         inspectQueueBlockSignal(raw);
         trackWrittenFiles(raw);
         const parsed = agent === 'claude' ? parseClaudeEvent(raw) : raw;
@@ -1062,6 +1219,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       proc.stderr!.on('data', (chunk: Buffer) => {
         const lines = chunk.toString().split('\n').filter(Boolean);
         for (const line of lines) {
+          if (task === 'generate-e2e-plan') {
+            agentRawOutputText += line + '\n';
+          }
           inspectQueueBlockSignal(line);
           broadcast('agent-output', { line, isError: true });
         }
@@ -1192,8 +1352,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           // E2E plan post-processing
           if (task === 'generate-e2e-plan' && featureKey) {
             try {
-              const jsonMatch = agentResultText.match(/\{[\s\S]*"testCases"[\s\S]*\}/);
-              const parsedPlan = JSON.parse(jsonMatch ? jsonMatch[0] : agentResultText);
+              const rawPlanOutput = agentResultText.trim().length > 0 ? agentResultText : agentRawOutputText;
+              const parsedPlan = parseE2ePlanFromAgentOutput(rawPlanOutput);
               const feat = currentData.features?.find(f => f.key === featureKey);
               const plan: E2ePlan = {
                 featureKey,
@@ -1201,12 +1361,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                 generatedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 baseUrl: parsedPlan.baseUrl,
-                testCases: (parsedPlan.testCases || []).map((tc: any) => ({ ...tc, status: 'pending' as const })),
+                testCases: parsedPlan.testCases.map((tc) => ({ ...tc, status: 'pending' as const })),
               };
               saveE2ePlan(projectRoot, plan);
               broadcast('e2e-plan-ready', { featureKey, plan });
             } catch (err: any) {
-              broadcast('e2e-plan-error', { featureKey, message: `Не удалось распарсить план: ${err.message}` });
+              const blockHint = queueBlockSignal
+                ? ` Возможная причина: блокировка/лимит агента (${queueBlockSignal}).`
+                : '';
+              broadcast('e2e-plan-error', {
+                featureKey,
+                message: `Не удалось распарсить план: ${err.message}.${blockHint}`.trim(),
+              });
             }
           }
 
