@@ -1,0 +1,13 @@
+{
+  "git.autoRepositoryDetection": false,
+  "git.detectSubmodules": false,
+  "git.repositoryScanIgnoredFolders": [
+    ".claude",
+    ".claude/worktrees"
+  ],
+  "git.ignoredRepositories": [
+    ".claude/worktrees/adoring-swirles",
+    ".claude/worktrees/relaxed-blackwell",
+    ".claude/worktrees/vigorous-lehmann"
+  ]
+}
