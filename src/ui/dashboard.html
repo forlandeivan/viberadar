@@ -850,6 +850,33 @@
     }
     .bulk-actions-btn:hover:not(:disabled) { background: var(--bg-hover); }
     .bulk-actions-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .feature-file-filters {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+    }
+    .feature-filter-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .feature-filter-toggle:hover { background: var(--bg-hover); color: var(--text); }
+    .feature-filter-toggle input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--blue);
+      cursor: pointer;
+    }
+    .feature-filter-meta { color: var(--dim); font-size: 11px; }
     .agent-terminal {
       flex: 1;
       overflow-y: auto;
@@ -998,12 +1025,13 @@ let activeTypes = new Set();
 let activePanelKey = null;
 let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string = feature key
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
+let showOnlyUntestedInFeature = false; // source tab in feature detail
 const selectedSourceFiles = new Set(); // normalized relative paths for batch actions
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 const modeStore = {
-  qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null },
-  observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null },
+  qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
+  observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
@@ -1029,6 +1057,7 @@ function saveModeState(mode) {
     drillFeatureKey,
     drillTestType,
     activePanelKey,
+    showOnlyUntestedInFeature,
   };
 }
 
@@ -1040,6 +1069,7 @@ function restoreModeState(mode) {
   drillFeatureKey = state.drillFeatureKey;
   drillTestType = state.drillTestType;
   activePanelKey = state.activePanelKey;
+  showOnlyUntestedInFeature = !!state.showOnlyUntestedInFeature;
 }
 
 function switchMode(nextMode) {
@@ -2262,6 +2292,7 @@ function renderFeatureDetail(c) {
 
   const mods = D.modules.filter(m => m.featureKeys && m.featureKeys.includes(drillFeatureKey));
   const src  = mods.filter(m => m.type !== 'test');
+  const untestedSrc = src.filter(m => !m.hasTests);
   const tst  = mods.filter(m => m.type === 'test');
   const testedCount = src.filter(m => m.hasTests).length;
   const pct  = src.length > 0 ? Math.round(testedCount / src.length * 100) : 0;
@@ -2279,8 +2310,10 @@ function renderFeatureDetail(c) {
   // Determine what list to show based on active tab
   // null or 'source' → source files; test type → test files of that type
   const activeTab  = drillTestType || 'source';
-  const listFiles  = activeTab === 'source' ? src : tst.filter(m => m.testType === activeTab);
+  const sourceList = showOnlyUntestedInFeature ? untestedSrc : src;
+  const listFiles  = activeTab === 'source' ? sourceList : tst.filter(m => m.testType === activeTab);
   const isTestList = activeTab !== 'source';
+  const showUntestedToggle = activeTab === 'source';
   const meta       = TEST_TYPE_META[activeTab];
   const listLabel  = meta
     ? `${meta.icon} ${meta.label} тесты (${listFiles.length})`
@@ -2323,6 +2356,14 @@ function renderFeatureDetail(c) {
     </div>
 
     <div class="drill-section-label">${listLabel}</div>
+    ${showUntestedToggle ? `
+      <div class="feature-file-filters">
+        <label class="feature-filter-toggle">
+          <input type="checkbox" id="untestedOnlyToggle" ${showOnlyUntestedInFeature ? 'checked' : ''}>
+          <span>Только без тестов</span>
+          <span class="feature-filter-meta">(${untestedSrc.length})</span>
+        </label>
+      </div>` : ''}
     ${selectableSource ? `
       <div class="bulk-actions">
         <span class="bulk-actions-count">Выбрано файлов: <b>${selectedCount}</b></span>
@@ -2334,11 +2375,23 @@ function renderFeatureDetail(c) {
     <div class="file-rows" id="fileRows">
       ${filtered.length === 0
         ? `<div style="padding:20px;text-align:center;border:1px dashed var(--border);border-radius:8px;color:var(--dim);font-size:13px">
-            ${isTestList ? 'Нет тестов этого типа для данной фичи' : 'Нет файлов — возможно паттерны в конфиге не совпадают'}
+            ${isTestList
+              ? 'Нет тестов этого типа для данной фичи'
+              : (showOnlyUntestedInFeature
+                  ? 'Все файлы этой фичи уже покрыты тестами'
+                  : 'Нет файлов — возможно паттерны в конфиге не совпадают')}
           </div>`
         : filtered.map(m => fileRow(m, isTestList, drillFeatureKey, selectableSource)).join('')
       }
     </div>`;
+
+  const untestedOnlyToggle = document.getElementById('untestedOnlyToggle');
+  if (untestedOnlyToggle) {
+    untestedOnlyToggle.onchange = (e) => {
+      showOnlyUntestedInFeature = !!e.target.checked;
+      renderContent();
+    };
+  }
 
   if (selectableSource) {
     const allVisibleSelected = visibleSourcePaths.length > 0 && visibleSourcePaths.every((p) => selectedSourceFiles.has(p));
