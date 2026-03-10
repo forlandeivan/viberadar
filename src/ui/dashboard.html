@@ -611,7 +611,7 @@
     .tt-fix-btn:hover { background: rgba(255,200,0,0.1); color: var(--yellow); border-color: var(--yellow); }
     .tt-write-btn { border-color: var(--accent); color: var(--accent); }
     .tt-write-btn:hover { background: rgba(88,166,255,0.1); color: var(--accent); border-color: var(--accent); }
-    .file-rows { display: flex; flex-direction: column; gap: 2px; }
+    .file-rows { display: flex; flex-direction: column; gap: 2px; contain: content; }
     .file-row {
       display: flex;
       align-items: center;
@@ -621,6 +621,8 @@
       cursor: pointer;
       font-size: 13px;
       transition: background 0.1s;
+      content-visibility: auto;
+      contain-intrinsic-size: 34px;
     }
     .file-row:hover  { background: var(--bg-card); }
     .file-row.active { background: var(--bg-hover); border-left: 2px solid var(--blue); padding-left: 8px; }
@@ -676,6 +678,8 @@
     .file-row-errors {
       padding: 4px 10px 6px 32px;
       display: flex; flex-direction: column; gap: 3px;
+      content-visibility: auto;
+      contain-intrinsic-size: 46px;
     }
     .err-item { display: flex; flex-direction: column; gap: 1px; }
     .err-name { font-size: 11px; color: var(--muted); }
@@ -769,6 +773,107 @@
       font-size: 11px; color: var(--yellow); background: rgba(255,200,0,0.1);
       border: 1px solid var(--yellow); border-radius: 4px; padding: 2px 8px;
     }
+    .agent-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #0b1018;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .agent-toolbar input[type="text"] {
+      min-width: 220px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      font-size: 11px;
+    }
+    .agent-toolbar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--muted);
+      user-select: none;
+    }
+    .agent-toolbar-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .agent-toolbar-btn:hover { color: var(--text); border-color: var(--blue); }
+    .agent-toolbar-meta { font-size: 11px; color: var(--dim); margin-left: auto; }
+    .agent-queue-panel {
+      display: none;
+      border-bottom: 1px solid var(--border);
+      background: #090f18;
+      padding: 8px 12px;
+      max-height: 110px;
+      overflow-y: auto;
+    }
+    .agent-queue-title {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .agent-queue-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .agent-queue-item:last-child { margin-bottom: 0; }
+    .agent-queue-pos {
+      color: var(--dim);
+      min-width: 24px;
+    }
+    .agent-queue-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+    .agent-queue-action {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 1px 6px;
+      cursor: pointer;
+      font-size: 10px;
+      line-height: 1.4;
+    }
+    .agent-queue-action:hover { border-color: var(--blue); color: var(--text); }
+    .agent-summary-matrix {
+      display: none;
+      border-bottom: 1px solid var(--border);
+      background: #090f17;
+      padding: 8px 12px;
+      max-height: 150px;
+      overflow: auto;
+      font-size: 11px;
+    }
+    .agent-summary-title {
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .agent-summary-row {
+      display: grid;
+      grid-template-columns: 60px 1fr auto;
+      gap: 8px;
+      margin-bottom: 4px;
+      align-items: center;
+    }
+    .agent-summary-status-covered { color: var(--green); }
+    .agent-summary-status-not-covered { color: var(--red); }
+    .agent-summary-status-blocked { color: var(--yellow); }
+    .agent-summary-status-infra { color: var(--dim); }
     /* ── Console Tabs ───────────────────────────────────────────────────────── */
     .agent-tabs-bar {
       display: flex; align-items: stretch; overflow-x: auto;
@@ -888,6 +993,8 @@
     .agent-line      { color: #c9d1d9; }
     .agent-line.err  { color: var(--red); }
     .agent-line.dim  { color: var(--dim); font-size: 10px; }
+    .agent-line.match { background: rgba(31, 111, 235, 0.22); }
+    .agent-line.command { color: #79c0ff; }
 
     /* ── Misc ────────────────────────────────────────────────────────────────── */
     .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--muted); font-size: 14px; }
@@ -1011,6 +1118,22 @@
     <button class="agent-panel-copy" id="agentCopyBtn" onclick="copyTerminalContent()" title="Скопировать содержимое вкладки в буфер обмена">⎘</button>
     <button class="agent-panel-close" onclick="closeAgentPanel()">✕</button>
   </div>
+  <div class="agent-toolbar">
+    <input id="agentSearchInput" type="text" placeholder="Поиск по терминалу..." />
+    <label><input id="agentSearchErrorsOnly" type="checkbox" /> only errors</label>
+    <label><input id="agentSearchCurrentRunOnly" type="checkbox" /> current run</label>
+    <label><input id="agentSearchRegex" type="checkbox" /> regex</label>
+    <button class="agent-toolbar-btn" onclick="jumpTerminalMatch(-1)">↑ match</button>
+    <button class="agent-toolbar-btn" onclick="jumpTerminalMatch(1)">↓ match</button>
+    <button class="agent-toolbar-btn" onclick="jumpCommand(-1)">↑ command</button>
+    <button class="agent-toolbar-btn" onclick="jumpCommand(1)">↓ command</button>
+    <button class="agent-toolbar-btn" onclick="jumpError(-1)">↑ error</button>
+    <button class="agent-toolbar-btn" onclick="jumpError(1)">↓ error</button>
+    <button class="agent-toolbar-btn" onclick="exportActiveRun()">Export run</button>
+    <span class="agent-toolbar-meta" id="agentSearchMeta">0 matches</span>
+  </div>
+  <div class="agent-queue-panel" id="agentQueuePanel"></div>
+  <div class="agent-summary-matrix" id="agentSummaryMatrix"></div>
   <div class="agent-tabs-bar" id="agentTabsBar"></div>
   <div class="agent-terminal" id="agentTerminal"></div>
 </div>
@@ -1027,6 +1150,10 @@ let drillFeatureKey = null;   // null = grid, '__unmapped__' = unmapped, string 
 let drillTestType   = null;   // null = feature overview, 'unit'|'integration'|'e2e' = test type drill
 let showOnlyUntestedInFeature = false; // source tab in feature detail
 const selectedSourceFiles = new Set(); // normalized relative paths for batch actions
+const FILE_ROWS_INITIAL_LIMIT = 250;
+const FILE_ROWS_LIMIT_STEP = 250;
+let fileRowsRenderKey = '';
+let fileRowsRenderLimit = FILE_ROWS_INITIAL_LIMIT;
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 const modeStore = {
@@ -1093,6 +1220,9 @@ function switchMode(nextMode) {
 }
 // ─── Run All Tests button ──────────────────────────────────────────────────────
 let runAllRunning = false;
+let refreshDataInFlight = false;
+let refreshDataQueued = false;
+let refreshDataTimer = null;
 
 function escapeHtml(text) {
   return String(text || '')
@@ -1138,6 +1268,32 @@ function selectedFilesForFeature(featureKey, visibleSourceFiles = null) {
     const mod = D?.modules?.find((m) => m.relativePath.replace(/\\/g, '/') === relPath);
     return !!mod && mod.type !== 'test' && mod.featureKeys?.includes(featureKey);
   });
+}
+
+function getFileRowsWindow(items, renderKey) {
+  if (fileRowsRenderKey !== renderKey) {
+    fileRowsRenderKey = renderKey;
+    fileRowsRenderLimit = FILE_ROWS_INITIAL_LIMIT;
+  }
+  const visibleRows = items.slice(0, fileRowsRenderLimit);
+  const hiddenRows = Math.max(0, items.length - visibleRows.length);
+  return { visibleRows, hiddenRows, hasMoreRows: hiddenRows > 0 };
+}
+
+function increaseFileRowsLimit() {
+  fileRowsRenderLimit += FILE_ROWS_LIMIT_STEP;
+}
+
+function bindFileRowsClick(container) {
+  const fileRows = container.querySelector('#fileRows');
+  if (!fileRows) return;
+  fileRows.onclick = (event) => {
+    const row = event.target.closest('.file-row[data-id]');
+    if (!row) return;
+    const moduleId = row.dataset.id;
+    const mod = D.modules.find((m) => String(m.id) === moduleId);
+    if (mod) openModulePanel(mod);
+  };
 }
 
 function applyHashRoute() {
@@ -1191,13 +1347,31 @@ async function runAllTests() {
 let agentRunning = false;
 const agentRunningPaths = new Set(); // paths of files currently being processed by agent
 const agentQueuedPaths  = new Set(); // paths of files waiting in queue
+let agentQueueState = [];
+let agentRunsState = [];
+let agentActiveRun = null;
+let currentRunId = null;
+let lastRunSummary = null;
 
 // ─── Console Sessions ─────────────────────────────────────────────────────────
 const consoleSessions  = [];   // { id, title, lines, status, startTime }
 let activeSessionId    = null; // currently viewed tab
 let runningSessionId   = null; // tab that is currently receiving output
+const runSessionMap    = new Map(); // runId -> sessionId
+const sessionRunMap    = new Map(); // sessionId -> runId
 const SESSION_MAX      = 25;
+const SESSION_LINE_LIMIT = 3000;
 const SESSIONS_KEY     = 'viberadar_sessions';
+let terminalSearchQuery = '';
+let terminalSearchErrorsOnly = false;
+let terminalSearchCurrentRunOnly = false;
+let terminalSearchRegex = false;
+let terminalMatchRefs = [];
+let terminalCommandRefs = [];
+let terminalErrorRefs = [];
+let terminalMatchCursor = -1;
+let terminalCommandCursor = -1;
+let terminalErrorCursor = -1;
 
 function _sessionId() {
   return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -1206,7 +1380,9 @@ function _sessionId() {
 function saveSessions() {
   try {
     const data = consoleSessions.slice(-SESSION_MAX).map(s => ({
-      ...s, lines: s.lines.slice(-500)
+      ...s,
+      runId: sessionRunMap.get(s.id) || s.runId || null,
+      lines: s.lines.slice(-500)
     }));
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(data));
   } catch {}
@@ -1219,9 +1395,9 @@ function restoreSessions() {
     const saved = JSON.parse(raw);
     consoleSessions.push(...saved);
     for (const s of consoleSessions) {
-      if (s.status === 'running') {
-        s.status = 'error';
-        s.lines.push({ text: '⚡ Прервано (перезагрузка страницы)', isError: true });
+      if (s.runId) {
+        runSessionMap.set(s.runId, s.id);
+        sessionRunMap.set(s.id, s.runId);
       }
     }
     if (consoleSessions.length > 0) {
@@ -1232,11 +1408,22 @@ function restoreSessions() {
   } catch {}
 }
 
-function createSession(title, status = 'running') {
-  if (consoleSessions.length >= SESSION_MAX) consoleSessions.shift();
-  const s = { id: _sessionId(), title, lines: [], status, startTime: Date.now() };
+function createSession(title, status = 'running', runId = null) {
+  if (consoleSessions.length >= SESSION_MAX) {
+    const dropped = consoleSessions.shift();
+    if (dropped?.id) {
+      const droppedRunId = sessionRunMap.get(dropped.id);
+      if (droppedRunId) runSessionMap.delete(droppedRunId);
+      sessionRunMap.delete(dropped.id);
+    }
+  }
+  const s = { id: _sessionId(), title, lines: [], status, startTime: Date.now(), runId };
   consoleSessions.push(s);
   activeSessionId = s.id;
+  if (runId) {
+    runSessionMap.set(runId, s.id);
+    sessionRunMap.set(s.id, runId);
+  }
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
   renderTabs();
@@ -1247,6 +1434,7 @@ function createSession(title, status = 'running') {
 
 function switchSession(id) {
   activeSessionId = id;
+  currentRunId = sessionRunMap.get(id) || null;
   const s = consoleSessions.find(s => s.id === id);
   if (s) {
     const statusText = s.status === 'running' ? 'работает…'
@@ -1263,6 +1451,11 @@ function switchSession(id) {
 function closeSession(id) {
   const idx = consoleSessions.findIndex(s => s.id === id);
   if (idx === -1) return;
+  const runId = sessionRunMap.get(id);
+  if (runId) {
+    sessionRunMap.delete(id);
+    runSessionMap.delete(runId);
+  }
   consoleSessions.splice(idx, 1);
   if (activeSessionId === id) {
     activeSessionId = consoleSessions.length > 0
@@ -1284,17 +1477,11 @@ function appendToSession(id, lineOrNode, isError = false, isDim = false) {
     stored = { html: lineOrNode.outerHTML };
   }
   s.lines.push(stored);
+  if (s.lines.length > SESSION_LINE_LIMIT) {
+    s.lines.splice(0, s.lines.length - SESSION_LINE_LIMIT);
+  }
   if (activeSessionId === id) {
-    const term = document.getElementById('agentTerminal');
-    const el = document.createElement('div');
-    if (stored.html) {
-      el.innerHTML = stored.html;
-    } else {
-      el.className = 'agent-line' + (isError ? ' err' : isDim ? ' dim' : '');
-      el.textContent = lineOrNode;
-    }
-    term.appendChild(el);
-    term.scrollTop = term.scrollHeight;
+    renderActiveSession();
   }
 }
 
@@ -1347,13 +1534,114 @@ function copyTerminalContent() {
   });
 }
 
+function downloadTextArtifact(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 100);
+}
+
+function getActiveRunForExport() {
+  const runId = sessionRunMap.get(activeSessionId) || currentRunId;
+  if (runId) {
+    const fromState = (agentRunsState || []).find((r) => r.runId === runId);
+    if (fromState) return fromState;
+  }
+  return lastRunSummary || null;
+}
+
+function exportActiveRun() {
+  const run = getActiveRunForExport();
+  const session = consoleSessions.find((s) => s.id === activeSessionId);
+  if (!run && !session) return;
+  const mode = window.prompt('Формат экспорта: md или json', 'md');
+  const format = (mode || 'md').trim().toLowerCase() === 'json' ? 'json' : 'md';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const runId = run?.runId || sessionRunMap.get(activeSessionId) || 'session';
+  if (format === 'json') {
+    const payload = {
+      run,
+      sessionTitle: session?.title || null,
+      lines: (session?.lines || []).map((line) => extractLineText(line)),
+      exportedAt: new Date().toISOString(),
+    };
+    downloadTextArtifact(`viberadar-run-${runId}-${ts}.json`, JSON.stringify(payload, null, 2));
+    return;
+  }
+  const lines = (session?.lines || []).map((line) => extractLineText(line)).filter(Boolean);
+  const outcomes = Array.isArray(run?.fileOutcomes) ? run.fileOutcomes : [];
+  const stats = run?.validationStats || {};
+  const md = [
+    `# VibeRadar Run Export`,
+    ``,
+    `- runId: ${run?.runId || runId}`,
+    `- title: ${run?.title || session?.title || '-'}`,
+    `- phase: ${run?.phase || '-'}`,
+    `- exportedAt: ${new Date().toISOString()}`,
+    ``,
+    `## Validation`,
+    ``,
+    `- covered: ${stats.covered ?? 0}`,
+    `- not-covered: ${stats.notCovered ?? 0}`,
+    `- blocked: ${stats.blocked ?? 0}`,
+    `- infra: ${stats.infra ?? 0}`,
+    ``,
+    `## File Outcomes`,
+    ``,
+    ...outcomes.map((o) => `- ${o.status}: ${o.sourcePath}${o.testFile ? ` -> ${o.testFile}` : ''}${o.reason ? ` (${o.reason})` : ''}`),
+    ``,
+    `## Logs`,
+    ``,
+    '```text',
+    ...lines,
+    '```',
+  ].join('\n');
+  downloadTextArtifact(`viberadar-run-${runId}-${ts}.md`, md);
+}
+
 function renderActiveSession() {
   const term = document.getElementById('agentTerminal');
   if (!term) return;
   term.innerHTML = '';
+  terminalMatchRefs = [];
+  terminalCommandRefs = [];
+  terminalErrorRefs = [];
+  terminalMatchCursor = -1;
+  terminalCommandCursor = -1;
+  terminalErrorCursor = -1;
   const s = consoleSessions.find(s => s.id === activeSessionId);
-  if (!s) return;
-  for (const ln of s.lines) {
+  if (!s) {
+    document.getElementById('agentSearchMeta').textContent = '0 matches';
+    return;
+  }
+  const normalizedQuery = (terminalSearchQuery || '').trim();
+  let regex = null;
+  if (normalizedQuery && terminalSearchRegex) {
+    try { regex = new RegExp(normalizedQuery, 'i'); } catch { regex = null; }
+  }
+  for (let i = 0; i < s.lines.length; i++) {
+    const ln = s.lines[i];
+    const text = extractLineText(ln);
+    const isErrorLine = !!ln.isError || /(^|\s)❌/.test(text) || /\berror\b/i.test(text);
+    const isCommandLine = /^\s*⚡\s*\$/.test(text);
+    if (terminalSearchCurrentRunOnly && currentRunId && s.runId && s.runId !== currentRunId) continue;
+    if (terminalSearchErrorsOnly && !isErrorLine) continue;
+    let isMatch = false;
+    if (!normalizedQuery) {
+      isMatch = false;
+    } else if (regex) {
+      isMatch = regex.test(text);
+    } else {
+      isMatch = text.toLowerCase().includes(normalizedQuery.toLowerCase());
+    }
+    if (normalizedQuery && !isMatch) continue;
+
     const el = document.createElement('div');
     if (ln.html) {
       el.innerHTML = ln.html;
@@ -1361,9 +1649,56 @@ function renderActiveSession() {
       el.className = 'agent-line' + (ln.isError ? ' err' : ln.isDim ? ' dim' : '');
       el.textContent = ln.text;
     }
+    if (isCommandLine) el.classList.add('command');
+    if (isMatch) el.classList.add('match');
+    el.dataset.lineIndex = String(i);
     term.appendChild(el);
+    if (isMatch) terminalMatchRefs.push(el);
+    if (isCommandLine) terminalCommandRefs.push(el);
+    if (isErrorLine) terminalErrorRefs.push(el);
   }
   term.scrollTop = term.scrollHeight;
+  document.getElementById('agentSearchMeta').textContent =
+    `${terminalMatchRefs.length} matches • ${terminalCommandRefs.length} commands • ${terminalErrorRefs.length} errors`;
+}
+
+function extractLineText(line) {
+  if (!line) return '';
+  if (line.text !== undefined) return String(line.text || '');
+  if (line.html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = line.html;
+    return tmp.innerText || '';
+  }
+  return '';
+}
+
+function jumpByRefs(refs, dir, cursorName) {
+  if (!refs.length) return;
+  if (cursorName === 'match') {
+    terminalMatchCursor = (terminalMatchCursor + dir + refs.length) % refs.length;
+    refs[terminalMatchCursor].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  if (cursorName === 'command') {
+    terminalCommandCursor = (terminalCommandCursor + dir + refs.length) % refs.length;
+    refs[terminalCommandCursor].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  terminalErrorCursor = (terminalErrorCursor + dir + refs.length) % refs.length;
+  refs[terminalErrorCursor].scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function jumpTerminalMatch(dir) {
+  jumpByRefs(terminalMatchRefs, dir > 0 ? 1 : -1, 'match');
+}
+
+function jumpCommand(dir) {
+  jumpByRefs(terminalCommandRefs, dir > 0 ? 1 : -1, 'command');
+}
+
+function jumpError(dir) {
+  jumpByRefs(terminalErrorRefs, dir > 0 ? 1 : -1, 'error');
 }
 
 async function setAgent(agent) {
@@ -1417,12 +1752,180 @@ function updateQueueBadge(n) {
   document.getElementById('agentQueueCount').textContent = n;
   document.getElementById('agentQueueBadge').style.display = n > 0 ? 'inline' : 'none';
   document.getElementById('agentQueueClearBtn').style.display = n > 0 ? 'inline-block' : 'none';
+  renderQueuePanel();
+}
+
+function renderQueuePanel() {
+  const panel = document.getElementById('agentQueuePanel');
+  if (!panel) return;
+  if (!Array.isArray(agentQueueState) || agentQueueState.length === 0) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="agent-queue-title">Очередь задач (${agentQueueState.length})</div>
+    ${agentQueueState.map((item, idx) => `
+      <div class="agent-queue-item">
+        <span class="agent-queue-pos">#${item.position ?? idx + 1}</span>
+        <span title="${escapeHtml(item.title || '')}">${escapeHtml(item.title || item.task || item.runId)}</span>
+        <span style="color:var(--dim)">(${escapeHtml(item.task || 'task')})</span>
+        <div class="agent-queue-actions">
+          <button class="agent-queue-action" onclick="reorderQueueItem('${item.runId}','up')" title="Сдвинуть вверх">↑</button>
+          <button class="agent-queue-action" onclick="reorderQueueItem('${item.runId}','down')" title="Сдвинуть вниз">↓</button>
+          <button class="agent-queue-action" onclick="cancelQueueItem('${item.runId}')" title="Отменить задачу">✕</button>
+          <button class="agent-queue-action" onclick="retryRun('${item.runId}')" title="Retry">↻</button>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function renderRunSummaryMatrix(summary = lastRunSummary) {
+  const box = document.getElementById('agentSummaryMatrix');
+  if (!box) return;
+  const outcomes = summary?.fileOutcomes || [];
+  if (!Array.isArray(outcomes) || outcomes.length === 0) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const stats = summary?.validationStats || {};
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="agent-summary-title">
+      Матрица итогов (run: ${escapeHtml(summary?.runId || '—')}) • covered: ${stats.covered ?? 0} • not-covered: ${stats.notCovered ?? 0} • blocked: ${stats.blocked ?? 0} • infra: ${stats.infra ?? 0}
+    </div>
+    ${outcomes.map((entry) => `
+      <div class="agent-summary-row">
+        <span class="agent-summary-status-${entry.status}">${escapeHtml(entry.status)}</span>
+        <span title="${escapeHtml(entry.sourcePath || '')}">${escapeHtml(entry.sourcePath || '')}</span>
+        <span style="color:var(--dim)">${escapeHtml(entry.testFile || entry.reason || '')}</span>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function cancelQueueItem(runId) {
+  await fetch(`/api/queue/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
+  await loadAgentState();
+}
+
+async function retryRun(runId) {
+  await fetch(`/api/queue/${encodeURIComponent(runId)}/retry`, { method: 'POST' });
+  await loadAgentState();
+}
+
+async function reorderQueueItem(runId, direction) {
+  await fetch(`/api/queue/${encodeURIComponent(runId)}/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  });
+  await loadAgentState();
+}
+
+function ensureSessionForRun(run, makeActive = false) {
+  if (!run?.runId) return null;
+  let sessionId = runSessionMap.get(run.runId);
+  if (!sessionId) {
+    sessionId = createSession(run.title || `Run ${run.runId}`, run.phase === 'failed' ? 'error' : run.phase === 'completed' ? 'ok' : 'running', run.runId);
+    const meta = [`runId: ${run.runId}`, `phase: ${run.phase}`];
+    if (Array.isArray(run.targetSourcePaths) && run.targetSourcePaths.length > 0) {
+      meta.push(`targets: ${run.targetSourcePaths.length}`);
+    }
+    appendToSession(sessionId, `ℹ ${meta.join(' • ')}`, false, true);
+  }
+  if (makeActive) switchSession(sessionId);
+  return sessionId;
+}
+
+function applyAgentStateSnapshot(state) {
+  if (!state) return;
+  agentQueueState = Array.isArray(state.queue) ? state.queue : [];
+  agentRunsState = Array.isArray(state.runs) ? state.runs : [];
+  agentActiveRun = state.activeRun || null;
+  updateQueueBadge(agentQueueState.length);
+  if (agentActiveRun?.runId) {
+    currentRunId = agentActiveRun.runId;
+    ensureSessionForRun(agentActiveRun);
+    setAgentRunning(['starting', 'running', 'validating'].includes(agentActiveRun.phase));
+  } else {
+    setAgentRunning(false);
+  }
+  const latestSummary = [...agentRunsState].reverse().find((r) => Array.isArray(r.fileOutcomes) && r.fileOutcomes.length > 0);
+  if (latestSummary) {
+    lastRunSummary = latestSummary;
+    renderRunSummaryMatrix(latestSummary);
+  }
+}
+
+async function loadAgentState() {
+  try {
+    const res = await fetch('/api/agent/state');
+    if (!res.ok) return;
+    const state = await res.json();
+    applyAgentStateSnapshot(state);
+  } catch {}
+}
+
+function upsertRunState(run) {
+  if (!run?.runId) return;
+  const idx = agentRunsState.findIndex((r) => r.runId === run.runId);
+  if (idx >= 0) agentRunsState[idx] = { ...agentRunsState[idx], ...run };
+  else agentRunsState.push(run);
+  if (agentRunsState.length > 80) {
+    agentRunsState = agentRunsState.slice(agentRunsState.length - 80);
+  }
+}
+
+function updateSessionFromRun(run) {
+  if (!run?.runId) return;
+  upsertRunState(run);
+  if (['starting', 'running', 'validating'].includes(run.phase)) {
+    setAgentRunning(true);
+    currentRunId = run.runId;
+    const sid = ensureSessionForRun(run);
+    if (sid) {
+      runningSessionId = sid;
+      if (activeSessionId === sid) {
+        document.getElementById('agentPanelTitle').textContent = '🤖 ' + (run.title || 'Agent');
+        document.getElementById('agentPanelStatus').textContent = run.phase === 'validating' ? 'проверяю…' : 'работает…';
+      }
+    }
+    return;
+  }
+  const sid = runSessionMap.get(run.runId);
+  if (sid) {
+    const status = run.phase === 'completed' ? 'ok' : run.phase === 'canceled' ? 'error' : run.phase === 'failed' ? 'error' : 'info';
+    updateSessionStatus(sid, status);
+    if (runningSessionId === sid) runningSessionId = null;
+    if (activeSessionId === sid) {
+      document.getElementById('agentPanelStatus').textContent =
+        run.phase === 'completed' ? '✅ готово' : run.phase === 'canceled' ? '⏹ отменено' : run.phase === 'failed' ? '❌ ошибка' : run.phase;
+    }
+  }
+  if (run.phase === 'completed' || run.phase === 'failed' || run.phase === 'canceled') {
+    if (agentActiveRun?.runId === run.runId) agentActiveRun = null;
+    if (currentRunId === run.runId) currentRunId = null;
+    setAgentRunning(false);
+  }
+}
+
+function refreshPathActivityFromState() {
+  agentQueuedPaths.clear();
+  (agentQueueState || []).forEach((q) => {
+    getTaskFilePaths(q.task, q.featureKey, q.filePath, q.selectedFilePaths).forEach((p) => agentQueuedPaths.add(p));
+  });
+  if (!agentActiveRun || !['starting', 'running', 'validating'].includes(agentActiveRun.phase)) {
+    agentRunningPaths.clear();
+  }
 }
 
 async function cancelAgent() {
   await fetch('/api/cancel-agent', { method: 'POST' });
-  setAgentRunning(false);
-  updateQueueBadge(0);
+  await loadAgentState();
   document.getElementById('agentPanelStatus').textContent = '⏹ сброшен';
   if (runningSessionId) {
     appendToSession(runningSessionId, '⏹ Состояние агента сброшено (очередь очищена)', false);
@@ -1435,7 +1938,7 @@ async function cancelAgent() {
 
 async function clearAgentQueue() {
   await fetch('/api/clear-queue', { method: 'POST' });
-  updateQueueBadge(0);
+  await loadAgentState();
   appendTerminalLine('🗑 Очередь очищена', false);
 }
 
@@ -2323,11 +2826,15 @@ function renderFeatureDetail(c) {
   const filtered = q ? listFiles.filter(m =>
     m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
   ) : listFiles;
+  const rowsRenderKey = `feature:${drillFeatureKey}:${activeTab}:${showOnlyUntestedInFeature ? 1 : 0}:${q}`;
+  const { visibleRows, hiddenRows, hasMoreRows } = getFileRowsWindow(filtered, rowsRenderKey);
   const selectableSource = !isTestList && !!D.agent;
   const visibleSourcePaths = selectableSource
-    ? filtered.map(m => m.relativePath.replace(/\\/g, '/'))
+    ? visibleRows.map(m => m.relativePath.replace(/\\/g, '/'))
     : [];
-  const selectedVisible = selectableSource ? selectedFilesForFeature(drillFeatureKey, filtered.map(m => m.relativePath)) : [];
+  const selectedVisible = selectableSource
+    ? selectedFilesForFeature(drillFeatureKey, visibleRows.map(m => m.relativePath))
+    : [];
   const selectedCount = selectedVisible.length;
 
   c.innerHTML = `
@@ -2381,9 +2888,14 @@ function renderFeatureDetail(c) {
                   ? 'Все файлы этой фичи уже покрыты тестами'
                   : 'Нет файлов — возможно паттерны в конфиге не совпадают')}
           </div>`
-        : filtered.map(m => fileRow(m, isTestList, drillFeatureKey, selectableSource)).join('')
+        : visibleRows.map(m => fileRow(m, isTestList, drillFeatureKey, selectableSource)).join('')
       }
-    </div>`;
+    </div>
+    ${hasMoreRows ? `
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;color:var(--dim)">
+        <span>Показано ${visibleRows.length} из ${filtered.length} файлов</span>
+        <button class="bulk-actions-btn" id="fileRowsLoadMoreBtn">Показать ещё ${Math.min(FILE_ROWS_LIMIT_STEP, hiddenRows)}</button>
+      </div>` : ''}`;
 
   const untestedOnlyToggle = document.getElementById('untestedOnlyToggle');
   if (untestedOnlyToggle) {
@@ -2430,6 +2942,14 @@ function renderFeatureDetail(c) {
     }
   }
 
+  const fileRowsLoadMoreBtn = document.getElementById('fileRowsLoadMoreBtn');
+  if (fileRowsLoadMoreBtn) {
+    fileRowsLoadMoreBtn.onclick = () => {
+      increaseFileRowsLimit();
+      renderContent();
+    };
+  }
+
   c.querySelectorAll('.test-type-card[data-testtype]').forEach(card => {
     card.onclick = async () => {
       const type = card.dataset.testtype;
@@ -2442,13 +2962,7 @@ function renderFeatureDetail(c) {
       renderContent();
     };
   });
-
-  c.querySelectorAll('.file-row[data-id]').forEach(row => {
-    row.onclick = () => {
-      const m = D.modules.find(m => m.id === row.dataset.id);
-      if (m) openModulePanel(m);
-    };
-  });
+  bindFileRowsClick(c);
 }
 
 const TEST_TYPE_META = {
@@ -2472,6 +2986,8 @@ function renderTestTypeDetail(c) {
   const filtered = q ? tests.filter(m =>
     m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
   ) : tests;
+  const rowsRenderKey = `tests:${drillFeatureKey}:${drillTestType}:${q}`;
+  const { visibleRows, hiddenRows, hasMoreRows } = getFileRowsWindow(filtered, rowsRenderKey);
 
   c.innerHTML = `
     <div class="drill-header">
@@ -2493,16 +3009,24 @@ function renderTestTypeDetail(c) {
             <div style="font-size:14px;color:var(--muted);margin-bottom:4px">Нет ${meta.label} тестов для этой фичи</div>
             <div style="font-size:12px;color:var(--dim)">Добавь тесты в <code>${drillTestType === 'e2e' ? 'e2e/' : 'tests/'}</code></div>
           </div>`
-        : filtered.map(m => fileRow(m, true)).join('')
+        : visibleRows.map(m => fileRow(m, true)).join('')
       }
-    </div>`;
+    </div>
+    ${hasMoreRows ? `
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;color:var(--dim)">
+        <span>Показано ${visibleRows.length} из ${filtered.length} тест-файлов</span>
+        <button class="bulk-actions-btn" id="testRowsLoadMoreBtn">Показать ещё ${Math.min(FILE_ROWS_LIMIT_STEP, hiddenRows)}</button>
+      </div>` : ''}`;
 
-  c.querySelectorAll('.file-row[data-id]').forEach(row => {
-    row.onclick = () => {
-      const m = D.modules.find(m => m.id === row.dataset.id);
-      if (m) openModulePanel(m);
+  const testRowsLoadMoreBtn = document.getElementById('testRowsLoadMoreBtn');
+  if (testRowsLoadMoreBtn) {
+    testRowsLoadMoreBtn.onclick = () => {
+      increaseFileRowsLimit();
+      renderContent();
     };
-  });
+  }
+
+  bindFileRowsClick(c);
 }
 
 function renderUnmappedDetail(c) {
@@ -2515,6 +3039,8 @@ function renderUnmappedDetail(c) {
   const filtered = q ? unmappedSrc.filter(m =>
     m.name.toLowerCase().includes(q) || m.relativePath.toLowerCase().includes(q)
   ) : unmappedSrc;
+  const rowsRenderKey = `unmapped:${q}`;
+  const { visibleRows, hiddenRows, hasMoreRows } = getFileRowsWindow(filtered, rowsRenderKey);
 
   // Build prompt text
   const featureList = (D.features || []).map(f => `  • ${f.key} — ${f.label}`).join('\n');
@@ -2558,9 +3084,14 @@ function renderUnmappedDetail(c) {
     <div class="file-rows" id="fileRows">
       ${filtered.length === 0
         ? '<div style="font-size:13px;color:var(--dim)">Ничего не найдено</div>'
-        : filtered.map(m => fileRow(m)).join('')
+        : visibleRows.map(m => fileRow(m)).join('')
       }
-    </div>`;
+    </div>
+    ${hasMoreRows ? `
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;color:var(--dim)">
+        <span>Показано ${visibleRows.length} из ${filtered.length} файлов</span>
+        <button class="bulk-actions-btn" id="unmappedRowsLoadMoreBtn">Показать ещё ${Math.min(FILE_ROWS_LIMIT_STEP, hiddenRows)}</button>
+      </div>` : ''}`;
 
   const runAgentUnmappedBtn = document.getElementById('runAgentUnmapped');
   if (runAgentUnmappedBtn) {
@@ -2578,12 +3109,15 @@ function renderUnmappedDetail(c) {
     });
   };
 
-  c.querySelectorAll('.file-row[data-id]').forEach(row => {
-    row.onclick = () => {
-      const m = D.modules.find(m => m.id === row.dataset.id);
-      if (m) openModulePanel(m);
+  const unmappedRowsLoadMoreBtn = document.getElementById('unmappedRowsLoadMoreBtn');
+  if (unmappedRowsLoadMoreBtn) {
+    unmappedRowsLoadMoreBtn.onclick = () => {
+      increaseFileRowsLimit();
+      renderContent();
     };
-  });
+  }
+
+  bindFileRowsClick(c);
 }
 
 function fileRow(m, isTest = false, featureKey = null, selectable = false) {
@@ -2681,13 +3215,23 @@ function renderModuleGrid(c) {
     if (q && !m.name.toLowerCase().includes(q) && !m.relativePath.toLowerCase().includes(q)) return false;
     return true;
   });
+  const typeKey = [...activeTypes].sort().join(',');
+  const rowsRenderKey = `modules:${contextMode}:${view}:${typeKey}:${q}`;
+  const { visibleRows, hiddenRows, hasMoreRows } = getFileRowsWindow(list, rowsRenderKey);
 
   if (!list.length) { c.innerHTML = '<div class="empty">Ничего не найдено</div>'; return; }
 
-  c.innerHTML = '<div class="module-grid" id="modGrid"></div>';
+  c.innerHTML = `
+    <div class="module-grid" id="modGrid"></div>
+    ${hasMoreRows ? `
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;color:var(--dim)">
+        <span>Показано ${visibleRows.length} из ${list.length} модулей</span>
+        <button class="bulk-actions-btn" id="moduleRowsLoadMoreBtn">Показать ещё ${Math.min(FILE_ROWS_LIMIT_STEP, hiddenRows)}</button>
+      </div>` : ''}
+  `;
   const grid = document.getElementById('modGrid');
 
-  list.forEach(m => {
+  visibleRows.forEach(m => {
     const cov = m.coverage?.lines;
     const isActive = activePanelKey === m.id;
     const card = document.createElement('div');
@@ -2705,6 +3249,14 @@ function renderModuleGrid(c) {
     card.onclick = () => openModulePanel(m);
     grid.appendChild(card);
   });
+
+  const moduleRowsLoadMoreBtn = document.getElementById('moduleRowsLoadMoreBtn');
+  if (moduleRowsLoadMoreBtn) {
+    moduleRowsLoadMoreBtn.onclick = () => {
+      increaseFileRowsLimit();
+      renderContent();
+    };
+  }
 }
 
 // ─── Panels ───────────────────────────────────────────────────────────────────
@@ -2922,6 +3474,21 @@ function closePanel() {
   renderContent();
 }
 
+function applyTerminalFiltersFromUi() {
+  terminalSearchQuery = document.getElementById('agentSearchInput')?.value || '';
+  terminalSearchErrorsOnly = !!document.getElementById('agentSearchErrorsOnly')?.checked;
+  terminalSearchCurrentRunOnly = !!document.getElementById('agentSearchCurrentRunOnly')?.checked;
+  terminalSearchRegex = !!document.getElementById('agentSearchRegex')?.checked;
+  renderActiveSession();
+}
+
+['agentSearchInput', 'agentSearchErrorsOnly', 'agentSearchCurrentRunOnly', 'agentSearchRegex'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const eventName = id === 'agentSearchInput' ? 'input' : 'change';
+  el.addEventListener(eventName, applyTerminalFiltersFromUi);
+});
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('.view-tab').forEach(tab => {
   tab.onclick = () => {
@@ -2979,7 +3546,20 @@ function setLiveDot(color, title) {
   dot.title = title;
 }
 
+function scheduleRefreshData(delayMs = 120) {
+  if (refreshDataTimer) return;
+  refreshDataTimer = setTimeout(() => {
+    refreshDataTimer = null;
+    void refreshData();
+  }, delayMs);
+}
+
 async function refreshData() {
+  if (refreshDataInFlight) {
+    refreshDataQueued = true;
+    return;
+  }
+  refreshDataInFlight = true;
   try {
     const res = await fetch('/api/data');
     D = await res.json();
@@ -2990,7 +3570,6 @@ async function refreshData() {
 
     renderStats();
     renderSidebar();
-    renderContent();
     updateAgentBtn();
     updateAgentRightsInfo();
 
@@ -3006,28 +3585,81 @@ async function refreshData() {
         if (m) openModulePanel(m);
         else closePanel();
       }
+    } else {
+      renderContent();
     }
 
     // Brief green flash on the dot to signal fresh data
     setLiveDot('#3fb950', 'Live — обновлено только что');
     setTimeout(() => setLiveDot('#3fb950', 'Live — автообновление включено'), 1500);
+    void loadAgentState();
   } catch (err) {
     console.error('Refresh failed:', err);
+  } finally {
+    refreshDataInFlight = false;
+    if (refreshDataQueued) {
+      refreshDataQueued = false;
+      scheduleRefreshData(120);
+    }
   }
 }
 
 function connectSSE() {
   const es = new EventSource('/api/events');
 
-  es.onopen = () => setLiveDot('#3fb950', 'Live — автообновление включено');
+  es.onopen = () => {
+    setLiveDot('#3fb950', 'Live — автообновление включено');
+    void loadAgentState();
+  };
 
   es.addEventListener('data-updated', () => {
     setLiveDot('#e3b341', 'Обновляю данные…');
-    refreshData();
+    scheduleRefreshData();
+  });
+
+  es.addEventListener('agent-queue-updated', (e) => {
+    const payload = JSON.parse(e.data || '{}');
+    agentQueueState = Array.isArray(payload.queue) ? payload.queue : [];
+    refreshPathActivityFromState();
+    updateQueueBadge(agentQueueState.length);
+    renderContent();
+  });
+
+  es.addEventListener('agent-run-created', (e) => {
+    const { run } = JSON.parse(e.data || '{}');
+    upsertRunState(run);
+  });
+
+  es.addEventListener('agent-run-updated', (e) => {
+    const { run } = JSON.parse(e.data || '{}');
+    if (!run) return;
+    if (run.runId && agentQueueState.length > 0) {
+      agentQueueState = agentQueueState.filter((q) => q.runId !== run.runId || run.phase === 'queued');
+      updateQueueBadge(agentQueueState.length);
+    }
+    if (['starting', 'running', 'validating'].includes(run.phase)) {
+      agentActiveRun = run;
+      const startedPaths = getTaskFilePaths(run.task, run.featureKey, run.filePath, run.selectedFilePaths);
+      startedPaths.forEach((p) => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
+      renderContent();
+    }
+    updateSessionFromRun(run);
+  });
+
+  es.addEventListener('agent-run-finished', (e) => {
+    const { run } = JSON.parse(e.data || '{}');
+    if (!run) return;
+    updateSessionFromRun(run);
+    if (Array.isArray(run.fileOutcomes) && run.fileOutcomes.length > 0) {
+      lastRunSummary = run;
+      renderRunSummaryMatrix(run);
+    }
+    refreshPathActivityFromState();
+    renderContent();
   });
 
   es.addEventListener('agent-queued', (e) => {
-    const { queueLength, title, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
+    const { runId, queueLength, title, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
     document.getElementById('agentPanel').classList.add('open');
     document.getElementById('termBtn').classList.add('term-active');
@@ -3035,16 +3667,18 @@ function connectSSE() {
     getTaskFilePaths(task, featureKey, filePath, selectedFilePaths).forEach(p => agentQueuedPaths.add(p));
     renderContent();
     // Append queue notification to the currently running session (or active)
-    const targetId = runningSessionId || activeSessionId;
+    const targetId = runId ? (runSessionMap.get(runId) || runningSessionId || activeSessionId) : (runningSessionId || activeSessionId);
     if (targetId) {
       appendToSession(targetId, `📋 В очереди (${queueLength}): ${title}`, false);
     }
+    void loadAgentState();
   });
 
   es.addEventListener('agent-started', (e) => {
     setAgentRunning(true);
-    const { title, queueLength = 0, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
+    const { runId, title, queueLength = 0, task, featureKey, filePath, selectedFilePaths } = JSON.parse(e.data);
     updateQueueBadge(queueLength);
+    currentRunId = runId || null;
     // Move paths from queued → running (current task)
     const startedPaths = getTaskFilePaths(task, featureKey, filePath, selectedFilePaths);
     startedPaths.forEach(p => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
@@ -3054,17 +3688,22 @@ function connectSSE() {
       const prev = consoleSessions.find(s => s.id === runningSessionId);
       if (prev && prev.status === 'running') updateSessionStatus(runningSessionId, 'ok');
     }
-    const id = createSession(title);
+    const id = runId ? ensureSessionForRun({ runId, title, phase: 'running' }, true) : createSession(title);
     runningSessionId = id;
     document.getElementById('agentPanelTitle').textContent = '🤖 ' + title;
     document.getElementById('agentPanelStatus').textContent = 'запускаю…';
   });
 
   es.addEventListener('agent-output', (e) => {
-    const { line, isError, isDim } = JSON.parse(e.data);
-    if (runningSessionId) {
-      appendToSession(runningSessionId, line, !!isError, !!isDim);
-      if (activeSessionId === runningSessionId) {
+    const { runId, line, isError, isDim } = JSON.parse(e.data);
+    let targetId = runningSessionId;
+    if (runId) {
+      targetId = runSessionMap.get(runId) || ensureSessionForRun({ runId, title: `Run ${runId}`, phase: 'running' });
+      if (targetId) runningSessionId = targetId;
+    }
+    if (targetId) {
+      appendToSession(targetId, line, !!isError, !!isDim);
+      if (activeSessionId === targetId) {
         document.getElementById('agentPanelStatus').textContent = 'работает…';
       }
     } else {
@@ -3074,9 +3713,8 @@ function connectSSE() {
 
   es.addEventListener('agent-done', () => {
     setAgentRunning(false);
-    updateQueueBadge(0);
+    if (agentQueueState.length === 0) updateQueueBadge(0);
     agentRunningPaths.clear();
-    agentQueuedPaths.clear();
     if (runningSessionId) {
       updateSessionStatus(runningSessionId, 'ok');
       if (activeSessionId === runningSessionId) {
@@ -3089,13 +3727,17 @@ function connectSSE() {
 
   es.addEventListener('agent-summary', (e) => {
     const {
-      passed, failed, files = [],
+      runId,
+      fileOutcomes = [],
+      validationStats = null,
+      passed = 0, failed = 0, files = [],
       testedFileCount = files.length,
       passedFileCount = Math.max(0, testedFileCount - (failed > 0 ? 1 : 0)),
       failedFileCount = failed > 0 ? 1 : 0,
       autoFixQueued = false,
     } = JSON.parse(e.data);
-    const allOk = failed === 0;
+    const coverageOk = !validationStats || ((validationStats.notCovered || 0) === 0 && (validationStats.blocked || 0) === 0);
+    const allOk = failed === 0 && coverageOk;
     const box = document.createElement('div');
     box.style.cssText = `
       margin: 10px 0 4px;
@@ -3115,10 +3757,15 @@ function connectSSE() {
       <div style="font-size:11px;color:var(--muted);margin-top:2px">
         Тест-кейсы: ${passed} passed${failed > 0 ? ` • ${failed} failed` : ''}
       </div>
+      ${validationStats ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Coverage matrix: covered ${validationStats.covered || 0} • not-covered ${validationStats.notCovered || 0} • blocked ${validationStats.blocked || 0}</div>` : ''}
       ${autoFixQueued ? `<div style="font-size:11px;color:var(--yellow);margin-top:4px">🛠️ Автоисправление поставлено в очередь</div>` : ''}
       ${files.map(f => `<div style="font-size:11px;color:var(--dim);margin-top:3px">📄 ${f}</div>`).join('')}
     `;
-    const targetId = runningSessionId || activeSessionId;
+    if (fileOutcomes.length > 0) {
+      lastRunSummary = { runId, fileOutcomes, validationStats };
+      renderRunSummaryMatrix(lastRunSummary);
+    }
+    const targetId = runId ? (runSessionMap.get(runId) || runningSessionId || activeSessionId) : (runningSessionId || activeSessionId);
     if (targetId) {
       appendToSession(targetId, box);
       // Mark session status from test results immediately
@@ -3129,11 +3776,11 @@ function connectSSE() {
   });
 
   es.addEventListener('agent-error', (e) => {
-    setAgentRunning(false);
+    const { runId, message, authRequired, notInstalled } = JSON.parse(e.data);
+    if (!runId) setAgentRunning(false);
     agentRunningPaths.clear();
     agentQueuedPaths.clear();
     renderContent();
-    const { message, authRequired, notInstalled } = JSON.parse(e.data);
 
     // Build error node (plain text or auth/install box)
     let node = null;
@@ -3148,7 +3795,7 @@ function connectSSE() {
     }
 
     // If no session exists yet (startup check fires before any run), create one
-    const targetId = runningSessionId || (() => {
+    const targetId = (runId ? (runSessionMap.get(runId) || ensureSessionForRun({ runId, title: `Run ${runId}`, phase: 'failed' })) : runningSessionId) || (() => {
       if (authRequired || notInstalled) {
         const id = createSession('⚠️ Проверка агента', 'error');
         return id;
@@ -3167,7 +3814,7 @@ function connectSSE() {
         document.getElementById('agentPanelStatus').textContent = '❌ ошибка';
       }
     }
-    if (runningSessionId) runningSessionId = null;
+    if (!runId && runningSessionId) runningSessionId = null;
   });
 
   es.addEventListener('tests-started', (e) => {
@@ -3243,9 +3890,11 @@ function connectSSE() {
   };
 }
 
-init().then(() => {
+init().then(async () => {
   restoreSessions();
+  await loadAgentState();
   connectSSE();
+  applyTerminalFiltersFromUi();
   // Sync content padding with terminal panel open state automatically
   new MutationObserver(() => {
     const isOpen = document.getElementById('agentPanel').classList.contains('open');

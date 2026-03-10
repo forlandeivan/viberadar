@@ -136,6 +136,10 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function newRunId(): string {
+  return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function detectQueueBlockSignal(line: string): 403 | 429 | null {
   const s = line.toLowerCase();
   const is403 = (
@@ -250,6 +254,7 @@ interface TestRunResult extends Record<string, unknown> {
 }
 
 interface AgentQueueItem {
+  runId: string;
   task: string;
   featureKey?: string;
   filePath?: string;
@@ -261,6 +266,43 @@ interface AgentQueueItem {
   savedTestType?: string;
   autoFixAttempt?: number;
   autoFixSourceTask?: string;
+}
+
+type RunPhase = 'queued' | 'starting' | 'running' | 'validating' | 'completed' | 'failed' | 'canceled';
+type FileOutcomeStatus = 'covered' | 'not-covered' | 'blocked' | 'infra';
+
+interface FileOutcome {
+  sourcePath: string;
+  status: FileOutcomeStatus;
+  reason?: string;
+  testFile?: string;
+}
+
+interface ValidationStats {
+  total: number;
+  covered: number;
+  notCovered: number;
+  blocked: number;
+  infra: number;
+}
+
+interface RunRecord {
+  runId: string;
+  task: string;
+  title: string;
+  agent: string;
+  featureKey?: string;
+  filePath?: string;
+  selectedFilePaths?: string[];
+  targetSourcePaths?: string[];
+  phase: RunPhase;
+  queuePosition: number | null;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  fileOutcomes?: FileOutcome[];
+  validationStats?: ValidationStats;
 }
 
 // ─── E2E Plan types ───────────────────────────────────────────────────────────
@@ -953,6 +995,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let testsRunning    = false;
     const agentQueue: AgentQueueItem[] = [];
     let queueCooldownTimer: ReturnType<typeof setTimeout> | null = null;
+    let activeAgentProcess: ReturnType<typeof spawn> | null = null;
+    const runs: RunRecord[] = [];
+    const MAX_RUN_HISTORY = 120;
+    let activeRunId: string | null = null;
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
@@ -964,6 +1010,199 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       for (const client of sseClients) {
         try { client.write(msg); } catch { sseClients.delete(client); }
       }
+    }
+
+    function compactRunHistory() {
+      if (runs.length <= MAX_RUN_HISTORY) return;
+      runs.splice(0, runs.length - MAX_RUN_HISTORY);
+    }
+
+    function refreshQueuePositions() {
+      const pos = new Map<string, number>();
+      agentQueue.forEach((item, index) => pos.set(item.runId, index + 1));
+      runs.forEach((run) => {
+        run.queuePosition = pos.get(run.runId) ?? null;
+      });
+    }
+
+    function queueSnapshotItem(item: AgentQueueItem, index: number) {
+      return {
+        runId: item.runId,
+        title: item.title,
+        task: item.task,
+        featureKey: item.featureKey || null,
+        filePath: item.filePath || null,
+        selectedFilePaths: item.selectedFilePaths || null,
+        selectedFileCount: item.selectedFilePaths?.length || 0,
+        position: index + 1,
+      };
+    }
+
+    function emitQueueUpdated() {
+      refreshQueuePositions();
+      const queue = agentQueue.map((item, index) => queueSnapshotItem(item, index));
+      broadcast('agent-queue-updated', { queue });
+    }
+
+    function findRun(runId: string): RunRecord | undefined {
+      return runs.find((r) => r.runId === runId);
+    }
+
+    function createRun(item: AgentQueueItem, phase: RunPhase): RunRecord {
+      const now = new Date().toISOString();
+      const run: RunRecord = {
+        runId: item.runId,
+        task: item.task,
+        title: item.title,
+        agent: item.agent,
+        featureKey: item.featureKey,
+        filePath: item.filePath,
+        selectedFilePaths: item.selectedFilePaths,
+        phase,
+        queuePosition: null,
+        createdAt: now,
+      };
+      runs.push(run);
+      compactRunHistory();
+      refreshQueuePositions();
+      broadcast('agent-run-created', { run });
+      return run;
+    }
+
+    function updateRun(runId: string, patch: Partial<RunRecord>) {
+      const run = findRun(runId);
+      if (!run) return;
+      Object.assign(run, patch);
+      refreshQueuePositions();
+      broadcast('agent-run-updated', { run });
+    }
+
+    function setRunPhase(runId: string, phase: RunPhase, patch: Partial<RunRecord> = {}) {
+      const nowIso = new Date().toISOString();
+      const autoPatch: Partial<RunRecord> = {};
+      if (phase === 'starting' && !findRun(runId)?.startedAt) autoPatch.startedAt = nowIso;
+      if (phase === 'completed' || phase === 'failed' || phase === 'canceled') {
+        autoPatch.finishedAt = nowIso;
+      }
+      updateRun(runId, { phase, ...autoPatch, ...patch });
+      if (phase === 'running' || phase === 'starting' || phase === 'validating') {
+        activeRunId = runId;
+      }
+      if (phase === 'completed' || phase === 'failed' || phase === 'canceled') {
+        if (activeRunId === runId) activeRunId = null;
+        const run = findRun(runId);
+        if (run) broadcast('agent-run-finished', { run });
+      }
+    }
+
+    function buildValidationStats(fileOutcomes: FileOutcome[]): ValidationStats {
+      let covered = 0;
+      let notCovered = 0;
+      let blocked = 0;
+      let infra = 0;
+      for (const outcome of fileOutcomes) {
+        if (outcome.status === 'covered') covered += 1;
+        else if (outcome.status === 'not-covered') notCovered += 1;
+        else if (outcome.status === 'blocked') blocked += 1;
+        else if (outcome.status === 'infra') infra += 1;
+      }
+      return {
+        total: fileOutcomes.length,
+        covered,
+        notCovered,
+        blocked,
+        infra,
+      };
+    }
+
+    function buildFileOutcomes(targetSourcePaths: string[]): { fileOutcomes: FileOutcome[]; validationStats: ValidationStats } {
+      const normalizeRelPath = (p: string) => p.replace(/\\/g, '/');
+      const uniqueTargets = Array.from(new Set(targetSourcePaths.map(normalizeRelPath)));
+      const srcByPath = new Map(
+        currentData.modules
+          .filter((m) => m.type !== 'test')
+          .map((m) => [normalizeRelPath(m.relativePath), m] as const)
+      );
+      const fileOutcomes = uniqueTargets.map((relPath): FileOutcome => {
+        const mod = srcByPath.get(relPath);
+        if (!mod) {
+          return {
+            sourcePath: relPath,
+            status: 'blocked',
+            reason: 'source-file-not-found-after-rescan',
+          };
+        }
+        if (mod.isInfra) {
+          return {
+            sourcePath: relPath,
+            status: 'infra',
+            reason: 'matched-infra-ignore-pattern',
+          };
+        }
+        if (mod.hasTests) {
+          return {
+            sourcePath: relPath,
+            status: 'covered',
+            testFile: mod.testFile ? normalizeRelPath(mod.testFile) : undefined,
+          };
+        }
+        return {
+          sourcePath: relPath,
+          status: 'not-covered',
+          reason: 'scanner-did-not-link-test-file',
+        };
+      });
+      return { fileOutcomes, validationStats: buildValidationStats(fileOutcomes) };
+    }
+
+    function moveQueueItem(runId: string, direction: 'up' | 'down'): { ok: true } | { ok: false; message: string } {
+      const index = agentQueue.findIndex((item) => item.runId === runId);
+      if (index === -1) return { ok: false, message: `Run ${runId} не найден в очереди` };
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= agentQueue.length) {
+        return { ok: false, message: `Run ${runId} нельзя сдвинуть ${direction === 'up' ? 'вверх' : 'вниз'}` };
+      }
+      const [item] = agentQueue.splice(index, 1);
+      agentQueue.splice(targetIndex, 0, item);
+      emitQueueUpdated();
+      return { ok: true };
+    }
+
+    function cancelQueuedRun(runId: string, reason = 'canceled-by-user'): { ok: true } | { ok: false; message: string } {
+      const index = agentQueue.findIndex((item) => item.runId === runId);
+      if (index === -1) return { ok: false, message: `Run ${runId} не найден в очереди` };
+      const [item] = agentQueue.splice(index, 1);
+      setRunPhase(item.runId, 'canceled', { error: reason });
+      emitQueueUpdated();
+      return { ok: true };
+    }
+
+    function enqueueItem(item: AgentQueueItem) {
+      agentQueue.push(item);
+      refreshQueuePositions();
+      emitQueueUpdated();
+    }
+
+    function buildAgentStateSnapshot() {
+      refreshQueuePositions();
+      const queue = agentQueue.map((item, index) => queueSnapshotItem(item, index));
+      const activeRun = activeRunId ? (findRun(activeRunId) || null) : null;
+      return {
+        activeRun,
+        queue,
+        runs: runs.slice(-50),
+        runtimeFlags: {
+          agentRunning,
+          testsRunning,
+          queueCooldownActive: !!queueCooldownTimer,
+          queueMax: runtimeEnv.agentQueueMax,
+          cooldownMinMs: runtimeEnv.agentCooldownMinMs,
+          cooldownMaxMs: runtimeEnv.agentCooldownMaxMs,
+          codexSandboxMode: runtimeEnv.codexSandboxMode,
+          autoFixFailedTests: runtimeEnv.autoFixFailedTests,
+          autoFixMaxRetries: runtimeEnv.autoFixMaxRetries,
+        },
+      };
     }
 
     function clearQueueCooldownTimer() {
@@ -978,9 +1217,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       agentQueue.length = 0;
       process.stdout.write(`   ⛔ Queue stopped: ${reason} (dropped: ${dropped})\n`);
       broadcast('agent-output', { line: `⛔ Очередь остановлена: ${reason}`, isError: true });
+      const nowIso = new Date().toISOString();
+      runs.forEach((run) => {
+        if (run.phase === 'queued') {
+          run.phase = 'canceled';
+          run.finishedAt = nowIso;
+          run.error = reason;
+          broadcast('agent-run-finished', { run });
+        }
+      });
       if (dropped > 0) {
         broadcast('agent-output', { line: `🗑 Отменено задач из очереди: ${dropped}` });
       }
+      emitQueueUpdated();
       broadcast('agent-queue-stopped', { reason, dropped });
     }
 
@@ -1026,9 +1275,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           return;
         }
         const next = agentQueue.shift()!;
+        emitQueueUpdated();
         process.stdout.write(`   📋 Starting next from queue: "${next.title}" (remaining: ${agentQueue.length})\n`);
-        broadcast('agent-output', { line: `📋 Следующая задача из очереди: ${next.title}` });
-        broadcast('agent-output', { line: `   В очереди осталось: ${agentQueue.length}` });
+        broadcast('agent-output', { runId: next.runId, line: `📋 Следующая задача из очереди: ${next.title}` });
+        broadcast('agent-output', { runId: next.runId, line: `   В очереди осталось: ${agentQueue.length}` });
         executeAgentItem(next);
       } else {
         clearQueueCooldownTimer();
@@ -1039,10 +1289,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     /** Actually spawn the agent process for a queue item */
     function executeAgentItem(item: AgentQueueItem) {
       const {
-        task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
+        runId, task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
         autoFixAttempt = 0, autoFixSourceTask,
       } = item;
       const normalizeRelPath = (p: string) => p.replace(/\\/g, '/');
+      const emitOutput = (line: string, isError = false, isDim = false) => {
+        broadcast('agent-output', { runId, line, isError, isDim });
+      };
       const targetSourcePaths = (() => {
         if (task === 'write-tests-file' && filePath) {
           return [normalizeRelPath(filePath)];
@@ -1058,61 +1311,75 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return [] as string[];
       })();
 
+      setRunPhase(runId, 'starting', {
+        targetSourcePaths,
+        error: undefined,
+        fileOutcomes: undefined,
+        validationStats: undefined,
+      });
+
+      function failBeforeStart(message: string) {
+        setRunPhase(runId, 'failed', { error: message, targetSourcePaths });
+        broadcast('agent-error', { runId, message });
+        agentRunning = false;
+        processNextInQueue();
+      }
+
       // Build prompt lazily at execution time
       let prompt: string;
       if (task === 'write-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) {
-          broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart(`Фича не найдена: ${featureKey}`);
+          return;
         }
         prompt = buildWriteTestsPrompt(feat, currentData.modules, currentData.testRunner || 'vitest');
       } else if (task === 'write-tests-file') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat || !filePath) {
-          broadcast('agent-error', { message: 'Не указана фича или файл' });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart('Не указана фича или файл');
+          return;
         }
         prompt = buildWriteTestsForFilePrompt(filePath, feat, currentData.modules, currentData.testRunner || 'vitest');
       } else if (task === 'write-tests-selected') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat || !selectedFilePaths || selectedFilePaths.length === 0) {
-          broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart('Не указана фича или выбранные файлы');
+          return;
         }
         prompt = buildWriteTestsForSelectedPrompt(selectedFilePaths, feat, currentData.modules, currentData.testRunner || 'vitest');
       } else if (task === 'refresh-tests-selected') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat || !selectedFilePaths || selectedFilePaths.length === 0) {
-          broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart('Не указана фича или выбранные файлы');
+          return;
         }
         prompt = buildRefreshTestsForSelectedPrompt(selectedFilePaths, feat, currentData.modules, currentData.testRunner || 'vitest');
       } else if (task === 'fix-tests') {
         if (!filePath || !savedErrors || savedErrors.length === 0) {
-          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}` });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart(`Нет сохранённых ошибок для ${filePath}`);
+          return;
         }
         prompt = buildFixTestsPrompt(filePath, savedErrors);
       } else if (task === 'fix-tests-all') {
         if (!savedFailedFiles || savedFailedFiles.length === 0) {
-          broadcast('agent-error', { message: 'Нет упавших тестов для исправления' });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart('Нет упавших тестов для исправления');
+          return;
         }
         prompt = buildFixAllTestsPrompt(savedFailedFiles, savedTestType || 'unit');
       } else if (task === 'generate-e2e-plan') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) {
-          broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart(`Фича не найдена: ${featureKey}`);
+          return;
         }
         prompt = buildE2ePlanPrompt(feat, currentData.modules);
       } else if (task === 'write-e2e-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         const plan = featureKey ? loadE2ePlan(projectRoot, featureKey) : null;
         if (!feat || !plan) {
-          broadcast('agent-error', { message: `Фича или план не найдены: ${featureKey}` });
-          agentRunning = false; processNextInQueue(); return;
+          failBeforeStart(`Фича или план не найдены: ${featureKey}`);
+          return;
         }
         prompt = buildWriteE2eTestPrompt(feat, plan, currentData.modules);
       } else {
@@ -1120,7 +1387,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       agentRunning = true;
+      setRunPhase(runId, 'running', { targetSourcePaths });
       broadcast('agent-started', {
+        runId,
         title,
         task,
         featureKey,
@@ -1146,11 +1415,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      broadcast('agent-output', { line: `🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}` });
+      activeAgentProcess = proc;
+      emitOutput(`🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}`);
       if (agent === 'codex') {
-        broadcast('agent-output', { line: `🔐 Codex sandbox: ${runtimeEnv.codexSandboxMode}` });
+        emitOutput(`🔐 Codex sandbox: ${runtimeEnv.codexSandboxMode}`);
       }
-      broadcast('agent-output', { line: `📄 Задача записана в .viberadar/task.md` });
+      emitOutput('📄 Задача записана в .viberadar/task.md');
 
       // Track test files written/edited by agent (for auto-run after)
       const createdTestFiles: string[] = [];
@@ -1158,16 +1428,23 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       let agentResultText = '';
       let agentRawOutputText = '';
       let queueBlockSignal: 403 | 429 | null = null;
+      let finalFileOutcomes: FileOutcome[] = [];
+      let finalValidationStats: ValidationStats = buildValidationStats([]);
+      let validationError: string | undefined;
+      let lastTestResult: TestRunResult | null = null;
+      let lastTestSummary: {
+        testedFileCount: number;
+        passedFileCount: number;
+        failedFileCount: number;
+        autoFixQueued: boolean;
+      } | null = null;
 
       function inspectQueueBlockSignal(line: string) {
         if (queueBlockSignal !== null) return;
         const signal = detectQueueBlockSignal(line);
         if (signal !== null) {
           queueBlockSignal = signal;
-          broadcast('agent-output', {
-            line: `⚠️ Обнаружен блокирующий сигнал ${signal}. После завершения текущей задачи очередь будет остановлена.`,
-            isError: true,
-          });
+          emitOutput(`⚠️ Обнаружен блокирующий сигнал ${signal}. После завершения текущей задачи очередь будет остановлена.`, true);
         }
       }
 
@@ -1199,18 +1476,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         trackWrittenFiles(raw);
         const parsed = agent === 'claude' ? parseClaudeEvent(raw) : raw;
         if (!parsed) {
-          broadcast('agent-output', { line: raw.slice(0, 120), isDim: true });
+          emitOutput(raw.slice(0, 120), false, true);
           return;
         }
         if (parsed.startsWith('§RESULT§')) {
           agentResultText = parsed.slice('§RESULT§'.length).trim();
-          broadcast('agent-output', { line: '─────────────────────────────' });
+          emitOutput('─────────────────────────────');
           for (const l of agentResultText.split('\n')) {
-            if (l.trim()) broadcast('agent-output', { line: '  ' + l });
+            if (l.trim()) emitOutput('  ' + l);
           }
         } else {
           for (const l of parsed.split('\n')) {
-            if (l.trim()) broadcast('agent-output', { line: l });
+            if (l.trim()) emitOutput(l);
           }
         }
       });
@@ -1223,12 +1500,23 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             agentRawOutputText += line + '\n';
           }
           inspectQueueBlockSignal(line);
-          broadcast('agent-output', { line, isError: true });
+          emitOutput(line, true);
         }
       });
 
       proc.on('close', async (code) => {
         agentRunning = false;
+        activeAgentProcess = null;
+        const alreadyCanceled = findRun(runId)?.phase === 'canceled';
+        if (alreadyCanceled) {
+          process.stdout.write(`   ⏹ Agent process closed for canceled run ${runId}\n`);
+          processNextInQueue(true);
+          return;
+        }
+        let finalPhase: RunPhase = 'completed';
+        let finalError: string | undefined;
+        let autoFixQueued = false;
+
         if (code === 0) {
           // Auto-run created/fixed test files and show results
           let testFilesToRun: string[];
@@ -1240,9 +1528,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             testFilesToRun = createdTestFiles;
           }
           if ((task === 'write-tests' || task === 'write-tests-file' || task === 'write-tests-selected' || task === 'refresh-tests-selected' || task === 'fix-tests' || task === 'fix-tests-all') && testFilesToRun.length > 0) {
-            broadcast('agent-output', { line: '─────────────────────────────' });
-            broadcast('agent-output', { line: `🧪 Запускаю тесты (${testFilesToRun.length} файлов)...` });
+            setRunPhase(runId, 'validating', { targetSourcePaths });
+            emitOutput('─────────────────────────────');
+            emitOutput(`🧪 Запускаю тесты (${testFilesToRun.length} файлов)...`);
             const result = await runTestFiles(testFilesToRun, projectRoot);
+            lastTestResult = result;
 
             lastTestResults.clear();
             for (const [fp, detail] of Object.entries(result.fileDetails)) {
@@ -1260,27 +1550,28 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             const failedFileCount = failedFiles.length;
             const passedFileCount = Math.max(0, testedFileCount - failedFileCount);
 
-            broadcast('agent-output', { line: '┌──────────────── Тест-отчёт ────────────────' });
+            emitOutput('┌──────────────── Тест-отчёт ────────────────');
             if (result.runError) {
-              broadcast('agent-output', { line: `│ ❌ Ошибка запуска тестов: ${result.runError}` });
+              emitOutput(`│ ❌ Ошибка запуска тестов: ${result.runError}`);
+              finalPhase = 'failed';
+              finalError = `Ошибка запуска тестов: ${result.runError}`;
             } else {
               const status = result.failed === 0 ? '✅ OK' : '❌ FAILED';
-              broadcast('agent-output', { line: `│ Статус: ${status}` });
-              broadcast('agent-output', { line: `│ Файлы: ${testedFileCount}  •  passed: ${passedFileCount}  •  failed: ${failedFileCount}` });
-              broadcast('agent-output', { line: `│ Тест-кейсы: passed ${result.passed}  •  failed ${result.failed}` });
+              emitOutput(`│ Статус: ${status}`);
+              emitOutput(`│ Файлы: ${testedFileCount}  •  passed: ${passedFileCount}  •  failed: ${failedFileCount}`);
+              emitOutput(`│ Тест-кейсы: passed ${result.passed}  •  failed ${result.failed}`);
             }
-            broadcast('agent-output', { line: '└─────────────────────────────────────────────' });
+            emitOutput('└─────────────────────────────────────────────');
 
             if (result.failed > 0) {
               for (const f of failedFiles) {
-                broadcast('agent-output', { line: `  ❌ ${f.rel} — ${f.detail.failed} упало` });
+                emitOutput(`  ❌ ${f.rel} — ${f.detail.failed} упало`);
                 for (const e of f.detail.errors.slice(0, 3)) {
-                  broadcast('agent-output', { line: `     • ${e.testName}`, isDim: true });
+                  emitOutput(`     • ${e.testName}`, false, true);
                 }
               }
             }
 
-            let autoFixQueued = false;
             if (!result.runError && result.failed > 0) {
               const nextAttempt = autoFixAttempt + 1;
               const sourceTask = autoFixSourceTask || task;
@@ -1293,6 +1584,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                   const only = failedFiles[0];
                   const fileName = only.rel.split('/').pop() || only.rel;
                   fixItem = {
+                    runId: newRunId(),
                     task: 'fix-tests',
                     featureKey,
                     filePath: only.rel,
@@ -1304,6 +1596,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                   };
                 } else if (failedFiles.length > 1) {
                   fixItem = {
+                    runId: newRunId(),
                     task: 'fix-tests-all',
                     featureKey,
                     title: `${agent === 'claude' ? 'Claude Code' : 'Codex'} — автоисправление ${failedFiles.length} тестов ${attemptSuffix}`,
@@ -1317,36 +1610,42 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
                 if (fixItem) {
                   if (agentQueue.length < runtimeEnv.agentQueueMax) {
+                    createRun(fixItem, 'queued');
                     agentQueue.unshift(fixItem);
+                    emitQueueUpdated();
                     autoFixQueued = true;
-                    broadcast('agent-output', { line: `🛠️ Обнаружены падения. Запускаю автоисправление ${attemptSuffix}...` });
+                    emitOutput(`🛠️ Обнаружены падения. Запускаю автоисправление ${attemptSuffix}...`);
                     broadcast('agent-queued', {
+                      runId: fixItem.runId,
                       queueLength: agentQueue.length,
                       title: fixItem.title,
                       task: fixItem.task,
                       featureKey: fixItem.featureKey || null,
                       filePath: fixItem.filePath || null,
+                      selectedFilePaths: fixItem.selectedFilePaths || null,
                     });
                   } else {
-                    broadcast('agent-output', {
-                      line: `⚠️ Автоисправление не поставлено: очередь заполнена (${runtimeEnv.agentQueueMax})`,
-                      isError: true,
-                    });
+                    emitOutput(`⚠️ Автоисправление не поставлено: очередь заполнена (${runtimeEnv.agentQueueMax})`, true);
                   }
                 }
               } else {
                 const reason = !runtimeEnv.autoFixFailedTests
                   ? 'автоисправление выключено'
                   : `достигнут лимит попыток (${runtimeEnv.autoFixMaxRetries})`;
-                broadcast('agent-output', { line: `⚠️ Автоисправление не запущено: ${reason}` });
+                emitOutput(`⚠️ Автоисправление не запущено: ${reason}`);
               }
             }
 
             if (result.failed > 0 && !autoFixQueued) {
-              broadcast('agent-output', { line: '  → Нажми 🔧 исправить в дашборде чтобы агент починил' });
+              emitOutput('  → Нажми 🔧 исправить в дашборде чтобы агент починил');
+              finalPhase = 'failed';
+              if (!finalError) finalError = 'Есть упавшие тесты';
+            }
+            if (result.failed > 0 && autoFixQueued && finalPhase !== 'failed') {
+              finalPhase = 'completed';
             }
 
-            broadcast('agent-summary', { ...result, testedFileCount, passedFileCount, failedFileCount, autoFixQueued });
+            lastTestSummary = { testedFileCount, passedFileCount, failedFileCount, autoFixQueued };
           }
 
           // E2E plan post-processing
@@ -1370,9 +1669,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                 ? ` Возможная причина: блокировка/лимит агента (${queueBlockSignal}).`
                 : '';
               broadcast('e2e-plan-error', {
+                runId,
                 featureKey,
                 message: `Не удалось распарсить план: ${err.message}.${blockHint}`.trim(),
               });
+              finalPhase = 'failed';
+              finalError = `Не удалось распарсить E2E план: ${err.message}`;
             }
           }
 
@@ -1389,51 +1691,76 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
           process.stdout.write('   ✅ Agent done, rescanning...\n');
           try {
+            if (targetSourcePaths.length > 0) {
+              setRunPhase(runId, 'validating', { targetSourcePaths });
+            }
             currentData = await scanProject(projectRoot);
             if (targetSourcePaths.length > 0) {
-              const srcByPath = new Map(
-                currentData.modules
-                  .filter((m) => m.type !== 'test')
-                  .map((m) => [normalizeRelPath(m.relativePath), m] as const)
-              );
-              const unresolved = targetSourcePaths.filter((rel) => {
-                const mod = srcByPath.get(rel);
-                return !!mod && !mod.hasTests && !mod.isInfra;
-              });
-              if (unresolved.length > 0) {
-                broadcast('agent-output', {
-                  line: `⚠️ После задачи осталось без тестов: ${unresolved.length}/${targetSourcePaths.length} файлов`,
-                  isError: true,
+              const matrix = buildFileOutcomes(targetSourcePaths);
+              finalFileOutcomes = matrix.fileOutcomes;
+              finalValidationStats = matrix.validationStats;
+              const unresolved = finalFileOutcomes.filter((o) => o.status === 'not-covered');
+              const blocked = finalFileOutcomes.filter((o) => o.status === 'blocked');
+              if (unresolved.length > 0 || blocked.length > 0) {
+                emitOutput(`⚠️ После задачи осталось без тестов: ${unresolved.length}/${targetSourcePaths.length} файлов`, true);
+                unresolved.slice(0, 20).forEach((entry) => {
+                  emitOutput(`   • ${entry.sourcePath}${entry.reason ? ` — ${entry.reason}` : ''}`, true);
                 });
-                unresolved.slice(0, 20).forEach((rel) => {
-                  broadcast('agent-output', { line: `   • ${rel}`, isError: true });
-                });
-                if (unresolved.length > 20) {
-                  broadcast('agent-output', {
-                    line: `   ... и еще ${unresolved.length - 20} файлов`,
-                    isError: true,
+                if (blocked.length > 0) {
+                  emitOutput(`⚠️ Заблокированные/несопоставленные файлы: ${blocked.length}`, true);
+                  blocked.slice(0, 10).forEach((entry) => {
+                    emitOutput(`   • ${entry.sourcePath}${entry.reason ? ` — ${entry.reason}` : ''}`, true);
                   });
                 }
+                finalPhase = 'failed';
+                if (!finalError) {
+                  finalError = `Валидация покрытия: covered=${finalValidationStats.covered}, not-covered=${finalValidationStats.notCovered}, blocked=${finalValidationStats.blocked}, infra=${finalValidationStats.infra}`;
+                }
               } else {
-                broadcast('agent-output', {
-                  line: `✅ Проверка: все ${targetSourcePaths.length} целевых файлов теперь отмечены как с тестами`,
-                });
+                emitOutput(`✅ Проверка: все ${targetSourcePaths.length} целевых файлов теперь отмечены как с тестами`);
               }
             }
             broadcast('data-updated');
-          } catch {}
+          } catch (err: any) {
+            validationError = err?.message || String(err);
+            finalPhase = 'failed';
+            finalError = `Ошибка валидации после rescan: ${validationError}`;
+            emitOutput(`❌ Не удалось выполнить валидацию после задачи: ${validationError}`, true);
+          }
+
+          if (targetSourcePaths.length > 0) {
+            broadcast('agent-summary', {
+              runId,
+              targetSourcePaths,
+              fileOutcomes: finalFileOutcomes,
+              validationStats: finalValidationStats,
+              ...(lastTestResult || {}),
+              ...(lastTestSummary || {}),
+            });
+          }
+          setRunPhase(runId, finalPhase, {
+            targetSourcePaths,
+            fileOutcomes: finalFileOutcomes,
+            validationStats: finalValidationStats,
+            error: finalError,
+          });
           processNextInQueue(true);
         } else if (code === 255) {
           process.stdout.write(`   ❌ Agent auth error (exit code 255)\n`);
+          const message = `${agent === 'claude' ? 'Claude Code' : 'Codex'} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`;
+          setRunPhase(runId, 'failed', { targetSourcePaths, error: message });
           broadcast('agent-error', {
-            message: `${agent === 'claude' ? 'Claude Code' : 'Codex'} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`,
+            runId,
+            message,
             authRequired: true,
             agent,
           });
           processNextInQueue(true);
         } else {
           process.stdout.write(`   ❌ Agent failed (exit code ${code})\n`);
-          broadcast('agent-error', { message: `Агент завершился с кодом ${code}` });
+          const message = `Агент завершился с кодом ${code}`;
+          setRunPhase(runId, 'failed', { targetSourcePaths, error: message });
+          broadcast('agent-error', { runId, message });
           if (queueBlockSignal === 403 || queueBlockSignal === 429) {
             stopQueuedTasks(`пойман ${queueBlockSignal} от ${agent === 'claude' ? 'Claude Code' : 'Codex'}`);
           }
@@ -1443,23 +1770,29 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       proc.on('error', (err: any) => {
         agentRunning = false;
+        activeAgentProcess = null;
+        if (findRun(runId)?.phase === 'canceled') {
+          processNextInQueue(true);
+          return;
+        }
         const isNotFound = err.code === 'ENOENT' || err.message.includes('ENOENT');
         const agentName = agent === 'claude' ? 'Claude Code' : 'Codex';
         const msg = isNotFound
           ? `${agentName} не установлен. Скачай с ${agent === 'claude' ? 'claude.ai/download' : 'github.com/openai/codex'}`
           : `Не удалось запустить ${agent}: ${err.message}`;
         process.stdout.write('   ❌ Agent spawn error: ' + err.message + '\n');
-        broadcast('agent-error', { message: msg, notInstalled: isNotFound, agent });
+        setRunPhase(runId, 'failed', { targetSourcePaths, error: msg });
+        broadcast('agent-error', { runId, message: msg, notInstalled: isNotFound, agent });
         processNextInQueue(true);
       });
     }
 
     /** Validate task params and enqueue (prompt is built lazily at execution time) */
-    function runAgent(task: string, featureKey?: string, filePath?: string, selectedFilePaths?: string[]) {
+    function runAgent(task: string, featureKey?: string, filePath?: string, selectedFilePaths?: string[]): string | null {
       const agent = currentData.agent;
       if (!agent) {
         broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
-        return;
+        return null;
       }
 
       const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
@@ -1470,31 +1803,31 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (task === 'write-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
-        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
         title = `${agentLabel} — тесты для "${feat.label}"`;
       } else if (task === 'write-tests-file') {
         const feat = currentData.features?.find(f => f.key === featureKey);
-        if (!feat || !filePath) { broadcast('agent-error', { message: 'Не указана фича или файл' }); return; }
+        if (!feat || !filePath) { broadcast('agent-error', { message: 'Не указана фича или файл' }); return null; }
         const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
         title = `${agentLabel} — тест для "${fileName}"`;
       } else if (task === 'write-tests-selected') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         const count = selectedFilePaths?.length ?? 0;
-        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return; }
+        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return null; }
         title = `${agentLabel} — тесты для выбранных файлов (${count})`;
       } else if (task === 'refresh-tests-selected') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         const count = selectedFilePaths?.length ?? 0;
-        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return; }
+        if (!feat || count === 0) { broadcast('agent-error', { message: 'Не указана фича или выбранные файлы' }); return null; }
         title = `${agentLabel} — актуализировать тесты (${count})`;
       } else if (task === 'fix-tests') {
-        if (!filePath) { broadcast('agent-error', { message: 'Не указан файл для исправления' }); return; }
+        if (!filePath) { broadcast('agent-error', { message: 'Не указан файл для исправления' }); return null; }
         for (const [fp, detail] of lastTestResults) {
           const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
           if (rel === filePath.replace(/\\/g, '/') || fp === filePath) { savedErrors = detail.errors; break; }
         }
         if (!savedErrors || savedErrors.length === 0) {
-          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` }); return;
+          broadcast('agent-error', { message: `Нет сохранённых ошибок для ${filePath}. Сначала запусти тесты.` }); return null;
         }
         const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
         title = `${agentLabel} — исправить тесты в "${fileName}"`;
@@ -1509,34 +1842,48 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
         }
         if (savedFailedFiles.length === 0) {
-          broadcast('agent-error', { message: `Нет упавших ${savedTestType} тестов. Сначала запусти тесты.` }); return;
+          broadcast('agent-error', { message: `Нет упавших ${savedTestType} тестов. Сначала запусти тесты.` }); return null;
         }
         title = `${agentLabel} — починить все ${savedTestType} тесты (${savedFailedFiles.length} файлов)`;
       } else if (task === 'generate-e2e-plan') {
         const feat = currentData.features?.find(f => f.key === featureKey);
-        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
         title = `${agentLabel} — E2E план для "${feat.label}"`;
       } else if (task === 'write-e2e-tests') {
         const feat = currentData.features?.find(f => f.key === featureKey);
-        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return; }
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
         title = `${agentLabel} — пишу E2E тесты для "${feat.label}"`;
       } else {
         title = `${agentLabel} — разобрать unmapped`;
       }
 
-      const item: AgentQueueItem = { task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType };
+      const item: AgentQueueItem = {
+        runId: newRunId(),
+        task,
+        featureKey,
+        filePath,
+        selectedFilePaths,
+        title,
+        agent,
+        savedErrors,
+        savedFailedFiles,
+        savedTestType,
+      };
+      createRun(item, 'queued');
 
       if (agentRunning || queueCooldownTimer) {
         if (agentQueue.length >= runtimeEnv.agentQueueMax) {
+          setRunPhase(item.runId, 'failed', { error: `Очередь переполнена (${runtimeEnv.agentQueueMax})` });
           const msg = `Очередь агента ограничена (${runtimeEnv.agentQueueMax}). Дождись завершения текущих задач.`;
-          broadcast('agent-error', { message: msg });
+          broadcast('agent-error', { runId: item.runId, message: msg });
           process.stdout.write(`   ⚠️ Queue limit reached (${runtimeEnv.agentQueueMax}), rejected: "${title}"\n`);
-          return;
+          return item.runId;
         }
-        agentQueue.push(item);
+        enqueueItem(item);
         const ql = agentQueue.length;
         process.stdout.write(`   📋 Agent busy, queued: "${title}" (queue size: ${ql})\n`);
         broadcast('agent-queued', {
+          runId: item.runId,
           queueLength: ql,
           title,
           task,
@@ -1544,10 +1891,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           filePath: filePath || null,
           selectedFilePaths: selectedFilePaths || null,
         });
-        return;
+        return item.runId;
       }
 
       executeAgentItem(item);
+      return item.runId;
     }
 
     // ── Chokidar watcher ───────────────────────────────────────────────────────
@@ -1569,7 +1917,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
     // ── HTTP server ────────────────────────────────────────────────────────────
     const server = http.createServer((req, res) => {
-      const url = req.url ?? '/';
+      const rawUrl = req.url ?? '/';
+      const parsedUrl = new URL(rawUrl, 'http://127.0.0.1');
+      const url = parsedUrl.pathname;
 
       if (url === '/' || url === '/radar/qa' || url === '/radar/observability') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -1610,7 +1960,100 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       if (url === '/api/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ agentRunning, queueLength: agentQueue.length }));
+        res.end(JSON.stringify({
+          agentRunning,
+          queueLength: agentQueue.length,
+          activeRunId,
+          queueCooldownActive: !!queueCooldownTimer,
+        }));
+        return;
+      }
+
+      if (url === '/api/agent/state' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(buildAgentStateSnapshot()));
+        return;
+      }
+
+      const queueCancelMatch = url.match(/^\/api\/queue\/([^/]+)\/cancel$/);
+      if (queueCancelMatch && req.method === 'POST') {
+        const runId = decodeURIComponent(queueCancelMatch[1]);
+        const result = cancelQueuedRun(runId, 'canceled-by-user');
+        if (!result.ok) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: result.message }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, state: buildAgentStateSnapshot() }));
+        return;
+      }
+
+      const queueRetryMatch = url.match(/^\/api\/queue\/([^/]+)\/retry$/);
+      if (queueRetryMatch && req.method === 'POST') {
+        const runId = decodeURIComponent(queueRetryMatch[1]);
+        const existing = findRun(runId);
+        if (!existing) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: `Run ${runId} не найден` }));
+          return;
+        }
+        if (existing.task === 'fix-tests' || existing.task === 'fix-tests-all') {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: false,
+            error: `Retry для ${existing.task} недоступен: нет сохраненного контекста ошибок`,
+          }));
+          return;
+        }
+        const retriedItem: AgentQueueItem = {
+          runId: newRunId(),
+          task: existing.task,
+          featureKey: existing.featureKey,
+          filePath: existing.filePath,
+          selectedFilePaths: existing.selectedFilePaths,
+          title: `${existing.title} (retry)`,
+          agent: existing.agent,
+        };
+        createRun(retriedItem, 'queued');
+        enqueueItem(retriedItem);
+        broadcast('agent-queued', {
+          runId: retriedItem.runId,
+          queueLength: agentQueue.length,
+          title: retriedItem.title,
+          task: retriedItem.task,
+          featureKey: retriedItem.featureKey || null,
+          filePath: retriedItem.filePath || null,
+          selectedFilePaths: retriedItem.selectedFilePaths || null,
+        });
+        if (!agentRunning && !queueCooldownTimer) {
+          processNextInQueue(false);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, runId: retriedItem.runId, state: buildAgentStateSnapshot() }));
+        return;
+      }
+
+      const queueReorderMatch = url.match(/^\/api\/queue\/([^/]+)\/reorder$/);
+      if (queueReorderMatch && req.method === 'POST') {
+        const runId = decodeURIComponent(queueReorderMatch[1]);
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          let direction: 'up' | 'down' = 'up';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            if (parsed?.direction === 'down') direction = 'down';
+          } catch {}
+          const result = moveQueueItem(runId, direction);
+          if (!result.ok) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: result.message }));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, state: buildAgentStateSnapshot() }));
+        });
         return;
       }
 
@@ -1750,9 +2193,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           try {
             const { task, featureKey, filePath, selectedFilePaths } = JSON.parse(body);
             process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0}\n`);
-            runAgent(task, featureKey, filePath, selectedFilePaths);
+            const runId = runAgent(task, featureKey, filePath, selectedFilePaths);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({ ok: true, runId }));
           } catch (err: any) {
             process.stdout.write(`   ❌ run-agent parse error: ${err.message}\n`);
             res.writeHead(400);
@@ -1763,22 +2206,38 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       if (url === '/api/cancel-agent' && req.method === 'POST') {
+        const nowReason = 'canceled-by-user';
+        if (activeRunId) {
+          setRunPhase(activeRunId, 'canceled', { error: nowReason });
+        }
+        for (const q of agentQueue) {
+          setRunPhase(q.runId, 'canceled', { error: nowReason });
+        }
         agentRunning = false;
+        if (activeAgentProcess) {
+          try { activeAgentProcess.kill('SIGTERM'); } catch {}
+          activeAgentProcess = null;
+        }
         agentQueue.length = 0; // clear queue too
         clearQueueCooldownTimer();
+        emitQueueUpdated();
         process.stdout.write('   ⏹ Agent state reset by user (queue cleared)\n');
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
+        res.end(JSON.stringify({ ok: true, state: buildAgentStateSnapshot() }));
         return;
       }
 
       if (url === '/api/clear-queue' && req.method === 'POST') {
         const cleared = agentQueue.length;
+        for (const q of agentQueue) {
+          setRunPhase(q.runId, 'canceled', { error: 'queue-cleared-by-user' });
+        }
         agentQueue.length = 0;
         clearQueueCooldownTimer();
+        emitQueueUpdated();
         process.stdout.write(`   🗑 Queue cleared (${cleared} items)\n`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, cleared }));
+        res.end(JSON.stringify({ ok: true, cleared, state: buildAgentStateSnapshot() }));
         return;
       }
 
@@ -1825,9 +2284,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           try {
             const { featureKey } = JSON.parse(body);
             broadcast('e2e-plan-generating', { featureKey });
-            runAgent('generate-e2e-plan', featureKey);
+            const runId = runAgent('generate-e2e-plan', featureKey);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({ ok: true, runId }));
           } catch (err: any) {
             res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
           }
@@ -1891,9 +2350,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           try {
             const { featureKey } = JSON.parse(body);
             broadcast('e2e-tests-writing', { featureKey });
-            runAgent('write-e2e-tests', featureKey);
+            const runId = runAgent('write-e2e-tests', featureKey);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({ ok: true, runId }));
           } catch (err: any) {
             res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
           }
