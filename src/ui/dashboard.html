@@ -855,31 +855,6 @@
       line-height: 1.4;
     }
     .agent-queue-action:hover { border-color: var(--blue); color: var(--text); }
-    .agent-summary-matrix {
-      display: none;
-      border-bottom: 1px solid var(--border);
-      background: #090f17;
-      padding: 8px 12px;
-      max-height: 150px;
-      overflow: auto;
-      font-size: 11px;
-    }
-    .agent-summary-title {
-      color: var(--muted);
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .agent-summary-row {
-      display: grid;
-      grid-template-columns: 60px 1fr auto;
-      gap: 8px;
-      margin-bottom: 4px;
-      align-items: center;
-    }
-    .agent-summary-status-covered { color: var(--green); }
-    .agent-summary-status-not-covered { color: var(--red); }
-    .agent-summary-status-blocked { color: var(--yellow); }
-    .agent-summary-status-infra { color: var(--dim); }
     /* ── Console Tabs ───────────────────────────────────────────────────────── */
     .agent-tabs-bar {
       display: flex; align-items: stretch; overflow-x: auto;
@@ -1139,7 +1114,6 @@
     <span class="agent-toolbar-meta" id="agentSearchMeta">0 matches</span>
   </div>
   <div class="agent-queue-panel" id="agentQueuePanel"></div>
-  <div class="agent-summary-matrix" id="agentSummaryMatrix"></div>
   <div class="agent-tabs-bar" id="agentTabsBar"></div>
   <div class="agent-terminal" id="agentTerminal"></div>
 </div>
@@ -1357,7 +1331,6 @@ let agentQueueState = [];
 let agentRunsState = [];
 let agentActiveRun = null;
 let currentRunId = null;
-let lastRunSummary = null;
 
 // ─── Console Sessions ─────────────────────────────────────────────────────────
 const consoleSessions  = [];   // { id, title, lines, status, startTime }
@@ -1452,7 +1425,6 @@ function switchSession(id) {
   }
   renderTabs();
   renderActiveSession();
-  syncSummaryForActiveSession();
 }
 
 function closeSession(id) {
@@ -1471,7 +1443,6 @@ function closeSession(id) {
   }
   renderTabs();
   renderActiveSession();
-  syncSummaryForActiveSession();
   saveSessions();
 }
 
@@ -1829,42 +1800,6 @@ function renderQueuePanel() {
   `;
 }
 
-function renderRunSummaryMatrix(summary = lastRunSummary) {
-  const box = document.getElementById('agentSummaryMatrix');
-  if (!box) return;
-  const outcomes = summary?.fileOutcomes || [];
-  if (!Array.isArray(outcomes) || outcomes.length === 0) {
-    box.style.display = 'none';
-    box.innerHTML = '';
-    return;
-  }
-  const stats = summary?.validationStats || {};
-  box.style.display = 'block';
-  box.innerHTML = `
-    <div class="agent-summary-title">
-      Матрица итогов (run: ${escapeHtml(summary?.runId || '—')}) • covered: ${stats.covered ?? 0} • not-covered: ${stats.notCovered ?? 0} • blocked: ${stats.blocked ?? 0} • infra: ${stats.infra ?? 0}
-    </div>
-    ${outcomes.map((entry) => `
-      <div class="agent-summary-row">
-        <span class="agent-summary-status-${entry.status}">${escapeHtml(entry.status)}</span>
-        <span title="${escapeHtml(entry.sourcePath || '')}">${escapeHtml(entry.sourcePath || '')}</span>
-        <span style="color:var(--dim)">${escapeHtml(entry.testFile || entry.reason || '')}</span>
-      </div>
-    `).join('')}
-  `;
-}
-
-function findSummaryForRun(runId) {
-  if (!runId) return null;
-  return (agentRunsState || []).find((r) => r.runId === runId && Array.isArray(r.fileOutcomes) && r.fileOutcomes.length > 0) || null;
-}
-
-function syncSummaryForActiveSession() {
-  const runId = sessionRunMap.get(activeSessionId) || currentRunId;
-  const summary = findSummaryForRun(runId) || null;
-  renderRunSummaryMatrix(summary);
-}
-
 async function cancelQueueItem(runId) {
   await fetch(`/api/queue/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
   await loadAgentState();
@@ -1912,11 +1847,6 @@ function applyAgentStateSnapshot(state) {
   } else {
     setAgentRunning(false);
   }
-  const latestSummary = [...agentRunsState].reverse().find((r) => Array.isArray(r.fileOutcomes) && r.fileOutcomes.length > 0);
-  if (latestSummary) {
-    lastRunSummary = latestSummary;
-  }
-  syncSummaryForActiveSession();
 }
 
 async function loadAgentState() {
@@ -1969,7 +1899,6 @@ function updateSessionFromRun(run) {
     if (currentRunId === run.runId) currentRunId = null;
     setAgentRunning(false);
   }
-  syncSummaryForActiveSession();
 }
 
 function refreshPathActivityFromState() {
@@ -3709,10 +3638,6 @@ function connectSSE() {
     const { run } = JSON.parse(e.data || '{}');
     if (!run) return;
     updateSessionFromRun(run);
-    if (Array.isArray(run.fileOutcomes) && run.fileOutcomes.length > 0) {
-      lastRunSummary = run;
-    }
-    syncSummaryForActiveSession();
     refreshPathActivityFromState();
     renderContent();
   });
@@ -3787,7 +3712,6 @@ function connectSSE() {
   es.addEventListener('agent-summary', (e) => {
     const {
       runId,
-      fileOutcomes = [],
       validationStats = null,
       passed = 0, failed = 0, files = [],
       testedFileCount = files.length,
@@ -3820,10 +3744,6 @@ function connectSSE() {
       ${autoFixQueued ? `<div style="font-size:11px;color:var(--yellow);margin-top:4px">🛠️ Автоисправление поставлено в очередь</div>` : ''}
       ${files.map(f => `<div style="font-size:11px;color:var(--dim);margin-top:3px">📄 ${f}</div>`).join('')}
     `;
-    if (fileOutcomes.length > 0) {
-      lastRunSummary = { runId, fileOutcomes, validationStats };
-    }
-    syncSummaryForActiveSession();
     const targetId = runId ? (runSessionMap.get(runId) || runningSessionId || activeSessionId) : (runningSessionId || activeSessionId);
     if (targetId) {
       appendToSession(targetId, box);
