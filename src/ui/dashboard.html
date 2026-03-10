@@ -809,6 +809,12 @@
       border-radius: 4px;
     }
     .agent-toolbar-btn:hover { color: var(--text); border-color: var(--blue); }
+    .agent-toolbar-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      border-color: var(--border);
+      color: var(--dim);
+    }
     .agent-toolbar-meta { font-size: 11px; color: var(--dim); margin-left: auto; }
     .agent-queue-panel {
       display: none;
@@ -1123,13 +1129,13 @@
     <label><input id="agentSearchErrorsOnly" type="checkbox" /> only errors</label>
     <label><input id="agentSearchCurrentRunOnly" type="checkbox" /> current run</label>
     <label><input id="agentSearchRegex" type="checkbox" /> regex</label>
-    <button class="agent-toolbar-btn" onclick="jumpTerminalMatch(-1)">↑ match</button>
-    <button class="agent-toolbar-btn" onclick="jumpTerminalMatch(1)">↓ match</button>
-    <button class="agent-toolbar-btn" onclick="jumpCommand(-1)">↑ command</button>
-    <button class="agent-toolbar-btn" onclick="jumpCommand(1)">↓ command</button>
-    <button class="agent-toolbar-btn" onclick="jumpError(-1)">↑ error</button>
-    <button class="agent-toolbar-btn" onclick="jumpError(1)">↓ error</button>
-    <button class="agent-toolbar-btn" onclick="exportActiveRun()">Export run</button>
+    <button class="agent-toolbar-btn" id="btnMatchPrev" onclick="jumpTerminalMatch(-1)">↑ match</button>
+    <button class="agent-toolbar-btn" id="btnMatchNext" onclick="jumpTerminalMatch(1)">↓ match</button>
+    <button class="agent-toolbar-btn" id="btnCmdPrev" onclick="jumpCommand(-1)">↑ command</button>
+    <button class="agent-toolbar-btn" id="btnCmdNext" onclick="jumpCommand(1)">↓ command</button>
+    <button class="agent-toolbar-btn" id="btnErrPrev" onclick="jumpError(-1)">↑ error</button>
+    <button class="agent-toolbar-btn" id="btnErrNext" onclick="jumpError(1)">↓ error</button>
+    <button class="agent-toolbar-btn" id="btnExportRun" onclick="exportActiveRun()">Export run</button>
     <span class="agent-toolbar-meta" id="agentSearchMeta">0 matches</span>
   </div>
   <div class="agent-queue-panel" id="agentQueuePanel"></div>
@@ -1446,6 +1452,7 @@ function switchSession(id) {
   }
   renderTabs();
   renderActiveSession();
+  syncSummaryForActiveSession();
 }
 
 function closeSession(id) {
@@ -1464,6 +1471,7 @@ function closeSession(id) {
   }
   renderTabs();
   renderActiveSession();
+  syncSummaryForActiveSession();
   saveSessions();
 }
 
@@ -1553,13 +1561,16 @@ function getActiveRunForExport() {
     const fromState = (agentRunsState || []).find((r) => r.runId === runId);
     if (fromState) return fromState;
   }
-  return lastRunSummary || null;
+  return null;
 }
 
 function exportActiveRun() {
   const run = getActiveRunForExport();
   const session = consoleSessions.find((s) => s.id === activeSessionId);
-  if (!run && !session) return;
+  if (!run && !session) {
+    flashToolbarHint('Нечего экспортировать');
+    return;
+  }
   const mode = window.prompt('Формат экспорта: md или json', 'md');
   const format = (mode || 'md').trim().toLowerCase() === 'json' ? 'json' : 'md';
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1618,6 +1629,7 @@ function renderActiveSession() {
   const s = consoleSessions.find(s => s.id === activeSessionId);
   if (!s) {
     document.getElementById('agentSearchMeta').textContent = '0 matches';
+    updateToolbarButtonsState();
     return;
   }
   const normalizedQuery = (terminalSearchQuery || '').trim();
@@ -1660,6 +1672,37 @@ function renderActiveSession() {
   term.scrollTop = term.scrollHeight;
   document.getElementById('agentSearchMeta').textContent =
     `${terminalMatchRefs.length} matches • ${terminalCommandRefs.length} commands • ${terminalErrorRefs.length} errors`;
+  updateToolbarButtonsState();
+}
+
+function updateToolbarButtonsState() {
+  const setState = (id, enabled) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = !enabled;
+  };
+  setState('btnMatchPrev', terminalMatchRefs.length > 0);
+  setState('btnMatchNext', terminalMatchRefs.length > 0);
+  setState('btnCmdPrev', terminalCommandRefs.length > 0);
+  setState('btnCmdNext', terminalCommandRefs.length > 0);
+  setState('btnErrPrev', terminalErrorRefs.length > 0);
+  setState('btnErrNext', terminalErrorRefs.length > 0);
+  const hasExport = !!getActiveRunForExport() || !!consoleSessions.find((s) => s.id === activeSessionId);
+  setState('btnExportRun', hasExport);
+}
+
+function flashToolbarHint(text) {
+  const meta = document.getElementById('agentSearchMeta');
+  if (!meta) return;
+  const previous = meta.textContent;
+  meta.textContent = text;
+  meta.style.color = 'var(--yellow)';
+  setTimeout(() => {
+    meta.style.color = '';
+    if (meta.textContent === text) {
+      meta.textContent = previous || '0 matches';
+    }
+  }, 1400);
 }
 
 function extractLineText(line) {
@@ -1674,7 +1717,11 @@ function extractLineText(line) {
 }
 
 function jumpByRefs(refs, dir, cursorName) {
-  if (!refs.length) return;
+  if (!refs.length) {
+    const label = cursorName === 'match' ? 'совпадений' : cursorName === 'command' ? 'команд' : 'ошибок';
+    flashToolbarHint(`Нет ${label} для навигации`);
+    return;
+  }
   if (cursorName === 'match') {
     terminalMatchCursor = (terminalMatchCursor + dir + refs.length) % refs.length;
     refs[terminalMatchCursor].scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1807,6 +1854,17 @@ function renderRunSummaryMatrix(summary = lastRunSummary) {
   `;
 }
 
+function findSummaryForRun(runId) {
+  if (!runId) return null;
+  return (agentRunsState || []).find((r) => r.runId === runId && Array.isArray(r.fileOutcomes) && r.fileOutcomes.length > 0) || null;
+}
+
+function syncSummaryForActiveSession() {
+  const runId = sessionRunMap.get(activeSessionId) || currentRunId;
+  const summary = findSummaryForRun(runId) || null;
+  renderRunSummaryMatrix(summary);
+}
+
 async function cancelQueueItem(runId) {
   await fetch(`/api/queue/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
   await loadAgentState();
@@ -1857,8 +1915,8 @@ function applyAgentStateSnapshot(state) {
   const latestSummary = [...agentRunsState].reverse().find((r) => Array.isArray(r.fileOutcomes) && r.fileOutcomes.length > 0);
   if (latestSummary) {
     lastRunSummary = latestSummary;
-    renderRunSummaryMatrix(latestSummary);
   }
+  syncSummaryForActiveSession();
 }
 
 async function loadAgentState() {
@@ -1911,6 +1969,7 @@ function updateSessionFromRun(run) {
     if (currentRunId === run.runId) currentRunId = null;
     setAgentRunning(false);
   }
+  syncSummaryForActiveSession();
 }
 
 function refreshPathActivityFromState() {
@@ -3652,8 +3711,8 @@ function connectSSE() {
     updateSessionFromRun(run);
     if (Array.isArray(run.fileOutcomes) && run.fileOutcomes.length > 0) {
       lastRunSummary = run;
-      renderRunSummaryMatrix(run);
     }
+    syncSummaryForActiveSession();
     refreshPathActivityFromState();
     renderContent();
   });
@@ -3763,8 +3822,8 @@ function connectSSE() {
     `;
     if (fileOutcomes.length > 0) {
       lastRunSummary = { runId, fileOutcomes, validationStats };
-      renderRunSummaryMatrix(lastRunSummary);
     }
+    syncSummaryForActiveSession();
     const targetId = runId ? (runSessionMap.get(runId) || runningSessionId || activeSessionId) : (runningSessionId || activeSessionId);
     if (targetId) {
       appendToSession(targetId, box);
@@ -3895,6 +3954,7 @@ init().then(async () => {
   await loadAgentState();
   connectSSE();
   applyTerminalFiltersFromUi();
+  updateToolbarButtonsState();
   // Sync content padding with terminal panel open state automatically
   new MutationObserver(() => {
     const isOpen = document.getElementById('agentPanel').classList.contains('open');
