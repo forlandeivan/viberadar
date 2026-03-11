@@ -4,7 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as readline from 'readline';
 import chokidar from 'chokidar';
-import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem } from '../scanner';
+import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint } from '../scanner';
 
 interface ServerOptions {
   data: ScanResult;
@@ -1004,6 +1004,79 @@ function buildObsAddCriticalLogsPrompt(modulePath: string, catalog: Observabilit
   ].filter(Boolean).join('\n');
 }
 
+const FP_TYPE_LABELS: Record<string, string> = {
+  'empty-catch':             'Пустой catch-блок — проглатывает ошибку',
+  'catch-no-log':            'catch без логирования ошибки',
+  'promise-catch-no-log':    '.catch() без логирования',
+  'http-no-error-handling':  'HTTP-вызов без обработки ошибок',
+  'db-no-error-handling':    'DB-операция без обработки ошибок',
+  'throw-no-log':            'throw без предшествующего logger.error',
+  'error-check-no-log':      'Проверка ошибки (if err) без логирования',
+};
+
+function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: ObservabilityCatalogItem[]): string {
+  const catalogEntry = catalog.find(c => c.modulePath === item.modulePath);
+
+  const fpDescriptions = item.failurePoints.map(fp =>
+    `- Строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type}\n  \`${fp.snippet}\``
+  ).join('\n');
+
+  return [
+    `Добавь критичные логи (warn/error) в модуль \`${item.modulePath}\`.`,
+    ``,
+    `Роль модуля: ${item.roleHint} (приоритет: ${item.riskTier})`,
+    item.hasAnyWarnError
+      ? `В модуле есть некоторые warn/error, но обнаружены незакрытые точки отказа.`
+      : `В модуле НЕТ ни одного warn/error. При сбоях мы не увидим ошибку в логах.`,
+    ``,
+    catalogEntry
+      ? `Текущее состояние:\n- Формат: ${catalogEntry.format}\n- Уровень: ${catalogEntry.level}\n- Пропущенные поля: ${(catalogEntry.missingFields || []).join(', ') || 'нет'}`
+      : '',
+    ``,
+    `Обнаруженные точки отказа без логирования (${item.failurePoints.length}):`,
+    fpDescriptions,
+    ``,
+    `Что сделать с каждой точкой:`,
+    `- Пустые catch-блоки: добавь logger.error с контекстом, event_name, error_code, outcome:failure`,
+    `- catch без лога: добавь logger.error/warn рядом с обработкой ошибки`,
+    `- .catch() без лога: добавь logger.error в обработчик промиса`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    `- throw без лога: добавь logger.error ДО throw`,
+    `- if(err) без лога: добавь logger.warn/error в ветку ошибки`,
+    ``,
+    `Каждый лог: event_name, outcome, error_code (для error).`,
+    `event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], catalog: ObservabilityCatalogItem[]): string {
+  const moduleBlocks = items.map(item => {
+    const fpSummary = item.failurePoints.slice(0, 5).map(fp =>
+      `  - строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type} — \`${fp.snippet}\``
+    ).join('\n');
+    return `### \`${item.modulePath}\` (${item.roleHint}, ${item.riskTier})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
+  }).join('\n\n');
+
+  return [
+    `Добавь критичные логи в ${items.length} модулей.`,
+    ``,
+    `Для каждого модуля: найди точки отказа (указаны ниже) и добавь logger.warn/error с обязательными полями.`,
+    ``,
+    moduleBlocks,
+    ``,
+    `Требования к каждому логу:`,
+    `- event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    `- outcome: failure|partial`,
+    `- error_code из словаря (VALIDATION_ERROR, DEPENDENCY_TIMEOUT, INTERNAL_ERROR и т.д.)`,
+    `- Пустые catch: добавь logger.error, не оставляй пустыми`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
 function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCatalogItem[]): string {
   const affectedModules = catalog
     .filter(c => c.missingFields.includes(fieldName))
@@ -1664,7 +1737,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } else if (task === 'obs-add-critical-logs') {
         const obs = currentData.observability;
         if (!obs || !item.meta?.modulePath) { failBeforeStart('Нет данных observability или модуль не указан'); return; }
-        prompt = buildObsAddCriticalLogsPrompt(item.meta.modulePath, obs.catalog);
+        const v2Item = (obs.missingCriticalLogsV2 || []).find(
+          (m: MissingCriticalLogItem) => m.modulePath === item.meta!.modulePath
+        );
+        prompt = v2Item
+          ? buildObsAddCriticalLogsPromptV2(v2Item, obs.catalog)
+          : buildObsAddCriticalLogsPrompt(item.meta.modulePath, obs.catalog);
       } else if (task === 'obs-enrich-field') {
         const obs = currentData.observability;
         if (!obs || !item.meta?.fieldName) { failBeforeStart('Нет данных observability или поле не указано'); return; }
@@ -1681,11 +1759,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         prompt = buildObsFixModulePrompt(catalogItem.modulePath, catalogItem);
       } else if (task === 'obs-fix-selected') {
         const obs = currentData.observability;
+        const missingLogIndices: number[] = Array.isArray(item.meta?.missingLogIndices) ? item.meta.missingLogIndices : [];
         const indices: number[] = Array.isArray(item.meta?.catalogIndices) ? item.meta.catalogIndices : [];
-        if (!obs || indices.length === 0) { failBeforeStart('Нет данных observability или модули не выбраны'); return; }
-        const selectedItems = indices.map(i => obs.catalog[i]).filter(Boolean);
-        if (selectedItems.length === 0) { failBeforeStart('Выбранные модули не найдены в каталоге'); return; }
-        prompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
+
+        if (missingLogIndices.length > 0 && obs?.missingCriticalLogsV2) {
+          // V2 batch: add critical logs to selected modules with failure points
+          const selectedV2 = missingLogIndices
+            .map(i => obs.missingCriticalLogsV2[i])
+            .filter(Boolean);
+          if (selectedV2.length === 0) { failBeforeStart('Выбранные модули не найдены'); return; }
+          prompt = buildObsBatchAddCriticalLogsPrompt(selectedV2, obs.catalog);
+        } else if (indices.length > 0 && obs) {
+          // Existing catalog-based flow
+          const selectedItems = indices.map(i => obs.catalog[i]).filter(Boolean);
+          if (selectedItems.length === 0) { failBeforeStart('Выбранные модули не найдены в каталоге'); return; }
+          prompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
+        } else {
+          failBeforeStart('Нет данных observability или модули не выбраны'); return;
+        }
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }

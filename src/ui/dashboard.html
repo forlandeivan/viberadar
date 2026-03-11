@@ -688,6 +688,16 @@
     .obs-run-selected:disabled { opacity:0.4; cursor:not-allowed; }
     .obs-select-all { font-size:10px; color:var(--dim); cursor:pointer; background:none; border:none; }
     .obs-select-all:hover { color:var(--accent); }
+    .obs-tier-badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:700; letter-spacing:0.5px; }
+    .obs-tier-critical { background:rgba(248,81,73,0.2); color:var(--red); }
+    .obs-tier-important { background:rgba(227,179,65,0.2); color:var(--yellow); }
+    .obs-tier-normal { background:rgba(139,148,158,0.15); color:var(--muted); }
+    .obs-fp-list { font-size:11px; color:var(--muted); margin:4px 0 0 18px; }
+    .obs-fp-item { display:flex; gap:6px; padding:1px 0; align-items:baseline; }
+    .obs-fp-type { color:var(--yellow); font-weight:600; white-space:nowrap; font-size:10px; }
+    .obs-fp-line { color:var(--dim); font-size:10px; flex-shrink:0; }
+    .obs-tier-group { margin-bottom:8px; }
+    .obs-tier-group-header { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; font-weight:600; color:var(--text); }
     .file-row-err-badge {
       display: inline-flex; align-items: center;
       font-size: 11px; padding: 1px 6px; border-radius: 10px;
@@ -2146,6 +2156,18 @@ function obsRunSelected(groupId, task, baseMeta) {
   runAgentTask('obs-fix-selected', null, null, null, { ...baseMeta, catalogIndices: indices });
 }
 
+function obsMissingRunSelected(groupId) {
+  const container = document.getElementById('obs-detail-' + groupId);
+  if (!container) return;
+  const indices = [];
+  container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.missingIdx, 10);
+    if (!isNaN(idx)) indices.push(idx);
+  });
+  if (indices.length === 0) return;
+  runAgentTask('obs-fix-selected', null, null, null, { missingLogIndices: indices, recommendationType: 'add event' });
+}
+
 async function runTests(featureKey, testType) {
   document.getElementById('agentPanel').classList.add('open');
   document.getElementById('termBtn').classList.add('term-active');
@@ -2291,13 +2313,15 @@ function renderStats() {
     if (o) {
       const noiseRatio = Math.round(o.metrics.noise_ratio * 100);
       const structPct = Math.round(o.metrics.structured_completeness * 100);
-      const missingCoverage = o.missingCriticalLogs.length;
+      const v2 = o.missingCriticalLogsV2 || [];
+      const missingCoverage = v2.length || o.missingCriticalLogs.length;
+      const totalFPs = v2.reduce((s,m) => s + m.failurePoints.length, 0);
       const noisyCount = o.topNoisyPatterns.length;
       items = [
         { v: o.catalog.length, l: 'Источники логов' },
         { v: noiseRatio + '%', l: 'Коэффициент шума', c: noiseRatio > 30 ? '#f85149' : noiseRatio > 10 ? '#e3b341' : undefined },
         { v: structPct + '%', l: 'Структурированность', c: structPct < 50 ? '#f85149' : structPct < 80 ? '#e3b341' : undefined },
-        { v: missingCoverage, l: 'Нет покрытия', c: missingCoverage ? '#e3b341' : undefined },
+        { v: totalFPs || missingCoverage, l: totalFPs ? 'Точек отказа' : 'Нет покрытия', c: totalFPs > 10 ? '#f85149' : (totalFPs || missingCoverage) ? '#e3b341' : undefined },
         { v: noisyCount, l: 'Шумных паттернов', c: noisyCount ? '#e3b341' : undefined },
       ];
     } else {
@@ -2477,20 +2501,63 @@ function renderObservability(c) {
     </div>`;
   }).join('') || '<div class="obs-sub">Шумных паттернов не обнаружено</div>';
 
-  const missingRows = o.missingCriticalLogs.slice(0, 8).map(i => {
-    const modulePath = i.pattern.split(':')[0].trim();
-    const safePath = escapeHtml(modulePath).replace(/'/g, '&#39;');
-    const btn = hasAgent
-      ? `<button class="obs-action-btn" onclick="event.stopPropagation();runAgentTask('obs-add-critical-logs',null,null,null,{modulePath:'${safePath}'})">добавить</button>`
-      : '';
-    return `
-    <div class="obs-list-item">
-      <span class="obs-priority-${i.priority}" style="flex-shrink:0">[${i.priority}]</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.pattern)}">${escapeHtml(i.pattern)}</span>
-      <strong style="flex-shrink:0;color:var(--yellow)">${recLabels[i.recommendation] || i.recommendation}</strong>
-      ${btn}
-    </div>`;
-  }).join('') || '<div class="obs-sub" style="color:var(--green)">Критичные сценарии покрыты</div>';
+  // ── Missing critical logs (V2: grouped by risk tier with failure points) ──
+  const v2Data = o.missingCriticalLogsV2 || [];
+  window.__obsMissingV2 = v2Data;
+  const fpTypeLabels = {
+    'empty-catch':'пустой catch','catch-no-log':'catch без лога','promise-catch-no-log':'.catch без лога',
+    'http-no-error-handling':'HTTP без обработки','db-no-error-handling':'DB без обработки',
+    'throw-no-log':'throw без лога','error-check-no-log':'if(err) без лога',
+  };
+  let missingSection = '';
+  if (v2Data.length > 0) {
+    const tierLabels = { critical:'Критичные', important:'Важные', normal:'Обычные' };
+    const tiers = ['critical','important','normal'];
+    const tierSections = tiers.map(tier => {
+      const items = v2Data.filter(m => m.riskTier === tier);
+      if (!items.length) return '';
+      const groupId = 'missing-' + tier;
+      const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
+      const totalFPs = items.reduce((s,m) => s + m.failurePoints.length, 0);
+      const detailItems = items.map(m => {
+        const globalIdx = v2Data.indexOf(m);
+        const fpCount = m.failurePoints.length;
+        const fpPreview = m.failurePoints.slice(0,3).map(fp =>
+          `<div class="obs-fp-item"><span class="obs-fp-type">${fpTypeLabels[fp.type]||fp.type}</span><span class="obs-fp-line">~${fp.lineApprox}</span></div>`
+        ).join('');
+        const moreCount = fpCount > 3 ? `<div class="obs-fp-item" style="color:var(--dim)">...и ещё ${fpCount-3}</div>` : '';
+        const covBadge = m.hasAnyWarnError ? '<span style="font-size:10px;color:var(--dim)" title="Есть warn/error, но не все точки покрыты">частично</span>' : '';
+        return `<label class="obs-detail-item" style="flex-wrap:wrap">
+          <input type="checkbox" data-missing-idx="${globalIdx}" onchange="obsUpdateSelectedCount('${groupId}')">
+          <span title="${escapeHtml(m.modulePath)}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.modulePath.split('/').slice(-2).join('/'))}</span>
+          <span style="color:var(--dim);flex-shrink:0;font-size:10px">${escapeHtml(m.roleHint)}</span>
+          <span style="color:var(--yellow);flex-shrink:0">${fpCount} точек</span>
+          ${covBadge}
+          ${fpPreview || moreCount ? `<div class="obs-fp-list" style="width:100%">${fpPreview}${moreCount}</div>` : ''}
+        </label>`;
+      }).join('');
+      const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">добавить логи выбранным</button>` : '';
+      const detail = hasAgent ? `
+        <div id="obs-detail-${groupId}" class="obs-detail">
+          <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
+            <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
+          </div>
+          <div class="obs-detail-list">${detailItems}</div>
+          <div class="obs-detail-bar">${addBtn}</div>
+        </div>` : '';
+      return `<div class="obs-tier-group">
+        <div class="obs-tier-group-header">
+          <span class="obs-tier-badge obs-tier-${tier}">${tierLabels[tier]}</span>
+          <span>${items.length} модулей, ${totalFPs} точек отказа</span>
+          ${expandBtn}
+        </div>
+        ${detail}
+      </div>`;
+    }).join('');
+    missingSection = tierSections || '<div class="obs-sub" style="color:var(--green)">Критичные сценарии покрыты</div>';
+  } else {
+    missingSection = '<div class="obs-sub" style="color:var(--green)">Критичные сценарии покрыты</div>';
+  }
 
   const fieldGaps = o.fieldGaps || {};
   const fieldGapEntries = Object.entries(fieldGaps).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]);
@@ -2626,7 +2693,7 @@ function renderObservability(c) {
       </div>
       <div class="obs-card">
         <div class="obs-title">Что добавить — нет критичных логов</div>
-        <div class="obs-list" style="gap:4px">${missingRows}</div>
+        <div class="obs-list" style="gap:4px">${missingSection}</div>
       </div>
     </div>
 
@@ -2674,9 +2741,19 @@ function renderObservabilityOverview(c) {
     `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} · x${i.count} → <b>${i.recommendation}</b></div>`
   ).join('') || '<div class="obs-row">Нет шумных паттернов</div>';
 
-  const missing = (o.missingCriticalLogs || []).slice(0, 5).map(i =>
-    `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} → <b>${i.recommendation}</b></div>`
-  ).join('') || '<div class="obs-row">Критичные логи покрыты</div>';
+  const v2Missing = o.missingCriticalLogsV2 || [];
+  let missing;
+  if (v2Missing.length) {
+    const tierLabels = { critical: '🔴 крит', important: '🟡 важн', normal: '⚪ обычн' };
+    missing = v2Missing.slice(0, 8).map(m =>
+      `<div class="obs-row"><span class="obs-tier-badge obs-tier-${m.riskTier}">${tierLabels[m.riskTier]}</span> ${escapeHtml(m.modulePath)} · ${m.failurePoints.length} точек отказа</div>`
+    ).join('');
+    if (v2Missing.length > 8) missing += `<div class="obs-row" style="color:var(--dim)">...и ещё ${v2Missing.length - 8}</div>`;
+  } else {
+    missing = (o.missingCriticalLogs || []).slice(0, 5).map(i =>
+      `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} → <b>${i.recommendation}</b></div>`
+    ).join('') || '<div class="obs-row">Критичные логи покрыты</div>';
+  }
 
   const catalogRows = (o.catalog || []).slice(0, 10).map(i =>
     `<div class="obs-cat-row"><span>${escapeHtml(i.modulePath)}</span><span>${i.level}</span><span>${i.format}</span><span>${i.frequency}</span><span>${escapeHtml(i.owner)}</span><span>${i.recommendation}</span></div>`

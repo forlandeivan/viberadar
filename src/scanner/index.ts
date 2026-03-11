@@ -644,6 +644,7 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
 
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
+  const moduleFailureData = new Map<string, { content: string; failurePoints: FailurePoint[] }>();
 
   for (const module of sourceModules) {
     let content = '';
@@ -651,6 +652,12 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       content = fs.readFileSync(module.path, 'utf-8');
     } catch {
       continue;
+    }
+
+    // Detect failure points BEFORE skipping modules with no log calls
+    const failurePoints = detectFailurePoints(content);
+    if (failurePoints.length > 0) {
+      moduleFailureData.set(module.relativePath, { content, failurePoints });
     }
 
     const calls = parseLogCalls(content);
@@ -751,6 +758,45 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       recommendation: 'add event',
     }));
 
+  // ── Build missingCriticalLogsV2 with risk classification + failure points ──
+  const missingCriticalLogsV2: MissingCriticalLogItem[] = [];
+  for (const module of sourceModules) {
+    const fpData = moduleFailureData.get(module.relativePath);
+    const hasCoverage = criticalCoverage.has(module.relativePath);
+    const failurePoints = fpData?.failurePoints || [];
+
+    // Include if: no warn/error, OR has unlogged failure points
+    if (!hasCoverage || failurePoints.length > 0) {
+      let content = fpData?.content || '';
+      if (!content) {
+        try { content = fs.readFileSync(module.path, 'utf-8'); } catch { continue; }
+      }
+
+      const cls = classifyModuleRole(module.relativePath, content);
+
+      // Skip normal-tier with zero failure points that already have some coverage
+      if (cls.tier === 'normal' && failurePoints.length === 0 && hasCoverage) continue;
+
+      const coveragePenalty = hasCoverage ? -15 : 0;
+      const fpBoost = Math.min(failurePoints.length * 5, 25);
+      const riskScore = Math.max(0, Math.min(100, cls.baseScore + fpBoost + coveragePenalty));
+
+      missingCriticalLogsV2.push({
+        modulePath: module.relativePath,
+        riskTier: cls.tier,
+        riskScore,
+        failurePoints,
+        hasAnyWarnError: hasCoverage,
+        roleHint: cls.roleHint,
+      });
+    }
+  }
+  const tierOrder: Record<ModuleRiskTier, number> = { critical: 0, important: 1, normal: 2 };
+  missingCriticalLogsV2.sort((a, b) => {
+    if (a.riskTier !== b.riskTier) return tierOrder[a.riskTier] - tierOrder[b.riskTier];
+    return b.riskScore - a.riskScore;
+  });
+
   const totalSource = sourceModules.length || 1;
   const metrics: ObservabilityMetrics = {
     noise_ratio: totalLogs ? noiseLogs / totalLogs : 0,
@@ -769,7 +815,7 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     },
     topNoisyPatterns,
     missingCriticalLogs,
-    missingCriticalLogsV2: [],
+    missingCriticalLogsV2,
     fieldGaps: fieldGapCounts,
   };
 }
