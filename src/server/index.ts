@@ -4,7 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as readline from 'readline';
 import chokidar from 'chokidar';
-import { ScanResult, ModuleInfo, FeatureResult, scanProject } from '../scanner';
+import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint } from '../scanner';
 
 interface ServerOptions {
   data: ScanResult;
@@ -278,6 +278,7 @@ interface AgentQueueItem {
   savedTestType?: string;
   autoFixAttempt?: number;
   autoFixSourceTask?: string;
+  meta?: Record<string, any>;
 }
 
 type RunPhase = 'queued' | 'starting' | 'running' | 'validating' | 'completed' | 'failed' | 'canceled';
@@ -926,6 +927,353 @@ function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]
   ].join('\n');
 }
 
+// ─── Observability prompt builders ────────────────────────────────────────────
+
+const LOGGING_STANDARD_INLINE = [
+  `## Стандарт логирования (инлайн)`,
+  `Обязательные поля для каждого структурированного лога:`,
+  `- timestamp (ISO-8601) — обычно ставится логгером автоматически`,
+  `- service — имя сервиса (billing-api, auth и т.д.)`,
+  `- env — среда (local|dev|stage|prod), из NODE_ENV`,
+  `- level — DEBUG|INFO|WARN|ERROR`,
+  `- trace_id — ID распределённого трейса`,
+  `- request_id — сквозной request-id`,
+  `- user_id или user_hash — идентификатор пользователя`,
+  `- event_name — доменное имя события, формат: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+  `- outcome — success|failure|partial`,
+  `- error_code — код ошибки (для WARN/ERROR обязателен)`,
+  ``,
+  `Допустимые error_code: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, RESOURCE_NOT_FOUND, CONFLICT, RATE_LIMITED, DEPENDENCY_TIMEOUT, DEPENDENCY_UNAVAILABLE, DB_TIMEOUT, DB_CONSTRAINT_VIOLATION, INTERNAL_ERROR`,
+  ``,
+  `Правила лог-уровней:`,
+  `- DEBUG — только локальная диагностика, в prod выключен`,
+  `- INFO — значимые бизнес-события и lifecycle операции`,
+  `- WARN — деградация, ретраи, graceful fallback`,
+  `- ERROR — фактический сбой операции`,
+].join('\n');
+
+const SUPPRESS_GUARD = `
+⛔ СТРОГО ЗАПРЕЩЕНО (нарушение = потеря наблюдаемости в prod):
+- Трогать logger.warn / logger.error / logger.fatal — это сигналы деградации и сбоев, не шум
+- Понижать WARN → INFO, WARN → DEBUG, ERROR → WARN — это критическая потеря
+- Удалять или переименовывать ERROR/FATAL логи
+
+✅ Работать ТОЛЬКО с:
+- logger.info / logger.debug / logger.trace которые неструктурированы или lifecycle-мусор
+- Конкретные сообщения указаны в задаче ниже
+`.trim();
+
+function buildObsSuppressPatternPrompt(pattern: string, recommendation: string, catalog: ObservabilityCatalogItem[]): string {
+  const relatedModules = catalog
+    .filter(c => c.recommendation === 'suppress' || c.recommendation === 'downgrade level')
+    .map(c => {
+      const snippets = (c.noisyMessages || []).slice(0, 3).map(m => `    • "${m}"`).join('\n');
+      return `- ${c.modulePath} (format: ${c.format})\n${snippets}`;
+    })
+    .slice(0, 15);
+
+  return [
+    `Убери шумные лог-вызовы уровня INFO/DEBUG/TRACE.`,
+    ``,
+    SUPPRESS_GUARD,
+    ``,
+    `Конкретный паттерн для поиска: "${pattern}"`,
+    ``,
+    relatedModules.length > 0
+      ? `Модули где встречается шум (с примерами сообщений):\n${relatedModules.join('\n')}`
+      : '',
+    ``,
+    `Что сделать с каждым найденным вызовом logger.info/debug/trace, порождающим этот паттерн:`,
+    `- УДАЛИ полностью, если это lifecycle-мусор: "started", "done", "ok", "loaded", "ready", "ping"`,
+    `- СТРУКТУРИРУЙ в logger.debug({ service, event_name, outcome, ...данные }), если несёт диагностическую ценность`,
+    `- НЕ ТРОГАЙ, если это logger.warn / logger.error / logger.fatal — даже если сообщение похоже на шум`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsAddCriticalLogsPrompt(modulePath: string, catalog: ObservabilityCatalogItem[]): string {
+  const moduleItem = catalog.find(c => c.modulePath === modulePath);
+  const missingFields = moduleItem?.missingFields || [];
+
+  return [
+    `Добавь критичные логи (warn/error) в модуль \`${modulePath}\`.`,
+    ``,
+    `Сейчас в модуле нет warn/error событий. При сбоях мы не увидим ошибку в логах.`,
+    ``,
+    moduleItem
+      ? `Текущее состояние модуля:\n- Формат: ${moduleItem.format}\n- Уровень: ${moduleItem.level}\n- Пропущенные поля: ${missingFields.length > 0 ? missingFields.join(', ') : 'нет'}`
+      : '',
+    ``,
+    `Что сделать:`,
+    `- Найди в модуле точки, где может произойти ошибка (catch-блоки, проверки null/undefined, HTTP-ответы с ошибкой, DB-ошибки)`,
+    `- Добавь logger.warn или logger.error с обязательными полями по стандарту`,
+    `- Каждый лог должен включать: event_name, outcome, error_code (для error)`,
+    `- Именование event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    `- Используй error_code из утверждённого словаря (config/logging-error-codes.json)`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+const FP_TYPE_LABELS: Record<string, string> = {
+  'empty-catch':             'Пустой catch-блок — проглатывает ошибку',
+  'catch-no-log':            'catch без логирования ошибки',
+  'promise-catch-no-log':    '.catch() без логирования',
+  'http-no-error-handling':  'HTTP-вызов без обработки ошибок',
+  'db-no-error-handling':    'DB-операция без обработки ошибок',
+  'throw-no-log':            'throw без предшествующего logger.error',
+  'error-check-no-log':      'Проверка ошибки (if err) без логирования',
+};
+
+function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: ObservabilityCatalogItem[]): string {
+  const catalogEntry = catalog.find(c => c.modulePath === item.modulePath);
+
+  const fpDescriptions = item.failurePoints.map(fp =>
+    `- Строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type}\n  \`${fp.snippet}\``
+  ).join('\n');
+
+  return [
+    `Добавь критичные логи (warn/error) в модуль \`${item.modulePath}\`.`,
+    ``,
+    `Роль модуля: ${item.roleHint} (приоритет: ${item.riskTier})`,
+    item.hasAnyWarnError
+      ? `В модуле есть некоторые warn/error, но обнаружены незакрытые точки отказа.`
+      : `В модуле НЕТ ни одного warn/error. При сбоях мы не увидим ошибку в логах.`,
+    ``,
+    catalogEntry
+      ? `Текущее состояние:\n- Формат: ${catalogEntry.format}\n- Уровень: ${catalogEntry.level}\n- Пропущенные поля: ${(catalogEntry.missingFields || []).join(', ') || 'нет'}`
+      : '',
+    ``,
+    `Обнаруженные точки отказа без логирования (${item.failurePoints.length}):`,
+    fpDescriptions,
+    ``,
+    `Что сделать с каждой точкой:`,
+    `- Пустые catch-блоки: добавь logger.error с контекстом, event_name, error_code, outcome:failure`,
+    `- catch без лога: добавь logger.error/warn рядом с обработкой ошибки`,
+    `- .catch() без лога: добавь logger.error в обработчик промиса`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    `- throw без лога: добавь logger.error ДО throw`,
+    `- if(err) без лога: добавь logger.warn/error в ветку ошибки`,
+    ``,
+    `Каждый лог: event_name, outcome, error_code (для error).`,
+    `event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], catalog: ObservabilityCatalogItem[]): string {
+  const moduleBlocks = items.map(item => {
+    const fpSummary = item.failurePoints.slice(0, 5).map(fp =>
+      `  - строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type} — \`${fp.snippet}\``
+    ).join('\n');
+    return `### \`${item.modulePath}\` (${item.roleHint}, ${item.riskTier})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
+  }).join('\n\n');
+
+  return [
+    `Добавь критичные логи в ${items.length} модулей.`,
+    ``,
+    `Для каждого модуля: найди точки отказа (указаны ниже) и добавь logger.warn/error с обязательными полями.`,
+    ``,
+    moduleBlocks,
+    ``,
+    `Требования к каждому логу:`,
+    `- event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    `- outcome: failure|partial`,
+    `- error_code из словаря (VALIDATION_ERROR, DEPENDENCY_TIMEOUT, INTERNAL_ERROR и т.д.)`,
+    `- Пустые catch: добавь logger.error, не оставляй пустыми`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCatalogItem[]): string {
+  const affectedModules = catalog
+    .filter(c => c.missingFields.includes(fieldName))
+    .map(c => `- ${c.modulePath} (format: ${c.format}, missing: ${c.missingFields.join(', ')})`)
+    .slice(0, 30);
+
+  const fieldHints: Record<string, string> = {
+    service: 'Имя сервиса. Берётся из конфига или env-переменной, не хардкодится.',
+    env: 'Среда (local|dev|stage|prod). Берётся из NODE_ENV или конфига.',
+    trace_id: 'ID распределённого трейса. Передаётся через middleware из заголовка или генерируется.',
+    request_id: 'Сквозной ID запроса. Берётся из заголовка X-Request-Id или генерируется middleware.',
+    event_name: 'Доменное событие. Формат: <domain>.<entity>.<action> (lower_snake_case через точку).',
+    outcome: 'Результат операции: success|failure|partial.',
+    error_code: 'Код ошибки из словаря (config/logging-error-codes.json). Обязателен для WARN/ERROR.',
+    user_id: 'ID пользователя (user_id для внутренних, user_hash для внешних). Берётся из контекста auth.',
+  };
+
+  return [
+    `Добавь обязательное поле \`${fieldName}\` во все лог-вызовы, где оно отсутствует.`,
+    ``,
+    fieldHints[fieldName] ? `Описание поля: ${fieldHints[fieldName]}` : '',
+    ``,
+    affectedModules.length > 0
+      ? `Модули с пропущенным полем "${fieldName}" (${affectedModules.length}):\n${affectedModules.join('\n')}`
+      : '',
+    ``,
+    `Что сделать:`,
+    `- Открой каждый модуль из списка`,
+    `- Найди все вызовы логгера (logger.info, logger.warn, logger.error и т.д.)`,
+    `- Добавь поле "${fieldName}" в каждый вызов, где оно отсутствует`,
+    `- Значение поля должно быть взято из контекста (request, config, env) — не хардкодь`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsBatchRecommendationPrompt(recommendationType: string, catalog: ObservabilityCatalogItem[]): string {
+  const isSuppressTask = recommendationType === 'suppress';
+  const affected = catalog
+    .filter(c => c.recommendation === recommendationType)
+    .map(c => {
+      const base = `- ${c.modulePath} (format: ${c.format}, level: ${c.level}, missing: ${c.missingFields.join(', ') || 'none'})`;
+      if (isSuppressTask && c.noisyMessages && c.noisyMessages.length > 0) {
+        const snippets = c.noisyMessages.slice(0, 3).map(m => `    • "${m}"`).join('\n');
+        return `${base}\n${snippets}`;
+      }
+      return base;
+    })
+    .slice(0, 30);
+
+  const actionMap: Record<string, string> = {
+    'suppress': 'Удали или структурируй шумные INFO/DEBUG/TRACE логи (WARN/ERROR не трогать!)',
+    'downgrade level': 'Понизь уровень только INFO-логов без ценности → debug. WARN/ERROR не трогать.',
+    'enrich fields': 'Добавь недостающие обязательные поля в лог-вызовы каждого модуля',
+    'add event': 'Добавь warn/error события в модули, где их нет',
+  };
+
+  return [
+    `Batch-исправление: ${recommendationType} для ${affected.length} модулей.`,
+    ``,
+    isSuppressTask ? SUPPRESS_GUARD : '',
+    ``,
+    `Действие: ${actionMap[recommendationType] || recommendationType}`,
+    ``,
+    `Модули (с примерами шумных сообщений):\n${affected.join('\n')}`,
+    ``,
+    `Требования:`,
+    `- Обработай каждый модуль из списка`,
+    `- Для event_name используй формат <domain>.<entity>.<action>`,
+    `- Для error_code используй коды из словаря (config/logging-error-codes.json)`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsFixModulePrompt(modulePath: string, catalogItem: ObservabilityCatalogItem): string {
+  const isSuppressRec = catalogItem.recommendation === 'suppress';
+  const noisySnippets = (catalogItem.noisyMessages || []).slice(0, 6);
+
+  const recActions: Record<string, string> = {
+    'suppress': 'Удали или структурируй шумные INFO/DEBUG/TRACE логи (WARN/ERROR не трогать!)',
+    'downgrade level': 'Понизь уровень только INFO-логов без ценности → debug. WARN/ERROR не трогать.',
+    'enrich fields': 'Добавь недостающие обязательные поля',
+    'add event': 'Добавь warn/error события для обработки ошибок',
+  };
+
+  return [
+    `Исправь логирование в модуле \`${modulePath}\`.`,
+    ``,
+    `Текущее состояние:`,
+    `- Формат: ${catalogItem.format}`,
+    `- Уровень: ${catalogItem.level}`,
+    `- Пропущенные поля: ${catalogItem.missingFields.length > 0 ? catalogItem.missingFields.join(', ') : 'нет'}`,
+    `- Рекомендация: ${catalogItem.recommendation}`,
+    ``,
+    isSuppressRec ? SUPPRESS_GUARD : '',
+    ``,
+    `Что сделать:`,
+    `- ${recActions[catalogItem.recommendation] || catalogItem.recommendation}`,
+    isSuppressRec && noisySnippets.length > 0
+      ? `- Конкретные шумные сообщения для поиска:\n${noisySnippets.map(m => `    • "${m}"`).join('\n')}`
+      : '',
+    catalogItem.missingFields.length > 0
+      ? `- Добавь поля: ${catalogItem.missingFields.join(', ')}`
+      : '',
+    catalogItem.format !== 'structured'
+      ? `- Переведи неструктурированные вызовы (console.log/console.error) в структурированный JSON через logger`
+      : '',
+    `- Именование event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], meta: Record<string, any>): string {
+  const fieldName = meta.fieldName;
+  const recommendationType = meta.recommendationType;
+
+  const isSuppressTask = recommendationType === 'suppress' ||
+    selectedItems.every(ci => ci.recommendation === 'suppress');
+
+  const moduleList = selectedItems.map(ci => {
+    const mf = ci.missingFields.length > 0 ? ci.missingFields.join(', ') : 'нет';
+    const snippets = (ci.noisyMessages || []).slice(0, 4);
+    const snippetBlock = snippets.length > 0
+      ? `\n  Шумные сообщения для удаления/структуризации:\n${snippets.map(m => `    • "${m}"`).join('\n')}`
+      : '';
+    return `- \`${ci.modulePath}\` (format: ${ci.format}, level: ${ci.level}, missing: ${mf})${snippetBlock}`;
+  }).join('\n');
+
+  let actionBlock: string;
+  if (fieldName) {
+    const fieldHints: Record<string, string> = {
+      service: 'Имя сервиса. Берётся из конфига или env-переменной.',
+      env: 'Среда (local|dev|stage|prod). Берётся из NODE_ENV.',
+      trace_id: 'ID распределённого трейса. Из middleware или заголовка.',
+      request_id: 'Сквозной ID запроса. Из заголовка X-Request-Id или middleware.',
+      event_name: 'Доменное событие. Формат: <domain>.<entity>.<action>.',
+      outcome: 'Результат: success|failure|partial.',
+      error_code: 'Код ошибки из словаря. Обязателен для WARN/ERROR.',
+      user_id: 'ID пользователя (user_id или user_hash). Из контекста auth.',
+    };
+    actionBlock = [
+      `Задача: добавь поле \`${fieldName}\` во все лог-вызовы, где оно отсутствует.`,
+      fieldHints[fieldName] ? `Описание поля: ${fieldHints[fieldName]}` : '',
+      `Значение поля должно быть взято из контекста (request, config, env) — не хардкодь.`,
+    ].filter(Boolean).join('\n');
+  } else if (recommendationType === 'suppress') {
+    actionBlock = [
+      `Задача: убери шумные лог-вызовы уровня INFO/DEBUG/TRACE в каждом модуле.`,
+      ``,
+      SUPPRESS_GUARD,
+      ``,
+      `Для каждого шумного сообщения из списка ниже:`,
+      `- УДАЛИ, если это lifecycle-мусор ("started", "done", "ok", "loaded", "ready")`,
+      `- СТРУКТУРИРУЙ в logger.debug({ service, event_name, outcome, ...данные }), если несёт ценность`,
+    ].join('\n');
+  } else if (recommendationType) {
+    const actionMap: Record<string, string> = {
+      'downgrade level': 'Понизь уровень логирования (info→debug) только для INFO-логов без диагностической ценности. WARN/ERROR не трогать.',
+      'enrich fields': 'Добавь недостающие обязательные поля в лог-вызовы',
+      'add event': 'Добавь warn/error события для обработки ошибок',
+    };
+    actionBlock = `Задача: ${actionMap[recommendationType] || recommendationType} в каждом модуле из списка.`;
+  } else {
+    actionBlock = 'Исправь логирование в каждом модуле из списка согласно его рекомендации.';
+  }
+
+  return [
+    `Исправь логирование в ${selectedItems.length} модулях.`,
+    ``,
+    actionBlock,
+    ``,
+    `Модули:\n${moduleList}`,
+    ``,
+    `Требования:`,
+    `- Обработай каждый модуль из списка`,
+    `- Для event_name используй формат <domain>.<entity>.<action> (lower_snake_case через точку)`,
+    `- Для error_code используй коды из словаря (config/logging-error-codes.json)`,
+    `- Переведи console.* вызовы в структурированный logger`,
+    ``,
+    `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
 function buildE2ePlanPrompt(feat: FeatureResult, modules: ModuleInfo[]): string {
   const files = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
@@ -1394,6 +1742,53 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           return;
         }
         prompt = buildWriteE2eTestPrompt(feat, plan, currentData.modules);
+      } else if (task === 'obs-suppress-pattern') {
+        const obs = currentData.observability;
+        if (!obs || !item.meta?.pattern) { failBeforeStart('Нет данных observability или паттерн не указан'); return; }
+        prompt = buildObsSuppressPatternPrompt(item.meta.pattern, item.meta.recommendation || 'suppress', obs.catalog);
+      } else if (task === 'obs-add-critical-logs') {
+        const obs = currentData.observability;
+        if (!obs || !item.meta?.modulePath) { failBeforeStart('Нет данных observability или модуль не указан'); return; }
+        const v2Item = (obs.missingCriticalLogsV2 || []).find(
+          (m: MissingCriticalLogItem) => m.modulePath === item.meta!.modulePath
+        );
+        prompt = v2Item
+          ? buildObsAddCriticalLogsPromptV2(v2Item, obs.catalog)
+          : buildObsAddCriticalLogsPrompt(item.meta.modulePath, obs.catalog);
+      } else if (task === 'obs-enrich-field') {
+        const obs = currentData.observability;
+        if (!obs || !item.meta?.fieldName) { failBeforeStart('Нет данных observability или поле не указано'); return; }
+        prompt = buildObsEnrichFieldPrompt(item.meta.fieldName, obs.catalog);
+      } else if (task === 'obs-batch-recommendation') {
+        const obs = currentData.observability;
+        if (!obs || !item.meta?.recommendationType) { failBeforeStart('Нет данных observability или тип рекомендации не указан'); return; }
+        prompt = buildObsBatchRecommendationPrompt(item.meta.recommendationType, obs.catalog);
+      } else if (task === 'obs-fix-module') {
+        const obs = currentData.observability;
+        const idx = item.meta?.catalogIndex;
+        const catalogItem = typeof idx === 'number' ? obs?.catalog[idx] : null;
+        if (!obs || !catalogItem) { failBeforeStart('Нет данных observability или модуль не найден в каталоге'); return; }
+        prompt = buildObsFixModulePrompt(catalogItem.modulePath, catalogItem);
+      } else if (task === 'obs-fix-selected') {
+        const obs = currentData.observability;
+        const missingLogIndices: number[] = Array.isArray(item.meta?.missingLogIndices) ? item.meta.missingLogIndices : [];
+        const indices: number[] = Array.isArray(item.meta?.catalogIndices) ? item.meta.catalogIndices : [];
+
+        if (missingLogIndices.length > 0 && obs?.missingCriticalLogsV2) {
+          // V2 batch: add critical logs to selected modules with failure points
+          const selectedV2 = missingLogIndices
+            .map(i => obs.missingCriticalLogsV2[i])
+            .filter(Boolean);
+          if (selectedV2.length === 0) { failBeforeStart('Выбранные модули не найдены'); return; }
+          prompt = buildObsBatchAddCriticalLogsPrompt(selectedV2, obs.catalog);
+        } else if (indices.length > 0 && obs) {
+          // Existing catalog-based flow
+          const selectedItems = indices.map(i => obs.catalog[i]).filter(Boolean);
+          if (selectedItems.length === 0) { failBeforeStart('Выбранные модули не найдены в каталоге'); return; }
+          prompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
+        } else {
+          failBeforeStart('Нет данных observability или модули не выбраны'); return;
+        }
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }
@@ -1801,7 +2196,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     /** Validate task params and enqueue (prompt is built lazily at execution time) */
-    function runAgent(task: string, featureKey?: string, filePath?: string, selectedFilePaths?: string[]): string | null {
+    function runAgent(task: string, featureKey?: string, filePath?: string, selectedFilePaths?: string[], meta?: Record<string, any>): string | null {
       const agent = currentData.agent;
       if (!agent) {
         broadcast('agent-error', { message: 'Агент не выбран. Укажи agent в viberadar.config.json' });
@@ -1866,6 +2261,27 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
         title = `${agentLabel} — пишу E2E тесты для "${feat.label}"`;
+      } else if (task === 'obs-suppress-pattern') {
+        const pattern = meta?.pattern || 'unknown';
+        title = `${agentLabel} — убрать шумный паттерн "${String(pattern).slice(0, 40)}"`;
+      } else if (task === 'obs-add-critical-logs') {
+        const modulePath = meta?.modulePath || 'unknown';
+        title = `${agentLabel} — добавить критичные логи в "${modulePath}"`;
+      } else if (task === 'obs-enrich-field') {
+        const fieldName = meta?.fieldName || 'unknown';
+        title = `${agentLabel} — обогатить поле "${fieldName}"`;
+      } else if (task === 'obs-batch-recommendation') {
+        const recType = meta?.recommendationType || 'unknown';
+        title = `${agentLabel} — исправить все (${recType})`;
+      } else if (task === 'obs-fix-module') {
+        const idx = meta?.catalogIndex;
+        const catItem = typeof idx === 'number' ? currentData.observability?.catalog[idx] : null;
+        const modName = catItem?.modulePath || 'unknown';
+        title = `${agentLabel} — исправить логи в "${modName}"`;
+      } else if (task === 'obs-fix-selected') {
+        const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
+        const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
+        title = `${agentLabel} — ${label} (${count} модулей)`;
       } else {
         title = `${agentLabel} — разобрать unmapped`;
       }
@@ -1881,6 +2297,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         savedErrors,
         savedFailedFiles,
         savedTestType,
+        meta,
       };
       createRun(item, 'queued');
 
@@ -1968,6 +2385,44 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist, agentRuntime }));
+        return;
+      }
+
+      if (url === '/api/rescan' && req.method === 'POST') {
+        (async () => {
+          try {
+            currentData = await scanProject(projectRoot);
+            const testErrors: Record<string, { failed: number; errors: TestFileError[] }> = {};
+            for (const [fp, detail] of lastTestResults) {
+              const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
+              testErrors[rel] = detail;
+            }
+            const e2ePlansExist: Record<string, boolean> = {};
+            try {
+              const planDir = e2ePlanDir(projectRoot);
+              if (fs.existsSync(planDir)) {
+                for (const f of fs.readdirSync(planDir)) {
+                  if (f.endsWith('.json')) e2ePlansExist[f.replace('.json', '')] = true;
+                }
+              }
+            } catch {}
+            const agentRuntime = {
+              codexSandboxMode: runtimeEnv.codexSandboxMode,
+              approvalPolicy: runtimeEnv.approvalPolicy,
+              queueMax: runtimeEnv.agentQueueMax,
+              cooldownMinMs: runtimeEnv.agentCooldownMinMs,
+              cooldownMaxMs: runtimeEnv.agentCooldownMaxMs,
+              autoFixFailedTests: runtimeEnv.autoFixFailedTests,
+              autoFixMaxRetries: runtimeEnv.autoFixMaxRetries,
+            };
+            broadcast('data-updated');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist, agentRuntime }));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        })();
         return;
       }
 
@@ -2204,9 +2659,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         req.on('data', d => body += d);
         req.on('end', () => {
           try {
-            const { task, featureKey, filePath, selectedFilePaths } = JSON.parse(body);
-            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0}\n`);
-            const runId = runAgent(task, featureKey, filePath, selectedFilePaths);
+            const { task, featureKey, filePath, selectedFilePaths, meta } = JSON.parse(body);
+            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0} meta=${meta ? 'yes' : 'no'}\n`);
+            const runId = runAgent(task, featureKey, filePath, selectedFilePaths, meta);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, runId }));
           } catch (err: any) {
