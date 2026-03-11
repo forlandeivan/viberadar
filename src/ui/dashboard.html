@@ -670,8 +670,8 @@
     }
     .file-row-fix-btn:hover { opacity: 0.85; }
     .obs-action-btn {
-      display: inline-flex; align-items: center; gap: 3px;
-      padding: 2px 7px; font-size: 10px;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 6px 14px; font-size: 12px; min-height: 32px;
       background: transparent; border: 1px solid var(--border); border-radius: 4px;
       color: var(--dim); cursor: pointer; white-space: nowrap; flex-shrink: 0;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
@@ -679,30 +679,66 @@
     .obs-action-btn:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); }
     .obs-batch-btn { border-color: var(--yellow); color: var(--yellow); }
     .obs-batch-btn:hover { background: rgba(255,200,0,0.15); color: var(--yellow); border-color: var(--yellow); }
-    .obs-expand-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:10px; padding:2px 4px; }
+    .obs-expand-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; padding:5px 8px; }
     .obs-expand-btn:hover { color:var(--accent); }
     .obs-detail { display:none; padding:6px 0 2px 0; border-top:1px dashed var(--border); margin-top:4px; }
     .obs-detail.open { display:block; }
-    .obs-detail-list { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
-    .obs-detail-item { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); padding:2px 0; }
-    .obs-detail-item input[type="checkbox"] { margin:0; flex-shrink:0; accent-color:var(--accent); }
+    .obs-detail-list { max-height:400px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+    .obs-detail-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); padding:6px 4px; }
+    .obs-detail-item input[type="checkbox"] { margin:0; flex-shrink:0; accent-color:var(--accent); width:18px; height:18px; }
     .obs-detail-item span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .obs-detail-bar { display:flex; align-items:center; gap:8px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--border); }
-    .obs-run-selected { padding:3px 10px; font-size:11px; font-weight:600; background:var(--accent); color:var(--bg); border:none; border-radius:4px; cursor:pointer; }
+    .obs-run-selected { padding:8px 16px; font-size:13px; font-weight:600; background:var(--accent); color:var(--bg); border:none; border-radius:4px; cursor:pointer; min-height:36px; }
     .obs-run-selected:hover { opacity:0.85; }
     .obs-run-selected:disabled { opacity:0.4; cursor:not-allowed; }
-    .obs-select-all { font-size:10px; color:var(--dim); cursor:pointer; background:none; border:none; }
+    .obs-select-all { font-size:12px; color:var(--dim); cursor:pointer; background:none; border:none; padding:4px 8px; }
     .obs-select-all:hover { color:var(--accent); }
-    .obs-tier-badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:700; letter-spacing:0.5px; }
+    .obs-tier-badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
     .obs-tier-critical { background:rgba(248,81,73,0.2); color:var(--red); }
     .obs-tier-important { background:rgba(227,179,65,0.2); color:var(--yellow); }
     .obs-tier-normal { background:rgba(139,148,158,0.15); color:var(--muted); }
     .obs-fp-list { font-size:11px; color:var(--muted); margin:4px 0 0 18px; }
     .obs-fp-item { display:flex; gap:6px; padding:1px 0; align-items:baseline; }
-    .obs-fp-type { color:var(--yellow); font-weight:600; white-space:nowrap; font-size:10px; }
+    .obs-fp-type { color:var(--yellow); font-weight:600; white-space:nowrap; font-size:11px; }
     .obs-fp-line { color:var(--dim); font-size:10px; flex-shrink:0; }
     .obs-tier-group { margin-bottom:8px; }
     .obs-tier-group-header { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; font-weight:600; color:var(--text); }
+
+    /* ── Observability tabs UX ── */
+    .obs-kpi-strip {
+      position:sticky; top:0; z-index:5;
+      display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+      background:var(--bg); padding:10px 0 12px 0; border-bottom:1px solid var(--border); margin-bottom:0;
+    }
+    .obs-kpi {
+      display:flex; align-items:baseline; gap:8px; padding:6px 10px;
+      background:var(--bg-card); border:1px solid var(--border); border-radius:6px;
+    }
+    .obs-kpi-value { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
+    .obs-kpi-label { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .obs-tabs {
+      position:sticky; top:52px; z-index:4;
+      display:flex; background:var(--bg); border-radius:6px; padding:3px; gap:2px; margin:12px 0 16px 0;
+    }
+    .obs-tab {
+      flex:1; padding:8px 12px; text-align:center; font-size:12px; font-weight:600;
+      border-radius:4px; cursor:pointer; color:var(--muted); user-select:none;
+      transition:background 0.15s, color 0.15s; white-space:nowrap;
+    }
+    .obs-tab:hover { color:var(--text); background:var(--bg-hover); }
+    .obs-tab.active { background:var(--bg-card); color:var(--text); }
+    .obs-tab-badge {
+      display:inline-flex; align-items:center; justify-content:center;
+      min-width:18px; height:18px; padding:0 5px; border-radius:9px;
+      font-size:10px; font-weight:700; margin-left:6px; vertical-align:middle;
+    }
+    .obs-tab-badge.red { background:rgba(248,81,73,0.2); color:var(--red); }
+    .obs-tab-badge.yellow { background:rgba(227,179,65,0.2); color:var(--yellow); }
+    .obs-tab-badge.muted { background:rgba(139,148,158,0.15); color:var(--muted); }
+    .obs-tab-content { display:none; }
+    .obs-tab-content.active { display:block; }
+    @media (max-width:640px) { .obs-kpi-strip { grid-template-columns:repeat(2,1fr); } }
+
     .file-row-err-badge {
       display: inline-flex; align-items: center;
       font-size: 11px; padding: 1px 6px; border-radius: 10px;
@@ -1182,6 +1218,17 @@ let fileRowsRenderKey = '';
 let fileRowsRenderLimit = FILE_ROWS_INITIAL_LIMIT;
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
+let obsActiveTab    = 'overview'; // active observability tab
+
+function switchObsTab(tabId) {
+  obsActiveTab = tabId;
+  history.replaceState(null, '', location.pathname + location.search + '#obs-tab=' + tabId);
+  document.querySelectorAll('.obs-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.obstab === tabId));
+  document.querySelectorAll('.obs-tab-content').forEach(p => {
+    p.classList.toggle('active', p.dataset.obstab === tabId);
+  });
+}
 const modeStore = {
   qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
   observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
@@ -2280,6 +2327,8 @@ async function init() {
 
     contextMode = getModeFromPath();
     view = D.hasConfig ? 'features' : 'files';
+    const _obsHash = window.location.hash;
+    if (_obsHash.startsWith('#obs-tab=')) obsActiveTab = _obsHash.replace('#obs-tab=', '');
     applyHashRoute();
 
     if (!D.hasConfig) {
@@ -2493,7 +2542,7 @@ function renderObservability(c) {
   // Store catalog for buttons to reference by index (avoids inline JSON in onclick)
   window.__obsCatalog = o.catalog;
 
-  const noisyRows = o.topNoisyPatterns.slice(0, 8).map(i => {
+  const noisyRows = o.topNoisyPatterns.map(i => {
     const safePattern = escapeHtml(i.pattern).replace(/'/g, '&#39;');
     const btn = hasAgent
       ? `<button class="obs-action-btn" onclick="event.stopPropagation();runAgentTask('obs-suppress-pattern',null,null,null,{pattern:'${safePattern}',recommendation:'${i.recommendation}'})">убрать</button>`
@@ -2595,7 +2644,7 @@ function renderObservability(c) {
     </div>`;
   }).join('') || '<div class="obs-sub" style="color:var(--green)">Все обязательные поля на месте</div>';
 
-  const catalogRows = o.catalog.slice(0, 15).map((i, idx) => {
+  const catalogRows = o.catalog.map((i, idx) => {
     const missing = (i.missingFields || []);
     const missingStr = missing.length ? missing.join(', ') : '—';
     const btn = hasAgent
@@ -2612,110 +2661,134 @@ function renderObservability(c) {
       ${btn}
     </div>`}).join('');
 
+  const noisyCount = o.topNoisyPatterns.length;
+  const missingCount = v2Data.length;
+  const enrichCount = fieldGapEntries.length;
+  const catalogCount = o.catalog.length;
+
   c.innerHTML = `
     <div class="onboarding-block">
       <h3>Наблюдаемость: что это?</h3>
       <p>Аудит покрытия логами: что добавить, что убрать, что обогатить — на основе статического анализа лог-вызовов.</p>
     </div>
 
-    <div class="obs-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px">
-      <div class="obs-card">
-        <div class="obs-title">Коэффициент шума</div>
-        <div class="obs-value" style="color:${metricColor(noiseRatio,10,30,true)}">${noiseRatio}%</div>
-        <div class="obs-sub">Доля шумных лог-вызовов из всех.</div>
+    <div class="obs-kpi-strip">
+      <div class="obs-kpi">
+        <span class="obs-kpi-value" style="color:${metricColor(noiseRatio,10,30,true)}">${noiseRatio}%</span>
+        <span class="obs-kpi-label">Шум</span>
       </div>
-      <div class="obs-card">
-        <div class="obs-title">Структурированность</div>
-        <div class="obs-value" style="color:${metricColor(structPct,80,50,false)}">${structPct}%</div>
-        <div class="obs-sub">Логи с обязательными полями (module, event, traceId).</div>
+      <div class="obs-kpi">
+        <span class="obs-kpi-value" style="color:${metricColor(structPct,80,50,false)}">${structPct}%</span>
+        <span class="obs-kpi-label">Структурированность</span>
       </div>
-      <div class="obs-card">
-        <div class="obs-title">Actionable ошибки</div>
-        <div class="obs-value" style="color:${metricColor(actionPct,80,50,false)}">${actionPct}%</div>
-        <div class="obs-sub">ERROR-логи с контекстом для диагностики.</div>
+      <div class="obs-kpi">
+        <span class="obs-kpi-value" style="color:${metricColor(actionPct,80,50,false)}">${actionPct}%</span>
+        <span class="obs-kpi-label">Actionable ошибки</span>
       </div>
-      <div class="obs-card">
-        <div class="obs-title">Покрытие сценариев</div>
-        <div class="obs-value" style="color:${metricColor(coveragePct,80,50,false)}">${coveragePct}%</div>
-        <div class="obs-sub">Модули с хотя бы одним warn/error событием.</div>
+      <div class="obs-kpi">
+        <span class="obs-kpi-value" style="color:${metricColor(coveragePct,80,50,false)}">${coveragePct}%</span>
+        <span class="obs-kpi-label">Покрытие сценариев</span>
       </div>
     </div>
 
-    <div class="obs-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px">
-      <div class="obs-card">
-        <div class="obs-title">Источники по формату</div>
-        <div class="obs-list">
-          ${sourceByFormat.map(g => `
-            <div class="obs-list-item">
-              <span style="color:${g.color}">${g.label}</span>
-              <strong>${g.count}</strong>
-            </div>`).join('') || '<div class="obs-sub">Нет данных</div>'}
+    <div class="obs-tabs">
+      <div class="obs-tab" data-obstab="overview">Обзор</div>
+      <div class="obs-tab" data-obstab="remove">Убрать${noisyCount ? `<span class="obs-tab-badge red">${noisyCount}</span>` : ''}</div>
+      <div class="obs-tab" data-obstab="add">Добавить${missingCount ? `<span class="obs-tab-badge yellow">${missingCount}</span>` : ''}</div>
+      <div class="obs-tab" data-obstab="enrich">Обогатить${enrichCount ? `<span class="obs-tab-badge yellow">${enrichCount}</span>` : ''}</div>
+      <div class="obs-tab" data-obstab="catalog">Каталог${catalogCount ? `<span class="obs-tab-badge muted">${catalogCount}</span>` : ''}</div>
+    </div>
+
+    <div class="obs-tab-content" data-obstab="overview">
+      <div class="obs-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px">
+        <div class="obs-card">
+          <div class="obs-title">Источники по формату</div>
+          <div class="obs-list">
+            ${sourceByFormat.map(g => `
+              <div class="obs-list-item">
+                <span style="color:${g.color}">${g.label}</span>
+                <strong>${g.count}</strong>
+              </div>`).join('') || '<div class="obs-sub">Нет данных</div>'}
+          </div>
         </div>
-      </div>
-      <div class="obs-card">
-        <div class="obs-title">Классификация логов</div>
-        <div class="obs-list">
-          <div class="obs-list-item"><span style="color:var(--red)">Мусор (убрать)</span><strong>${o.classification.trash}</strong></div>
-          <div class="obs-list-item"><span style="color:var(--green)">Полезные</span><strong>${o.classification.useful}</strong></div>
-          <div class="obs-list-item"><span style="color:var(--blue)">Критичные</span><strong>${o.classification.critical}</strong></div>
+        <div class="obs-card">
+          <div class="obs-title">Классификация логов</div>
+          <div class="obs-list">
+            <div class="obs-list-item"><span style="color:var(--red)">Мусор (убрать)</span><strong>${o.classification.trash}</strong></div>
+            <div class="obs-list-item"><span style="color:var(--green)">Полезные</span><strong>${o.classification.useful}</strong></div>
+            <div class="obs-list-item"><span style="color:var(--blue)">Критичные</span><strong>${o.classification.critical}</strong></div>
+          </div>
         </div>
-      </div>
-      <div class="obs-card">
-        <div class="obs-title">Рекомендации</div>
-        <div class="obs-list" style="gap:2px">
-          ${['suppress','enrich fields','add event','downgrade level'].map(rec => {
-            const items = o.catalog.filter(c => c.recommendation === rec);
-            if (!items.length) return '';
-            const groupId = 'rec-' + rec.replace(/\s+/g, '-');
-            const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
-            const detailItems = items.map((ci, i) => {
-              const catIdx = o.catalog.indexOf(ci);
-              const mf = (ci.missingFields||[]).join(', ') || '—';
-              return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
-            }).join('');
-            const detail = hasAgent ? `
-              <div id="obs-detail-${groupId}" class="obs-detail">
-                <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
-                  <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
-                </div>
-                <div class="obs-detail-list">${detailItems}</div>
-                <div class="obs-detail-bar">
-                  <button class="obs-run-selected" disabled onclick="obsRunSelected('${groupId}','obs-fix-selected',{recommendationType:'${rec}'})">исправить выбранные</button>
-                </div>
-              </div>` : '';
-            return `<div>
-              <div class="obs-list-item"><span>${recLabels[rec]}</span><strong>${items.length}</strong>${expandBtn}</div>
-              ${detail}
-            </div>`;
-          }).join('')}
+        <div class="obs-card">
+          <div class="obs-title">Рекомендации</div>
+          <div class="obs-list" style="gap:2px">
+            ${['suppress','enrich fields','add event','downgrade level'].map(rec => {
+              const items = o.catalog.filter(c => c.recommendation === rec);
+              if (!items.length) return '';
+              const groupId = 'rec-' + rec.replace(/\s+/g, '-');
+              const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
+              const detailItems = items.map((ci, i) => {
+                const catIdx = o.catalog.indexOf(ci);
+                const mf = (ci.missingFields||[]).join(', ') || '—';
+                return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
+              }).join('');
+              const detail = hasAgent ? `
+                <div id="obs-detail-${groupId}" class="obs-detail">
+                  <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
+                    <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
+                  </div>
+                  <div class="obs-detail-list">${detailItems}</div>
+                  <div class="obs-detail-bar">
+                    <button class="obs-run-selected" disabled onclick="obsRunSelected('${groupId}','obs-fix-selected',{recommendationType:'${rec}'})">исправить выбранные</button>
+                  </div>
+                </div>` : '';
+              return `<div>
+                <div class="obs-list-item"><span>${recLabels[rec]}</span><strong>${items.length}</strong>${expandBtn}</div>
+                ${detail}
+              </div>`;
+            }).join('')}
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="obs-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+    <div class="obs-tab-content" data-obstab="remove">
       <div class="obs-card">
-        <div class="obs-title">Что убрать — шумные паттерны</div>
+        <div class="obs-title">Шумные паттерны</div>
         <div class="obs-list" style="gap:4px">${noisyRows}</div>
       </div>
+    </div>
+
+    <div class="obs-tab-content" data-obstab="add">
       <div class="obs-card">
-        <div class="obs-title">Что добавить — нет критичных логов</div>
+        <div class="obs-title">Нет критичных логов</div>
         <div class="obs-list" style="gap:4px">${missingSection}</div>
       </div>
     </div>
 
-    <div class="obs-card" style="margin-bottom:12px">
-      <div class="obs-title">Что обогатить — пробелы по полям</div>
-      <div class="obs-sub" style="margin-bottom:8px">Обязательные поля по стандарту: service, env, trace_id, request_id, event_name, outcome, error_code (warn/error), user_id.</div>
-      <div class="obs-list">${fieldGapRows}</div>
+    <div class="obs-tab-content" data-obstab="enrich">
+      <div class="obs-card">
+        <div class="obs-title">Пробелы по полям</div>
+        <div class="obs-sub" style="margin-bottom:8px">Обязательные поля по стандарту: service, env, trace_id, request_id, event_name, outcome, error_code (warn/error), user_id.</div>
+        <div class="obs-list">${fieldGapRows}</div>
+      </div>
     </div>
 
-    <div class="obs-card" style="margin-bottom:12px">
-      <div class="obs-title">Каталог источников логов (топ 15)</div>
-      <div class="obs-catalog" style="margin-top:8px;border:none;padding:0">
-        <div class="obs-cat-row head"><span>модуль</span><span>уровень</span><span>формат</span><span>пробелы</span><span>не хватает</span><span>действие</span><span></span></div>
-        ${catalogRows || '<div class="obs-row">Логи не найдены</div>'}
+    <div class="obs-tab-content" data-obstab="catalog">
+      <div class="obs-card">
+        <div class="obs-title">Каталог источников логов</div>
+        <div class="obs-catalog" style="margin-top:8px;border:none;padding:0">
+          <div class="obs-cat-row head"><span>модуль</span><span>уровень</span><span>формат</span><span>пробелы</span><span>не хватает</span><span>действие</span><span></span></div>
+          ${catalogRows || '<div class="obs-row">Логи не найдены</div>'}
+        </div>
       </div>
     </div>`;
+
+  // Attach tab click handlers and restore active tab
+  c.querySelectorAll('.obs-tab').forEach(tab => {
+    tab.onclick = () => switchObsTab(tab.dataset.obstab);
+  });
+  switchObsTab(obsActiveTab);
 }
 
 function backToFeatureDetail() {
