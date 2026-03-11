@@ -79,6 +79,8 @@ export interface ObservabilityCatalogItem {
   frequency: 'low' | 'medium' | 'high';
   owner: string;
   recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
+  missingFields: string[];
+  noisyMessages: string[]; // конкретные шумные сниппеты из этого модуля
 }
 
 export interface ObservabilityMetrics {
@@ -101,12 +103,33 @@ export interface ObservabilityInsightItem {
   recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
 }
 
+export type ModuleRiskTier = 'critical' | 'important' | 'normal';
+
+export interface FailurePoint {
+  type: 'empty-catch' | 'catch-no-log' | 'promise-catch-no-log'
+      | 'http-no-error-handling' | 'db-no-error-handling'
+      | 'throw-no-log' | 'error-check-no-log';
+  lineApprox: number;
+  snippet: string;
+}
+
+export interface MissingCriticalLogItem {
+  modulePath: string;
+  riskTier: ModuleRiskTier;
+  riskScore: number;
+  failurePoints: FailurePoint[];
+  hasAnyWarnError: boolean;
+  roleHint: string;
+}
+
 export interface ObservabilityReport {
   catalog: ObservabilityCatalogItem[];
   metrics: ObservabilityMetrics;
   classification: ObservabilityRuleSummary;
   topNoisyPatterns: ObservabilityInsightItem[];
   missingCriticalLogs: ObservabilityInsightItem[];
+  missingCriticalLogsV2: MissingCriticalLogItem[];
+  fieldGaps: Record<string, number>;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -399,6 +422,177 @@ function detectLogOwner(relativePath: string): string {
   return seg.replace(/\.[^.]+$/, '');
 }
 
+// ─── Module risk classification ──────────────────────────────────────────────
+
+const PATH_ROLE_RULES: Array<{ re: RegExp; tier: ModuleRiskTier; role: string; score: number }> = [
+  // Critical — must have error handling
+  { re: /\/routes?\//i,         tier: 'critical',  role: 'route handler',   score: 90 },
+  { re: /\/controllers?\//i,   tier: 'critical',  role: 'controller',      score: 90 },
+  { re: /\/api\//i,            tier: 'critical',  role: 'API endpoint',    score: 85 },
+  { re: /\/middleware/i,       tier: 'critical',  role: 'middleware',       score: 85 },
+  { re: /\/auth/i,             tier: 'critical',  role: 'auth module',     score: 95 },
+  { re: /\/payment/i,          tier: 'critical',  role: 'payment module',  score: 95 },
+  { re: /\/webhook/i,          tier: 'critical',  role: 'webhook handler', score: 90 },
+  { re: /\/handler/i,          tier: 'critical',  role: 'handler',         score: 85 },
+  { re: /server\/[^/]+\.ts$/i, tier: 'critical',  role: 'server module',   score: 80 },
+  // Important — should have error handling
+  { re: /\/services?\//i,      tier: 'important', role: 'service',         score: 70 },
+  { re: /\/repository/i,      tier: 'important', role: 'data layer',      score: 70 },
+  { re: /\/db\b/i,            tier: 'important', role: 'database layer',  score: 75 },
+  { re: /\/storage/i,         tier: 'important', role: 'storage layer',   score: 70 },
+  { re: /\/queue/i,           tier: 'important', role: 'queue handler',   score: 70 },
+  { re: /\/worker/i,          tier: 'important', role: 'worker',          score: 70 },
+  { re: /\/cron/i,            tier: 'important', role: 'cron job',        score: 65 },
+  { re: /\/jobs?\//i,         tier: 'important', role: 'background job',  score: 65 },
+  { re: /\/integration/i,     tier: 'important', role: 'integration',     score: 65 },
+  { re: /\/client/i,          tier: 'important', role: 'external client', score: 65 },
+  { re: /\/lib\//i,           tier: 'important', role: 'library module',  score: 55 },
+];
+
+const CONTENT_RISK_PATTERNS: Array<{ re: RegExp; boost: number }> = [
+  { re: /\bfetch\s*\(/,                       boost: 15 },
+  { re: /\baxios[\s.]/,                       boost: 15 },
+  { re: /\bgot[\s.(]/,                        boost: 12 },
+  { re: /\bprisma[\s.]/i,                     boost: 15 },
+  { re: /\bmongoose[\s.]/i,                   boost: 15 },
+  { re: /\bsequelize[\s.]/i,                  boost: 15 },
+  { re: /\btypeorm[\s.]/i,                    boost: 15 },
+  { re: /\bknex[\s.(]/i,                      boost: 15 },
+  { re: /\bdrizzle/i,                         boost: 15 },
+  { re: /\.query\s*\(\s*['"`](?:SELECT|INSERT|UPDATE|DELETE)/i, boost: 15 },
+  { re: /\btry\s*\{/,                         boost: 5 },
+  { re: /\.catch\s*\(/,                       boost: 8 },
+  { re: /\bthrow\s+new\s+/,                   boost: 5 },
+  { re: /\bfs\.\w+Sync\b/,                    boost: 8 },
+  { re: /\bchild_process\b/,                  boost: 10 },
+  { re: /\b(exec|spawn)\s*\(/,                boost: 10 },
+  { re: /\bredis\b/i,                         boost: 12 },
+  { re: /\b(amqp|rabbitmq)\b/i,               boost: 12 },
+  { re: /\bstripe\b/i,                        boost: 20 },
+  { re: /\bnodemailer\b|\bsendgrid\b/i,       boost: 10 },
+];
+
+function classifyModuleRole(relativePath: string, content: string): { tier: ModuleRiskTier; roleHint: string; baseScore: number } {
+  const normPath = relativePath.replace(/\\/g, '/').toLowerCase();
+
+  let tier: ModuleRiskTier = 'normal';
+  let roleHint = 'utility';
+  let baseScore = 20;
+
+  for (const rule of PATH_ROLE_RULES) {
+    if (rule.re.test(normPath)) {
+      tier = rule.tier;
+      roleHint = rule.role;
+      baseScore = rule.score;
+      break;
+    }
+  }
+
+  let contentBoost = 0;
+  for (const pat of CONTENT_RISK_PATTERNS) {
+    if (pat.re.test(content)) contentBoost += pat.boost;
+  }
+  contentBoost = Math.min(contentBoost, 40);
+
+  if (tier === 'normal' && contentBoost >= 25) {
+    tier = 'important';
+    roleHint = 'module with external calls';
+  }
+
+  return { tier, roleHint, baseScore: Math.min(100, baseScore + contentBoost) };
+}
+
+// ─── Failure point detection ─────────────────────────────────────────────────
+
+function detectFailurePoints(content: string): FailurePoint[] {
+  const points: FailurePoint[] = [];
+  const lines = content.split('\n');
+
+  function hasLogInRange(start: number, end: number): boolean {
+    for (let i = start; i < Math.min(end, lines.length); i++) {
+      if (/(?:console|logger|log)\.(warn|error|fatal)\s*\(/.test(lines[i])) return true;
+    }
+    return false;
+  }
+
+  function snip(lineIdx: number): string {
+    const raw = (lines[lineIdx] || '').trim();
+    return raw.length > 80 ? raw.slice(0, 77) + '...' : raw;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    // 1. Empty catch blocks
+    if (/\bcatch\s*(\([^)]*\))?\s*\{\s*\}/.test(trimmed)) {
+      points.push({ type: 'empty-catch', lineApprox: i + 1, snippet: snip(i) });
+      continue; // don't also fire catch-no-log for same line
+    }
+
+    // 2. catch without logging
+    if (/\bcatch\s*\(/.test(trimmed)) {
+      if (!hasLogInRange(i, Math.min(i + 15, lines.length))) {
+        points.push({ type: 'catch-no-log', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+
+    // 3. .catch() without logging
+    if (/\.catch\s*\(/.test(trimmed) && !/(?:console|logger|log)\.\w+\s*\(/.test(trimmed)) {
+      if (!hasLogInRange(i, Math.min(i + 10, lines.length))) {
+        points.push({ type: 'promise-catch-no-log', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+
+    // 4. fetch/axios without nearby try/catch
+    if (/\b(fetch|axios)\s*[.(]/.test(trimmed) || /\baxios\.\w+\s*\(/.test(trimmed)) {
+      let hasTryCatch = false;
+      for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
+        if (/\btry\s*\{/.test(lines[j]) || /\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+      }
+      if (!hasTryCatch) {
+        points.push({ type: 'http-no-error-handling', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+
+    // 5. DB operations without nearby try/catch
+    if (/\b(prisma|mongoose|sequelize|typeorm|knex|drizzle)\b.*\.\w+\s*\(/i.test(trimmed) ||
+        /\.query\s*\(\s*['"`](?:SELECT|INSERT|UPDATE|DELETE)/i.test(trimmed)) {
+      let hasTryCatch = false;
+      for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
+        if (/\btry\s*\{/.test(lines[j]) || /\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+      }
+      if (!hasTryCatch) {
+        points.push({ type: 'db-no-error-handling', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+
+    // 6. throw without preceding logger.error
+    if (/\bthrow\s+new\s+\w*Error/.test(trimmed)) {
+      if (!hasLogInRange(Math.max(0, i - 3), i + 1)) {
+        points.push({ type: 'throw-no-log', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+
+    // 7. if (err) / if (error) without logging
+    if (/\bif\s*\(\s*!?(err|error|e)\b/.test(trimmed) && !/\.test\s*\(/.test(trimmed)) {
+      if (!hasLogInRange(i, Math.min(i + 8, lines.length))) {
+        points.push({ type: 'error-check-no-log', lineApprox: i + 1, snippet: snip(i) });
+      }
+    }
+  }
+
+  // Dedup by line: prefer empty-catch over catch-no-log
+  const seen = new Map<number, FailurePoint>();
+  for (const fp of points) {
+    const existing = seen.get(fp.lineApprox);
+    if (!existing || fp.type === 'empty-catch') {
+      seen.set(fp.lineApprox, fp);
+    }
+  }
+
+  return Array.from(seen.values()).sort((a, b) => a.lineApprox - b.lineApprox).slice(0, 10);
+}
+
 function parseLogCalls(content: string): ParsedLogCall[] {
   const calls: ParsedLogCall[] = [];
   const re = new RegExp(LOG_CALL_RE);
@@ -434,6 +628,20 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
   let requiredFieldsChecks = 0;
   let requiredFieldsHits = 0;
 
+  // 8 required fields from logging-standard.md (timestamp/level/span_id set by logger framework)
+  const REQUIRED_FIELDS: { name: string; re: RegExp; warnErrorOnly?: boolean }[] = [
+    { name: 'service',    re: /\b(service|serviceName|service_name)\b/i },
+    { name: 'env',        re: /\b(env|environment|NODE_ENV)\b/i },
+    { name: 'trace_id',   re: /\b(trace_?[Ii]d|traceId|traceid)\b/i },
+    { name: 'request_id', re: /\b(request_?[Ii]d|requestId|req_?[Ii]d|correlationId|correlation_id)\b/i },
+    { name: 'event_name', re: /\b(event_?[Nn]ame|eventName|event_type|eventType)\b/i },
+    { name: 'outcome',    re: /\b(outcome|result|status)\b/i },
+    { name: 'error_code', re: /\b(error_?[Cc]ode|errorCode|err_?code)\b/i, warnErrorOnly: true },
+    { name: 'user_id',    re: /\b(user_?[Ii]d|userId|user_?[Hh]ash|userHash)\b/i },
+  ];
+  const fieldGapCounts: Record<string, number> = {};
+  for (const f of REQUIRED_FIELDS) fieldGapCounts[f.name] = 0;
+
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
 
@@ -455,16 +663,26 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       c.message.length < 12
     );
 
+    const moduleMissingFields = new Set<string>();
+
     for (const c of calls) {
       totalLogs += 1;
       if (c.level === 'error') {
         totalErrors += 1;
         if (c.actionableError) actionableErrors += 1;
       }
-      requiredFieldsChecks += 3;
-      if (/(module|feature|service)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
-      if (/(event|type|action)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
-      if (/(requestId|traceId|correlationId|id)/i.test(c.argsSnippet)) requiredFieldsHits += 1;
+
+      const isWarnError = c.level === 'warn' || c.level === 'error' || c.level === 'fatal';
+      const applicableFields = REQUIRED_FIELDS.filter(f => !f.warnErrorOnly || isWarnError);
+      requiredFieldsChecks += applicableFields.length;
+      for (const field of applicableFields) {
+        if (field.re.test(c.argsSnippet)) {
+          requiredFieldsHits += 1;
+        } else {
+          fieldGapCounts[field.name] += 1;
+          moduleMissingFields.add(field.name);
+        }
+      }
     }
 
     noiseLogs += noisyCandidates.length;
@@ -478,7 +696,15 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     let recommendation: ObservabilityCatalogItem['recommendation'] = 'enrich fields';
     if (noisyCandidates.length >= Math.max(2, Math.ceil(calls.length * 0.6))) recommendation = 'suppress';
     else if (format !== 'structured') recommendation = 'enrich fields';
+    else if (moduleMissingFields.size > 0) recommendation = 'enrich fields';
     else if (level === 'debug' || level === 'trace') recommendation = 'downgrade level';
+
+    // Сохраняем конкретные шумные сниппеты (только INFO/DEBUG/TRACE) для точных промптов агенту
+    const noisyMessages = noisyCandidates
+      .map(c => (c.message || c.argsSnippet || '').trim())
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i) // unique
+      .slice(0, 6);
 
     catalog.push({
       modulePath: module.relativePath,
@@ -487,6 +713,8 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       frequency: bucketFrequency(calls.length),
       owner: detectLogOwner(module.relativePath),
       recommendation,
+      missingFields: Array.from(moduleMissingFields).sort(),
+      noisyMessages,
     });
 
     for (const noisy of noisyCandidates) {
@@ -541,6 +769,8 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     },
     topNoisyPatterns,
     missingCriticalLogs,
+    missingCriticalLogsV2: [],
+    fieldGaps: fieldGapCounts,
   };
 }
 
