@@ -595,14 +595,28 @@ function detectFailurePoints(content: string): FailurePoint[] {
 
 function parseLogCalls(content: string): ParsedLogCall[] {
   const calls: ParsedLogCall[] = [];
+  const lines = content.split('\n');
   const re = new RegExp(LOG_CALL_RE);
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
     const level = (m[1] || '').toLowerCase();
-    const argsSnippet = (m[2] || '').trim();
+    let argsSnippet = (m[2] || '').trim();
+
+    // Multi-line call: argsSnippet captured only "{" (object starts but doesn't close on same line).
+    // Scan up to 10 subsequent lines to find the closing }, "message string" pattern.
+    // e.g. logger.debug({ key: val }, "[MODULE] Human readable message")
+    if (/^\{[^}]*$/.test(argsSnippet)) {
+      const callLine = content.slice(0, m.index).split('\n').length; // 1-based line index
+      const lookahead = lines.slice(callLine, callLine + 10).join(' ');
+      const afterClose = lookahead.match(/\}\s*,\s*['"`]([^'"`]{3,200})['"`]/);
+      if (afterClose) {
+        argsSnippet = argsSnippet + ` ... "${afterClose[1]}"`;
+      }
+    }
+
     const msgMatch = argsSnippet.match(/['"`]([^'"`]{3,200})['"`]/);
     const message = (msgMatch?.[1] || '').trim();
-    const structured = /\{[^}]*\}/.test(argsSnippet);
+    const structured = /^\{/.test((m[2] || '').trim()) || /\{[^}]*\}/.test(argsSnippet);
     const actionableError =
       level === 'error' &&
       (/(id|status|code|path|url|feature|module|retry|hint|action)/i.test(argsSnippet) || structured);
@@ -706,10 +720,18 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     else if (moduleMissingFields.size > 0) recommendation = 'enrich fields';
     else if (level === 'debug' || level === 'trace') recommendation = 'downgrade level';
 
-    // Сохраняем конкретные шумные сниппеты (только INFO/DEBUG/TRACE) для точных промптов агенту
+    // Сохраняем конкретные шумные сниппеты (только INFO/DEBUG/TRACE) для точных промптов агенту.
+    // Предпочитаем человекочитаемое сообщение (c.message); fallback на argsSnippet,
+    // но отфильтровываем мусор типа "{" который появляется при многострочных вызовах.
     const noisyMessages = noisyCandidates
-      .map(c => (c.message || c.argsSnippet || '').trim())
-      .filter(Boolean)
+      .map(c => {
+        if (c.message && c.message.length >= 5) return c.message;
+        const s = c.argsSnippet.trim();
+        // Skip obvious code fragments that aren't human-readable messages
+        if (s.length < 5 || /^\{[\s,]*$/.test(s) || /^\{[\s\n]*$/.test(s)) return '';
+        return s.slice(0, 80);
+      })
+      .filter(s => s.length >= 5)
       .filter((v, i, arr) => arr.indexOf(v) === i) // unique
       .slice(0, 6);
 

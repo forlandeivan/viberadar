@@ -50,6 +50,11 @@
     #rescanBtn:hover { opacity: 1; }
     #rescanBtn.spinning { animation: rescan-spin 0.8s linear infinite; opacity: 1; }
     @keyframes rescan-spin { to { transform: rotate(360deg); } }
+    #rescanStatus { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; transition: all 0.4s; white-space: nowrap; }
+    #rescanStatus.status-idle { color: var(--dim); border-color: transparent; }
+    #rescanStatus.status-scanning { color: var(--yellow); border-color: rgba(227,179,65,0.3); }
+    #rescanStatus.status-done { color: var(--green); border-color: rgba(63,185,80,0.35); background: rgba(63,185,80,0.07); }
+    #rescanStatus.status-error { color: var(--red); border-color: rgba(248,81,73,0.3); }
     .header-agent-rights {
       font-size: 11px;
       color: var(--muted);
@@ -1071,6 +1076,7 @@
   <span class="header-time" id="scannedAt"></span>
   <span class="header-agent-rights" id="headerAgentRights" title="Права/режим выполнения агента">🔐 —</span>
   <button id="rescanBtn" onclick="rescan()" title="Пересканировать проект и обновить данные">🔄</button>
+  <span id="rescanStatus" class="status-idle"></span>
   <button id="runAllBtn" onclick="runAllTests()" title="Запустить все unit и integration тесты">▶ Все тесты</button>
   <button id="termBtn" onclick="toggleAgentPanel()" title="Показать/скрыть терминал агента">📟 Terminal</button>
   <div style="position:relative">
@@ -2231,24 +2237,33 @@ function pluralFiles(n) {
 // ─── Rescan ───────────────────────────────────────────────────────────────────
 async function rescan() {
   const btn = document.getElementById('rescanBtn');
+  const statusEl = document.getElementById('rescanStatus');
   if (!btn || btn.classList.contains('spinning')) return;
+
   btn.classList.add('spinning');
-  btn.title = 'Сканирование…';
+  if (statusEl) { statusEl.className = 'status-scanning'; statusEl.textContent = 'Сканирую…'; }
+
   try {
     const res = await fetch('/api/rescan', { method: 'POST' });
     if (!res.ok) throw new Error('rescan failed');
     D = await res.json();
-    document.getElementById('scannedAt').textContent =
-      new Date(D.scannedAt).toLocaleTimeString();
+    const t = new Date(D.scannedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('scannedAt').textContent = t;
     window.__obsCatalog = D.observability?.catalog || [];
     renderStats();
     renderSidebar();
     renderContent();
+    if (statusEl) {
+      statusEl.className = 'status-done';
+      statusEl.textContent = '✓ актуально · ' + t;
+      // Через 8 секунд приглушаем, но оставляем видимым
+      setTimeout(() => { if (statusEl) { statusEl.className = 'status-idle'; statusEl.textContent = '✓ ' + t; } }, 8000);
+    }
   } catch (e) {
     console.error('Rescan error:', e);
+    if (statusEl) { statusEl.className = 'status-error'; statusEl.textContent = '⚠ ошибка сканирования'; }
   } finally {
     btn.classList.remove('spinning');
-    btn.title = 'Пересканировать проект и обновить данные';
   }
 }
 
