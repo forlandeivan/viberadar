@@ -180,6 +180,18 @@ function buildAgentShellCmd(agent: string, taskFile: string, codexSandboxMode: C
   return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
 }
 
+function buildAgentSpawnEnv(agent: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (agent === 'codex') {
+    // Prevent nested Codex launches from inheriting Desktop thread context
+    // that can inject incompatible settings (e.g. model_reasoning_effort).
+    delete env.CODEX_THREAD_ID;
+    delete env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
+    delete env.CODEX_SHELL;
+  }
+  return env;
+}
+
 /** Parse a Claude Code stream-json event into a human-readable line, or null to skip */
 function parseClaudeEvent(raw: string): string | null {
   let event: any;
@@ -1414,6 +1426,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         cwd: projectRoot,
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: buildAgentSpawnEnv(agent),
       });
       activeAgentProcess = proc;
       emitOutput(`🚀 Запускаю: ${agent === 'claude' ? 'Claude Code' : 'Codex'}`);
