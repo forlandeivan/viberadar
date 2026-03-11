@@ -739,6 +739,54 @@
     .obs-tab-content.active { display:block; }
     @media (max-width:640px) { .obs-kpi-strip { grid-template-columns:repeat(2,1fr); } }
 
+    /* ── Tab hint panels ── */
+    .obs-hint {
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .obs-hint-toggle {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 10px 14px;
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 12px; font-weight: 600;
+      text-align: left; transition: background 0.1s, color 0.1s;
+    }
+    .obs-hint-toggle:hover { background: var(--bg-card); color: var(--text); }
+    .obs-hint-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 1.5px solid currentColor; font-size: 11px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .obs-hint-chevron { margin-left: auto; font-size: 10px; transition: transform 0.2s; }
+    .obs-hint.open .obs-hint-chevron { transform: rotate(180deg); }
+    .obs-hint-body {
+      display: none;
+      padding: 0 16px 16px 16px;
+      background: var(--bg-card);
+      font-size: 12px; color: var(--muted); line-height: 1.6;
+    }
+    .obs-hint.open .obs-hint-body { display: block; }
+    .obs-hint-section { margin-top: 12px; }
+    .obs-hint-section-title { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .obs-hint-code {
+      font-family: monospace; font-size: 11px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px 10px; margin: 4px 0;
+      line-height: 1.5; overflow-x: auto; white-space: pre;
+    }
+    .obs-hint-code .hl-red { color: var(--red); }
+    .obs-hint-code .hl-green { color: var(--green); }
+    .obs-hint-code .hl-yellow { color: var(--yellow); }
+    .obs-hint-code .hl-dim { color: var(--dim); }
+    .obs-hint-row { display: flex; gap: 12px; }
+    .obs-hint-row > * { flex: 1; min-width: 0; }
+    .obs-hint-label { font-size: 10px; font-weight: 700; margin-bottom: 3px; }
+    .obs-hint-label.before { color: var(--red); }
+    .obs-hint-label.after { color: var(--green); }
+
     .file-row-err-badge {
       display: inline-flex; align-items: center;
       font-size: 11px; padding: 1px 6px; border-radius: 10px;
@@ -1219,6 +1267,10 @@ let fileRowsRenderLimit = FILE_ROWS_INITIAL_LIMIT;
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 let obsActiveTab    = 'overview'; // active observability tab
+
+function toggleObsHint(id) {
+  document.getElementById(id).classList.toggle('open');
+}
 
 function switchObsTab(tabId) {
   obsActiveTab = tabId;
@@ -2700,6 +2752,35 @@ function renderObservability(c) {
     </div>
 
     <div class="obs-tab-content" data-obstab="overview">
+      <div class="obs-hint" id="obs-hint-overview">
+        <button class="obs-hint-toggle" onclick="toggleObsHint('obs-hint-overview')">
+          <span class="obs-hint-icon">?</span>
+          Что такое «Обзор» и как читать эти числа?
+          <span class="obs-hint-chevron">▼</span>
+        </button>
+        <div class="obs-hint-body">
+          <p>Обзор — это «пульс» логирования в проекте. Четыре метрики наверху показывают, насколько логи полезны прямо сейчас.</p>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Что означает каждая метрика</div>
+            <div class="obs-hint-code"><span class="hl-red">Шум 40%</span>        — почти половина логов бесполезны. Они засоряют Kibana/Datadog
+                             и скрывают реальные ошибки.
+
+<span class="hl-yellow">Структурированность 20%</span> — большинство логов — просто строки вроде
+                             <span class="hl-dim">"Starting process..."</span>. Их нельзя фильтровать, группировать,
+                             строить алерты. Цель — 80%+.
+
+<span class="hl-yellow">Actionable ошибки 50%</span>  — половина ошибок логируется без контекста.
+                             Инженер видит <span class="hl-dim">"Error occurred"</span> — и ничего больше.
+
+<span class="hl-red">Покрытие сценариев 24%</span> — 76% модулей вообще не имеют warn/error логов.
+                             Когда они сломаются — узнаешь только от пользователей.</div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Блок «Рекомендации»</div>
+            <p>Итоговый план действий по всему проекту: сколько источников нужно <span style="color:var(--red)">убрать</span>, <span style="color:var(--yellow)">обогатить</span>, <span style="color:var(--yellow)">добавить</span>. Каждая строчка раскрывается — можно выбрать файлы и отдать агенту.</p>
+          </div>
+        </div>
+      </div>
       <div class="obs-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px">
         <div class="obs-card">
           <div class="obs-title">Источники по формату</div>
@@ -2753,6 +2834,42 @@ function renderObservability(c) {
     </div>
 
     <div class="obs-tab-content" data-obstab="remove">
+      <div class="obs-hint" id="obs-hint-remove">
+        <button class="obs-hint-toggle" onclick="toggleObsHint('obs-hint-remove')">
+          <span class="obs-hint-icon">?</span>
+          Зачем убирать эти логи? Разве лишний лог — не лучше, чем ничего?
+          <span class="obs-hint-chevron">▼</span>
+        </button>
+        <div class="obs-hint-body">
+          <p>Шумные логи — это строки, которые пишутся при каждом запросе или в цикле и не несут полезной информации. Они создают три реальные проблемы:</p>
+          <ul style="margin:8px 0 0 16px;display:flex;flex-direction:column;gap:4px">
+            <li><strong style="color:var(--red)">Топят сигнал.</strong> Когда в Kibana 10 000 строк в минуту, реальная ошибка теряется на странице 47.</li>
+            <li><strong style="color:var(--yellow)">Стоят деньги.</strong> Datadog, New Relic, Elastic — тарификация по объёму. Шум = деньги на ветер.</li>
+            <li><strong style="color:var(--muted)">Замедляют дебаг.</strong> Инженер тратит 20 минут, чтобы понять, что «[unknown]» — это просто фоновый краулер.</li>
+          </ul>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">До / После</div>
+            <div class="obs-hint-row">
+              <div>
+                <div class="obs-hint-label before">БЫЛО — шум</div>
+                <div class="obs-hint-code"><span class="hl-red">logger.info('[unknown]')              // ×116/день</span>
+<span class="hl-red">logger.info('Converting WebM to OGG...')// ×200/день</span>
+<span class="hl-red">logger.info('Using API key from env')   // каждый запрос</span></div>
+              </div>
+              <div>
+                <div class="obs-hint-label after">СТАЛО — чисто</div>
+                <div class="obs-hint-code"><span class="hl-green">// строки удалены или понижены до debug</span>
+<span class="hl-dim">// В production debug-логи выключены</span>
+<span class="hl-green">// В мониторинге только важные события</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Как использовать</div>
+            <p>Нажми <strong>«убрать»</strong> рядом с паттерном — агент найдёт все места в коде и либо удалит строку, либо заменит <code>logger.info</code> на <code>logger.debug</code>. Можно обработать несколько паттернов сразу.</p>
+          </div>
+        </div>
+      </div>
       <div class="obs-card">
         <div class="obs-title">Шумные паттерны</div>
         <div class="obs-list" style="gap:4px">${noisyRows}</div>
@@ -2760,6 +2877,57 @@ function renderObservability(c) {
     </div>
 
     <div class="obs-tab-content" data-obstab="add">
+      <div class="obs-hint" id="obs-hint-add">
+        <button class="obs-hint-toggle" onclick="toggleObsHint('obs-hint-add')">
+          <span class="obs-hint-icon">?</span>
+          Почему важно добавлять логи именно в эти места?
+          <span class="obs-hint-chevron">▼</span>
+        </button>
+        <div class="obs-hint-body">
+          <p>Сканер нашёл «точки отказа» — конструкции в коде, где что-то может пойти не так, но лог туда не написан. Если здесь случится ошибка в production — ты узнаешь об этом только от пользователя.</p>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Типы точек отказа</div>
+            <div class="obs-hint-code"><span class="hl-red">empty-catch</span>          — catch(){} без лога. Ошибка молча проглочена.
+<span class="hl-red">catch-no-log</span>         — catch(e){ doSomething() } — ошибка обработана, но не залогирована.
+<span class="hl-yellow">http-no-error-handling</span> — HTTP-запрос без обработки ошибки (нет .catch или try/catch).
+<span class="hl-yellow">db-no-error-handling</span>   — запрос к БД без обработки ошибки.
+<span class="hl-yellow">throw-no-log</span>           — throw new Error(...) без предварительного лога.
+<span class="hl-dim">error-check-no-log</span>     — if (err) { return } без лога.</div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">До / После</div>
+            <div class="obs-hint-row">
+              <div>
+                <div class="obs-hint-label before">БЫЛО — немая ошибка</div>
+                <div class="obs-hint-code"><span class="hl-dim">async function processPayment(data) {</span>
+  <span class="hl-dim">try {</span>
+    <span class="hl-dim">await stripe.charge(data);</span>
+  <span class="hl-red">} catch (e) {</span>
+    <span class="hl-red">  // пусто! ошибка проглочена</span>
+  <span class="hl-red">}</span>
+<span class="hl-dim">}</span></div>
+              </div>
+              <div>
+                <div class="obs-hint-label after">СТАЛО — видимая ошибка</div>
+                <div class="obs-hint-code"><span class="hl-dim">async function processPayment(data) {</span>
+  <span class="hl-dim">try {</span>
+    <span class="hl-dim">await stripe.charge(data);</span>
+  <span class="hl-green">} catch (e) {</span>
+    <span class="hl-green">  logger.error('payment_failed', {</span>
+    <span class="hl-green">    error: e.message, userId: data.userId</span>
+    <span class="hl-green">  });</span>
+    <span class="hl-green">  throw e;</span>
+  <span class="hl-green">}</span>
+<span class="hl-dim">}</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Как использовать</div>
+            <p>Модули разбиты по уровню риска: <span style="color:var(--red)">Критичные</span> — трогать в первую очередь (платежи, авторизация, запись данных). Раскрой группу, выбери модули и нажми <strong>«добавить логи выбранным»</strong>.</p>
+          </div>
+        </div>
+      </div>
       <div class="obs-card">
         <div class="obs-title">Нет критичных логов</div>
         <div class="obs-list" style="gap:4px">${missingSection}</div>
@@ -2767,6 +2935,54 @@ function renderObservability(c) {
     </div>
 
     <div class="obs-tab-content" data-obstab="enrich">
+      <div class="obs-hint" id="obs-hint-enrich">
+        <button class="obs-hint-toggle" onclick="toggleObsHint('obs-hint-enrich')">
+          <span class="obs-hint-icon">?</span>
+          Какая разница, есть ли поля в логе? Главное, что сообщение есть.
+          <span class="obs-hint-chevron">▼</span>
+        </button>
+        <div class="obs-hint-body">
+          <p>Лог без полей — это как сигнал пожарной тревоги без адреса. Ты знаешь, что что-то горит, но не знаешь где и что именно. Структурированные поля превращают лог из строки в <em>данные</em>.</p>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">До / После</div>
+            <div class="obs-hint-row">
+              <div>
+                <div class="obs-hint-label before">БЫЛО — бесполезный лог</div>
+                <div class="obs-hint-code"><span class="hl-red">logger.error('Request failed')</span>
+<span class="hl-dim">// В Kibana: "Request failed"</span>
+<span class="hl-dim">// Что за запрос? Чей? Когда?</span>
+<span class="hl-dim">// Какая ошибка? Какой эндпоинт?</span>
+<span class="hl-dim">// → звонишь разработчику в 2 ночи</span></div>
+              </div>
+              <div>
+                <div class="obs-hint-label after">СТАЛО — actionable лог</div>
+                <div class="obs-hint-code"><span class="hl-green">logger.error('request_failed', {</span>
+  <span class="hl-green">event: 'request_failed',</span>
+  <span class="hl-green">service: 'payment-api',</span>
+  <span class="hl-green">trace_id: req.traceId,</span>
+  <span class="hl-green">user_id: req.userId,</span>
+  <span class="hl-green">error_code: e.code,</span>
+  <span class="hl-green">outcome: 'failure'</span>
+<span class="hl-green">})</span>
+<span class="hl-dim">// → фильтр по user_id, алерт по error_code</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Обязательные поля и зачем они нужны</div>
+            <div class="obs-hint-code"><span class="hl-green">service</span>    — какой сервис логирует (нужен для фильтрации в мульти-сервисе)
+<span class="hl-green">event_name</span> — машиночитаемое название события (для алертов и дашбордов)
+<span class="hl-green">trace_id</span>   — сквозной ID запроса (связывает логи из разных сервисов)
+<span class="hl-green">outcome</span>    — success/failure (позволяет строить SLO-метрики)
+<span class="hl-yellow">user_id</span>    — чей запрос (обязателен для error/warn)
+<span class="hl-yellow">error_code</span> — код ошибки (обязателен для error/warn)</div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Как использовать</div>
+            <p>Каждая строчка — пропущенное поле и сколько раз оно отсутствует. Раскрой строку, выбери затронутые модули и нажми <strong>«обогатить выбранные»</strong> — агент добавит поля в существующие лог-вызовы.</p>
+          </div>
+        </div>
+      </div>
       <div class="obs-card">
         <div class="obs-title">Пробелы по полям</div>
         <div class="obs-sub" style="margin-bottom:8px">Обязательные поля по стандарту: service, env, trace_id, request_id, event_name, outcome, error_code (warn/error), user_id.</div>
@@ -2775,6 +2991,34 @@ function renderObservability(c) {
     </div>
 
     <div class="obs-tab-content" data-obstab="catalog">
+      <div class="obs-hint" id="obs-hint-catalog">
+        <button class="obs-hint-toggle" onclick="toggleObsHint('obs-hint-catalog')">
+          <span class="obs-hint-icon">?</span>
+          Как читать таблицу и что означают колонки?
+          <span class="obs-hint-chevron">▼</span>
+        </button>
+        <div class="obs-hint-body">
+          <p>Каталог — полная карта всех источников логов в проекте. Каждая строка = один файл/модуль. Это отправная точка для ручного аудита или приоритизации задач агента.</p>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Что означают колонки</div>
+            <div class="obs-hint-code"><span class="hl-green">формат</span>   <span class="hl-green">structured</span>   — логи в JSON с полями. Можно фильтровать, алертить.
+          <span class="hl-yellow">mixed</span>        — часть логов структурированы, часть — нет.
+          <span class="hl-red">unstructured</span> — просто строки. Ни алертов, ни поиска по полям.
+
+<span class="hl-yellow">пробелы</span>  <span class="hl-dim">N/8</span>          — сколько из 8 обязательных полей отсутствуют.
+                       <span class="hl-green">0/8</span> — отлично. <span class="hl-red">5/8</span> — нужно работать.
+
+<span class="hl-dim">действие</span> suppress       — модуль генерирует шум, логи нужно убрать/понизить.
+         enrich fields  — логи есть, но без нужных полей.
+         add event      — нет вообще никаких логов в критичных местах.
+         downgrade level— используется INFO там, где достаточно DEBUG.</div>
+          </div>
+          <div class="obs-hint-section">
+            <div class="obs-hint-section-title">Как использовать</div>
+            <p>Нажми <strong>«исправить»</strong> в строке конкретного модуля — агент откроет файл, посмотрит контекст и применит рекомендованное действие. Удобно для точечных правок без выбора целой группы.</p>
+          </div>
+        </div>
+      </div>
       <div class="obs-card">
         <div class="obs-title">Каталог источников логов</div>
         <div class="obs-catalog" style="margin-top:8px;border:none;padding:0">
