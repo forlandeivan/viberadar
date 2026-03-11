@@ -2389,38 +2389,17 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       if (url === '/api/rescan' && req.method === 'POST') {
+        // Return immediately so the UI doesn't hang on large projects
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'scanning' }));
+        // Scan in background, then broadcast data-updated via SSE
         (async () => {
           try {
             currentData = await scanProject(projectRoot);
-            const testErrors: Record<string, { failed: number; errors: TestFileError[] }> = {};
-            for (const [fp, detail] of lastTestResults) {
-              const rel = path.relative(projectRoot, fp).replace(/\\/g, '/');
-              testErrors[rel] = detail;
-            }
-            const e2ePlansExist: Record<string, boolean> = {};
-            try {
-              const planDir = e2ePlanDir(projectRoot);
-              if (fs.existsSync(planDir)) {
-                for (const f of fs.readdirSync(planDir)) {
-                  if (f.endsWith('.json')) e2ePlansExist[f.replace('.json', '')] = true;
-                }
-              }
-            } catch {}
-            const agentRuntime = {
-              codexSandboxMode: runtimeEnv.codexSandboxMode,
-              approvalPolicy: runtimeEnv.approvalPolicy,
-              queueMax: runtimeEnv.agentQueueMax,
-              cooldownMinMs: runtimeEnv.agentCooldownMinMs,
-              cooldownMaxMs: runtimeEnv.agentCooldownMaxMs,
-              autoFixFailedTests: runtimeEnv.autoFixFailedTests,
-              autoFixMaxRetries: runtimeEnv.autoFixMaxRetries,
-            };
             broadcast('data-updated');
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist, agentRuntime }));
           } catch (err: any) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
+            console.error('Rescan error:', err.message);
+            broadcast('rescan-error', { error: err.message });
           }
         })();
         return;

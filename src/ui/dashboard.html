@@ -1249,6 +1249,7 @@ let runAllRunning = false;
 let refreshDataInFlight = false;
 let refreshDataQueued = false;
 let refreshDataTimer = null;
+let rescanPending = false;
 
 function escapeHtml(text) {
   return String(text || '')
@@ -2241,29 +2242,19 @@ async function rescan() {
   if (!btn || btn.classList.contains('spinning')) return;
 
   btn.classList.add('spinning');
+  rescanPending = true;
   if (statusEl) { statusEl.className = 'status-scanning'; statusEl.textContent = 'Сканирую…'; }
 
   try {
+    // Server returns 202 immediately, scans in background.
+    // When done it broadcasts 'data-updated' via SSE → refreshData() fires and clears the spinner.
     const res = await fetch('/api/rescan', { method: 'POST' });
-    if (!res.ok) throw new Error('rescan failed');
-    D = await res.json();
-    const t = new Date(D.scannedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('scannedAt').textContent = t;
-    window.__obsCatalog = D.observability?.catalog || [];
-    renderStats();
-    renderSidebar();
-    renderContent();
-    if (statusEl) {
-      statusEl.className = 'status-done';
-      statusEl.textContent = '✓ актуально · ' + t;
-      // Через 8 секунд приглушаем, но оставляем видимым
-      setTimeout(() => { if (statusEl) { statusEl.className = 'status-idle'; statusEl.textContent = '✓ ' + t; } }, 8000);
-    }
+    if (!res.ok) throw new Error('rescan ' + res.status);
   } catch (e) {
     console.error('Rescan error:', e);
-    if (statusEl) { statusEl.className = 'status-error'; statusEl.textContent = '⚠ ошибка сканирования'; }
-  } finally {
+    rescanPending = false;
     btn.classList.remove('spinning');
+    if (statusEl) { statusEl.className = 'status-error'; statusEl.textContent = '⚠ ошибка сканирования'; }
   }
 }
 
@@ -3937,6 +3928,20 @@ async function refreshData() {
     setLiveDot('#3fb950', 'Live — обновлено только что');
     setTimeout(() => setLiveDot('#3fb950', 'Live — автообновление включено'), 1500);
     void loadAgentState();
+
+    // If a manual rescan was in progress, show completion in the status pill
+    if (rescanPending) {
+      rescanPending = false;
+      const btn = document.getElementById('rescanBtn');
+      const statusEl = document.getElementById('rescanStatus');
+      if (btn) btn.classList.remove('spinning');
+      if (statusEl) {
+        const t = new Date(D.scannedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        statusEl.className = 'status-done';
+        statusEl.textContent = '✓ актуально · ' + t;
+        setTimeout(() => { if (statusEl) { statusEl.className = 'status-idle'; statusEl.textContent = '✓ ' + t; } }, 8000);
+      }
+    }
   } catch (err) {
     console.error('Refresh failed:', err);
   } finally {
@@ -3959,6 +3964,16 @@ function connectSSE() {
   es.addEventListener('data-updated', () => {
     setLiveDot('#e3b341', 'Обновляю данные…');
     scheduleRefreshData();
+  });
+
+  es.addEventListener('rescan-error', () => {
+    if (rescanPending) {
+      rescanPending = false;
+      const btn = document.getElementById('rescanBtn');
+      const statusEl = document.getElementById('rescanStatus');
+      if (btn) btn.classList.remove('spinning');
+      if (statusEl) { statusEl.className = 'status-error'; statusEl.textContent = '⚠ ошибка сканирования'; }
+    }
   });
 
   es.addEventListener('agent-queue-updated', (e) => {
