@@ -787,6 +787,34 @@
     .obs-hint-label.before { color: var(--red); }
     .obs-hint-label.after { color: var(--green); }
 
+    /* ── Progress & baseline delta badges ── */
+    .obs-kpi-delta {
+      display: block; font-size: 11px; font-weight: 700; margin-top: 2px; letter-spacing: 0.01em;
+    }
+    .obs-baseline-strip {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 4px 12px; background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.07); border-radius: 6px;
+      font-size: 11px; color: var(--dim); margin-bottom: 6px;
+    }
+    .obs-baseline-strip button {
+      background: none; border: none; color: var(--accent); cursor: pointer;
+      font-size: 11px; padding: 0 2px; text-decoration: underline; text-underline-offset: 2px;
+    }
+    .obs-progress-banner {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 8px 14px;
+      background: rgba(63,185,80,0.07); border: 1px solid rgba(63,185,80,0.2);
+      border-radius: 8px; margin-bottom: 8px; font-size: 12px;
+    }
+    .obs-progress-banner.has-regression {
+      background: rgba(248,81,73,0.07); border-color: rgba(248,81,73,0.2);
+    }
+    .obs-pb-title { color: #3fb950; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .obs-pb-title.mixed { color: var(--yellow); }
+    .obs-pb-item { color: #3fb950; white-space: nowrap; }
+    .obs-pb-worse { color: #f85149; white-space: nowrap; }
+
     /* ── Floating selection action bar ── */
     .obs-floating-bar {
       position: fixed;
@@ -2330,6 +2358,20 @@ function obsDispatchFloating() {
   bar.classList.remove('visible');
 }
 
+function obsTimeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}с назад`;
+  if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
+  if (s < 86400) return `${Math.floor(s / 3600)}ч назад`;
+  return `${Math.floor(s / 86400)}д назад`;
+}
+
+function obsResetBaseline(key) {
+  try { localStorage.removeItem('vr_obs_bl_' + key); } catch(e) {}
+  const c = document.getElementById('content');
+  if (c) renderObservability(c);
+}
+
 function obsFloatingDismiss() {
   const bar = document.getElementById('obsFloatingBar');
   if (!bar) return;
@@ -2680,6 +2722,47 @@ function renderObservability(c) {
     return val < warnThreshold ? 'var(--red)' : val < goodThreshold ? 'var(--yellow)' : 'var(--green)';
   }
 
+  // ── Baseline & delta tracking ──
+  const _bsKey = String(D.currentFeatureKey || 'global').replace(/[^a-z0-9_-]/gi, '_');
+  let _bl = null;
+  try { _bl = JSON.parse(localStorage.getItem('vr_obs_bl_' + _bsKey) || 'null'); } catch(e) {}
+
+  // Pre-compute current snapshot values (before tierSections so _d is in scope)
+  const _blCurrMissing = (o.missingCriticalLogsV2 || []).length;
+  const _blCurrFPs = (o.missingCriticalLogsV2 || []).reduce((s, m) => s + (m.failurePoints || []).length, 0);
+  const _blCurrNoise = (o.topNoisyPatterns || []).length;
+  const _blCurrEnrich = Object.entries(o.fieldGaps || {}).filter(([, v]) => v > 0).length;
+  const _blCurrTiers = {};
+  ['critical', 'important', 'normal'].forEach(tier => {
+    const items = (o.missingCriticalLogsV2 || []).filter(m => m.riskTier === tier);
+    _blCurrTiers[tier] = { modules: items.length, fps: items.reduce((s, m) => s + (m.failurePoints || []).length, 0) };
+  });
+
+  if (!_bl) {
+    _bl = { ts: Date.now(), noiseRatio, structPct, actionPct, coveragePct,
+            missing: _blCurrMissing, fps: _blCurrFPs, noise: _blCurrNoise, enrich: _blCurrEnrich,
+            tiers: _blCurrTiers };
+    try { localStorage.setItem('vr_obs_bl_' + _bsKey, JSON.stringify(_bl)); } catch(e) {}
+  }
+
+  // Delta badge helpers
+  const _d = (curr, base, invert = false) => {
+    if (base == null || curr === base) return '';
+    const diff = curr - base;
+    const good = invert ? diff > 0 : diff < 0;
+    const color = good ? '#3fb950' : '#f85149';
+    const sign = diff > 0 ? '+' : '';
+    return `<span style="color:${color};font-size:11px;font-weight:700;margin-left:5px">(${sign}${diff})</span>`;
+  };
+  const _dp = (curr, base, invert = false) => {
+    if (base == null || curr === base) return '';
+    const diff = curr - base;
+    const good = invert ? diff > 0 : diff < 0;
+    const color = good ? '#3fb950' : '#f85149';
+    const arrow = good ? '↓' : '↑';
+    return `<span class="obs-kpi-delta" style="color:${color}">${arrow}${Math.abs(diff)}%</span>`;
+  };
+
   const formatLabels = { structured: 'structured', mixed: 'mixed', unstructured: 'unstructured' };
   const sourceByFormat = [
     { label: 'Structured', count: o.catalog.filter(c => c.format === 'structured').length, color: 'var(--green)' },
@@ -2756,10 +2839,11 @@ function renderObservability(c) {
           <div class="obs-detail-list">${detailItems}</div>
           <div class="obs-detail-bar">${addBtn}</div>
         </div>` : '';
+      const _blTier = _bl?.tiers?.[tier];
       return `<div class="obs-tier-group">
         <div class="obs-tier-group-header">
           <span class="obs-tier-badge obs-tier-${tier}">${tierLabels[tier]}</span>
-          <span>${items.length} модулей, ${totalFPs} точек отказа</span>
+          <span>${items.length}${_d(items.length, _blTier?.modules)} модулей, ${totalFPs}${_d(totalFPs, _blTier?.fps)} точек отказа</span>
           ${expandBtn}
         </div>
         ${detail}
@@ -2822,27 +2906,59 @@ function renderObservability(c) {
   const enrichCount = fieldGapEntries.length;
   const catalogCount = o.catalog.length;
 
+  // ── Build progress banner comparing to baseline ──
+  const _blItems = [];
+  if (_bl.missing != null && missingCount !== _bl.missing)
+    _blItems.push({ label: `модулей без логов: ${_bl.missing} → ${missingCount}`, good: missingCount < _bl.missing });
+  if (_bl.fps != null && _blCurrFPs !== _bl.fps)
+    _blItems.push({ label: `точек отказа: ${_bl.fps} → ${_blCurrFPs}`, good: _blCurrFPs < _bl.fps });
+  if (_bl.noise != null && noisyCount !== _bl.noise)
+    _blItems.push({ label: `шумных паттернов: ${_bl.noise} → ${noisyCount}`, good: noisyCount < _bl.noise });
+  if (_bl.enrich != null && enrichCount !== _bl.enrich)
+    _blItems.push({ label: `нужно обогатить: ${_bl.enrich} → ${enrichCount}`, good: enrichCount < _bl.enrich });
+
+  const _hasReg = _blItems.some(x => !x.good);
+  const _hasImp = _blItems.some(x => x.good);
+  const _progressBanner = _blItems.length ? `
+    <div class="obs-progress-banner${_hasReg ? ' has-regression' : ''}">
+      <span class="obs-pb-title${_hasReg && _hasImp ? ' mixed' : _hasReg ? ' obs-pb-worse' : ''}">📊 прогресс</span>
+      ${_blItems.map(it => `<span class="${it.good ? 'obs-pb-item' : 'obs-pb-worse'}">${it.good ? '✅' : '⚠️'} ${it.label}</span>`).join('')}
+    </div>` : '';
+
+  const _baselineStrip = `
+    <div class="obs-baseline-strip">
+      <span>📍 baseline: ${obsTimeAgo(_bl.ts)}</span>
+      <button onclick="obsResetBaseline('${_bsKey}')">обновить</button>
+    </div>`;
+
   c.innerHTML = `
     <div class="onboarding-block">
       <h3>Наблюдаемость: что это?</h3>
       <p>Аудит покрытия логами: что добавить, что убрать, что обогатить — на основе статического анализа лог-вызовов.</p>
     </div>
 
+    ${_progressBanner}
+    ${_baselineStrip}
+
     <div class="obs-kpi-strip">
       <div class="obs-kpi">
         <span class="obs-kpi-value" style="color:${metricColor(noiseRatio,10,30,true)}">${noiseRatio}%</span>
+        ${_dp(noiseRatio, _bl?.noiseRatio, true)}
         <span class="obs-kpi-label">Шум</span>
       </div>
       <div class="obs-kpi">
         <span class="obs-kpi-value" style="color:${metricColor(structPct,80,50,false)}">${structPct}%</span>
+        ${_dp(structPct, _bl?.structPct)}
         <span class="obs-kpi-label">Структурированность</span>
       </div>
       <div class="obs-kpi">
         <span class="obs-kpi-value" style="color:${metricColor(actionPct,80,50,false)}">${actionPct}%</span>
+        ${_dp(actionPct, _bl?.actionPct)}
         <span class="obs-kpi-label">Actionable ошибки</span>
       </div>
       <div class="obs-kpi">
         <span class="obs-kpi-value" style="color:${metricColor(coveragePct,80,50,false)}">${coveragePct}%</span>
+        ${_dp(coveragePct, _bl?.coveragePct)}
         <span class="obs-kpi-label">Покрытие сценариев</span>
       </div>
     </div>
