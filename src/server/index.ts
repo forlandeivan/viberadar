@@ -2262,6 +2262,37 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return;
       }
 
+      if (url === '/api/agent-reauth' && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        const loginCmd = WIN ? 'claude.cmd auth login' : 'claude auth login';
+        broadcast('agent-output', { line: `🔑 Запускаю авторизацию: ${loginCmd}` });
+        broadcast('agent-output', { line: '🌐 Браузер откроется автоматически — войдите в аккаунт Claude' });
+        const reauthProc = spawn(loginCmd, [], {
+          cwd: projectRoot,
+          shell: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        reauthProc.stdout!.on('data', (chunk: Buffer) => {
+          for (const line of chunk.toString().split('\n').filter(Boolean)) {
+            broadcast('agent-output', { line });
+          }
+        });
+        reauthProc.stderr!.on('data', (chunk: Buffer) => {
+          for (const line of chunk.toString().split('\n').filter(Boolean)) {
+            broadcast('agent-output', { line, isError: true });
+          }
+        });
+        reauthProc.on('close', (code) => {
+          if (code === 0) {
+            broadcast('agent-output', { line: '✅ Авторизация завершена успешно' });
+          } else {
+            broadcast('agent-output', { line: `❌ Авторизация завершилась с кодом ${code}`, isError: true });
+          }
+        });
+        return;
+      }
+
       // Server-Sent Events endpoint
       if (url === '/api/events') {
         res.writeHead(200, {

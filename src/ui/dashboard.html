@@ -2126,9 +2126,12 @@ async function reauthAgent() {
   }
   const id = createSession('🔑 Перелогинивание');
   runningSessionId = id;
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
   document.getElementById('agentPanelTitle').textContent = '🔑 Перелогинивание';
   document.getElementById('agentPanelStatus').textContent = 'выполняю…';
   await fetch('/api/agent-reauth', { method: 'POST' });
+  document.getElementById('agentPanelStatus').textContent = 'жду завершения браузера…';
 }
 
 async function runAgentTask(task, featureKey, filePath, selectedFilePaths) {
