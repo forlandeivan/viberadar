@@ -787,6 +787,50 @@
     .obs-hint-label.before { color: var(--red); }
     .obs-hint-label.after { color: var(--green); }
 
+    /* ── Floating selection action bar ── */
+    .obs-floating-bar {
+      position: fixed;
+      bottom: -80px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 300;
+      display: flex; align-items: center; gap: 12px;
+      background: #1c2128;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 10px 10px 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(88,166,255,0.15);
+      min-width: 340px;
+      transition: bottom 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      pointer-events: none;
+      opacity: 0;
+    }
+    .obs-floating-bar.visible {
+      bottom: 28px;
+      pointer-events: auto;
+      opacity: 1;
+    }
+    .obs-floating-count {
+      color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap;
+    }
+    .obs-floating-label {
+      color: var(--muted); font-size: 12px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .obs-floating-btn {
+      padding: 8px 18px; font-size: 13px; font-weight: 600;
+      background: var(--accent); color: var(--bg);
+      border: none; border-radius: 6px; cursor: pointer; min-height: 36px;
+      white-space: nowrap; flex-shrink: 0;
+      transition: opacity 0.1s;
+    }
+    .obs-floating-btn:hover { opacity: 0.85; }
+    .obs-floating-dismiss {
+      background: none; border: none; color: var(--dim); cursor: pointer;
+      font-size: 16px; padding: 4px 6px; line-height: 1; flex-shrink: 0;
+      border-radius: 4px; transition: color 0.1s;
+    }
+    .obs-floating-dismiss:hover { color: var(--text); }
+
     .file-row-err-badge {
       display: inline-flex; align-items: center;
       font-size: 11px; padding: 1px 6px; border-radius: 10px;
@@ -1217,6 +1261,13 @@
 <div class="panel" id="panel">
   <button class="panel-close" id="panelClose">✕</button>
   <div id="panelContent"></div>
+</div>
+
+<div class="obs-floating-bar" id="obsFloatingBar">
+  <span class="obs-floating-count" id="obsFloatingCount">0 выбрано</span>
+  <span class="obs-floating-label" id="obsFloatingLabel"></span>
+  <button class="obs-floating-btn" id="obsFloatingBtn" onclick="obsDispatchFloating()">запустить</button>
+  <button class="obs-floating-dismiss" title="Снять выделение" onclick="obsFloatingDismiss()">✕</button>
 </div>
 
 <div class="agent-panel" id="agentPanel">
@@ -2237,9 +2288,62 @@ function obsUpdateSelectedCount(groupId) {
   const checked = container.querySelectorAll('input[type="checkbox"]:checked').length;
   const btn = container.querySelector('.obs-run-selected');
   if (btn) {
-    btn.textContent = checked > 0 ? `исправить выбранные (${checked})` : 'исправить выбранные';
+    const baseLabel = btn.dataset.baseLabel || btn.textContent.replace(/\s*\(\d+\)$/, '');
+    btn.dataset.baseLabel = baseLabel;
+    btn.textContent = checked > 0 ? `${baseLabel} (${checked})` : baseLabel;
     btn.disabled = checked === 0;
   }
+  // Update floating action bar
+  const bar = document.getElementById('obsFloatingBar');
+  if (!bar) return;
+  if (checked > 0) {
+    const action = container.dataset.obsAction || '';
+    const actionLabels = { missing: 'добавить логи', field: 'обогатить поля', rec: 'исправить' };
+    const groupLabel = container.dataset.obsLabel || '';
+    bar.dataset.groupId = groupId;
+    document.getElementById('obsFloatingCount').textContent = `${checked} выбрано`;
+    document.getElementById('obsFloatingLabel').textContent = groupLabel;
+    document.getElementById('obsFloatingBtn').textContent = actionLabels[action] || 'исправить';
+    bar.classList.add('visible');
+  } else {
+    if (bar.dataset.groupId === groupId) {
+      bar.classList.remove('visible');
+      delete bar.dataset.groupId;
+    }
+  }
+}
+
+function obsDispatchFloating() {
+  const bar = document.getElementById('obsFloatingBar');
+  if (!bar) return;
+  const groupId = bar.dataset.groupId;
+  if (!groupId) return;
+  const container = document.getElementById('obs-detail-' + groupId);
+  if (!container) return;
+  const action = container.dataset.obsAction || '';
+  if (action === 'missing') {
+    obsMissingRunSelected(groupId);
+  } else {
+    const meta = container.dataset.obsMeta ? JSON.parse(container.dataset.obsMeta) : {};
+    obsRunSelected(groupId, 'obs-fix-selected', meta);
+  }
+  bar.classList.remove('visible');
+}
+
+function obsFloatingDismiss() {
+  const bar = document.getElementById('obsFloatingBar');
+  if (!bar) return;
+  const groupId = bar.dataset.groupId;
+  if (groupId) {
+    const container = document.getElementById('obs-detail-' + groupId);
+    if (container) {
+      container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+      const btn = container.querySelector('.obs-run-selected');
+      if (btn) { btn.textContent = btn.dataset.baseLabel || btn.textContent.replace(/\s*\(\d+\)$/, ''); btn.disabled = true; }
+    }
+    delete bar.dataset.groupId;
+  }
+  bar.classList.remove('visible');
 }
 
 function obsToggleAll(groupId) {
@@ -2645,7 +2749,7 @@ function renderObservability(c) {
       }).join('');
       const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">добавить логи выбранным</button>` : '';
       const detail = hasAgent ? `
-        <div id="obs-detail-${groupId}" class="obs-detail">
+        <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="missing" data-obs-label="${tierLabels[tier]}">
           <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
             <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
           </div>
@@ -2677,7 +2781,7 @@ function renderObservability(c) {
       return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
     }).join('');
     const detail = hasAgent ? `
-      <div id="obs-detail-${groupId}" class="obs-detail">
+      <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="field" data-obs-meta='{"fieldName":"${escapeHtml(name)}"}' data-obs-label="поле ${escapeHtml(name)}">
         <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
           <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
         </div>
@@ -2814,7 +2918,7 @@ function renderObservability(c) {
                 return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
               }).join('');
               const detail = hasAgent ? `
-                <div id="obs-detail-${groupId}" class="obs-detail">
+                <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="rec" data-obs-meta='{"recommendationType":"${rec}"}' data-obs-label="${recLabels[rec] || rec}">
                   <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
                     <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
                   </div>
