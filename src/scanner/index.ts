@@ -567,8 +567,9 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 6. throw without preceding logger.error
+    // 15-line lookback: structured logger.error({ ...context }, "msg") spans 8–12 lines.
     if (/\bthrow\s+new\s+\w*Error/.test(trimmed)) {
-      if (!hasLogInRange(Math.max(0, i - 3), i + 1)) {
+      if (!hasLogInRange(Math.max(0, i - 15), i + 1)) {
         points.push({ type: 'throw-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
