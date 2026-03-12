@@ -188,7 +188,7 @@ const IGNORE_DIRS = [
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
 const TEST_PATTERNS = ['.test.', '.spec.', '__tests__', '.fixture.'];
 const INFRA_FILE_PATTERNS = [/\.d\.ts$/];  // type declarations — never source files
-const LOG_CALL_RE = /(?:console|logger|log)\.(trace|debug|info|warn|error|fatal)\s*\(([^\n;]*)/g;
+const LOG_CALL_RE = /(?:console|logger|log(?:ger)?|winston|pino|bunyan|\w*[Ll]ogger|\w*[Ll]og)\.(trace|debug|info|warn|error|fatal)\s*\(([^\n;]*)/g;
 
 interface ParsedLogCall {
   level: string;
@@ -556,7 +556,10 @@ function detectFailurePoints(content: string): FailurePoint[] {
 
   function hasLogInRange(start: number, end: number): boolean {
     for (let i = start; i < Math.min(end, lines.length); i++) {
-      if (/(?:console|logger|log)\.(warn|error|fatal)\s*\(/.test(lines[i])) return true;
+      // Any identifier.warn/error/fatal( — catches custom loggers (authLogger, winston, pino, etc.)
+      if (/\b\w+\.(warn|error|fatal)\s*\(/.test(lines[i])) return true;
+      // Chained multi-line call: logger\n  .error(...) — leading dot on its own line
+      if (/^\s*\.(warn|error|fatal)\s*\(/.test(lines[i])) return true;
     }
     return false;
   }
