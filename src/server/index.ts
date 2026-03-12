@@ -1413,6 +1413,79 @@ function buildUpdateDocsPrompt(
   ].join('\n');
 }
 
+function buildSyncDocsStructurePrompt(feat: FeatureResult, modules: ModuleInfo[]): string {
+  const sourceFiles = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
+    .map(m => m.relativePath.replace(/\\/g, '/'));
+
+  const testFiles = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
+    .map(m => m.relativePath.replace(/\\/g, '/'));
+
+  const skeleton = [
+    `# ${feat.label}`,
+    ``,
+    feat.description ? `> ${feat.description}` : `> TODO: краткое описание фичи`,
+    ``,
+    `## Overview`,
+    ``,
+    `TODO: что делает фича, зачем нужна, какую задачу решает.`,
+    ``,
+    `## Architecture`,
+    ``,
+    `TODO: ключевые компоненты, data flow, связи между файлами.`,
+    ``,
+    `## Usage`,
+    ``,
+    `TODO: как использовать — API, функции, endpoints, компоненты, примеры.`,
+    ``,
+    `## Configuration`,
+    ``,
+    `TODO: env-переменные, настройки, конфиг-файлы.`,
+    ``,
+    `## Key Files`,
+    ``,
+    ...sourceFiles.map(f => `- \`${f}\` — TODO: роль файла`),
+    ``,
+    `## Test Files`,
+    ``,
+    testFiles.length > 0
+      ? testFiles.map(f => `- \`${f}\``).join('\n')
+      : `_Тесты отсутствуют._`,
+    ``,
+    `## Dependencies`,
+    ``,
+    `TODO: внешние пакеты и внутренние зависимости.`,
+  ].join('\n');
+
+  return [
+    `Актуализируй структуру документации для фичи "${feat.label}".`,
+    ``,
+    `Файлы фичи (${sourceFiles.length}):`,
+    ...sourceFiles.map(f => '- ' + f),
+    testFiles.length > 0 ? `\nТест-файлы (${testFiles.length}):` : '',
+    ...testFiles.map(f => '- ' + f),
+    ``,
+    `Задача:`,
+    `1. Если файл docs/features/${feat.key}.md НЕ существует — создай его по шаблону ниже`,
+    `2. Если файл СУЩЕСТВУЕТ — обнови только секцию "Key Files" и "Test Files":`,
+    `   - Добавь новые файлы из текущего списка`,
+    `   - Убери файлы, которых больше нет`,
+    `   - Не трогай другие секции и уже написанный текст`,
+    ``,
+    `Шаблон для нового файла (строго Markdown, сохрани эту структуру):`,
+    `\`\`\`markdown`,
+    skeleton,
+    `\`\`\``,
+    ``,
+    `Требования:`,
+    `- Файл должен быть валидным Markdown`,
+    `- Запиши результат в: docs/features/${feat.key}.md`,
+    `- Создай директорию docs/features/ если её нет`,
+    `- Не читай содержимое исходных файлов — только обновляй структуру`,
+  ].filter(l => l !== '').join('\n');
+}
+
 // ─── Main server ──────────────────────────────────────────────────────────────
 
 export function startServer({ data: initialData, port, projectRoot }: ServerOptions): Promise<ServerHandle> {
@@ -1866,6 +1939,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } else {
           failBeforeStart('Нет данных observability или модули не выбраны'); return;
         }
+      } else if (task === 'sync-docs-structure') {
+        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
+        const feat = currentData.features.find(f => f.key === featureKey);
+        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
+        prompt = buildSyncDocsStructurePrompt(feat, currentData.modules);
       } else if (task === 'generate-docs') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);

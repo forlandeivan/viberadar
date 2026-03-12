@@ -404,6 +404,23 @@
       cursor: pointer; transition: background 0.15s;
     }
     .doc-agent-btn:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .doc-agent-btn-secondary { opacity: 0.75; }
+    .doc-agent-btn-secondary:hover { opacity: 1; }
+    .doc-detail-actions {
+      display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .doc-action-step {
+      display: flex; gap: 10px; align-items: flex-start;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; flex: 1; min-width: 220px;
+    }
+    .doc-step-num {
+      display: flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%; background: var(--dim);
+      color: var(--text); font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+    }
+    .doc-step-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+    .doc-step-hint { font-size: 11px; color: var(--muted); margin-bottom: 8px; line-height: 1.4; }
     .doc-changed-section {
       margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
     }
@@ -3648,11 +3665,13 @@ function renderDocFeatureCards(c) {
     const progressPct = f.sourceFileCount > 0 ? Math.round((freshFiles / f.sourceFileCount) * 100) : 0;
     const progressColor = !f.docExists ? 'var(--red)' : f.isStale ? 'var(--yellow)' : 'var(--green)';
 
-    const agentTask = !f.docExists ? 'generate-docs' : f.isStale ? 'update-docs' : null;
-    const agentLabel = !f.docExists ? 'Написать доку' : f.isStale ? 'Обновить доку' : '';
-    const agentBtn = agentTask
-      ? `<button class="agent-card-btn doc-agent-btn" data-task="${agentTask}" data-key="${f.key}" style="margin-top:8px">${agentLabel}</button>`
-      : `<div style="margin-top:8px;font-size:11px;color:var(--green)">Документация актуальна</div>`;
+    const syncBtn = `<button class="agent-card-btn doc-agent-btn" data-task="sync-docs-structure" data-key="${f.key}" style="margin-top:8px" title="Создать скелет / обновить список файлов">Актуализировать структуру</button>`;
+    const fillBtn = f.docExists
+      ? `<button class="agent-card-btn doc-agent-btn doc-agent-btn-secondary" data-task="${f.isStale ? 'update-docs' : 'generate-docs'}" data-key="${f.key}" style="margin-top:4px">${f.isStale ? 'Обновить содержимое' : 'Заполнить содержимое'}</button>`
+      : '';
+    const agentBtn = (f.docExists && !f.isStale)
+      ? `<div style="margin-top:8px;font-size:11px;color:var(--green)">Документация актуальна</div>${syncBtn}`
+      : `<div style="display:flex;flex-direction:column">${syncBtn}${fillBtn}</div>`;
 
     html += `
       <div class="feature-card doc-feature-card" data-key="${f.key}">
@@ -3802,8 +3821,32 @@ async function renderDocFeatureDetail(c) {
   const statusDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};margin-right:6px"></span>`;
   const lastUpd = f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString('ru-RU') : '—';
 
-  const agentTask = !f.docExists ? 'generate-docs' : f.isStale ? 'update-docs' : null;
-  const agentLabel = !f.docExists ? 'Сгенерировать документацию' : f.isStale ? `Обновить документацию (${f.changedFilesSinceDoc.length} файл.)` : '';
+  // Two-step action buttons
+  const detailSyncBtn = `<button class="agent-card-btn doc-detail-agent-btn" data-task="sync-docs-structure" data-key="${f.key}" title="Создать скелет / обновить список файлов фичи">Актуализировать структуру</button>`;
+  const detailFillTask = f.isStale ? 'update-docs' : 'generate-docs';
+  const detailFillLabel = f.isStale
+    ? `Обновить содержимое (${f.changedFilesSinceDoc.length} изм. файл.)`
+    : 'Заполнить содержимое';
+  const detailFillBtn = `<button class="agent-card-btn doc-detail-agent-btn doc-fill-btn" data-task="${detailFillTask}" data-key="${f.key}">${detailFillLabel}</button>`;
+  const detailActionsHtml = `
+    <div class="doc-detail-actions">
+      <div class="doc-action-step">
+        <span class="doc-step-num">1</span>
+        <div>
+          <div class="doc-step-label">Актуализировать структуру</div>
+          <div class="doc-step-hint">Создаёт скелет / обновляет список файлов. Не читает содержимое.</div>
+          ${detailSyncBtn}
+        </div>
+      </div>
+      <div class="doc-action-step">
+        <span class="doc-step-num">2</span>
+        <div>
+          <div class="doc-step-label">${f.isStale ? 'Обновить содержимое' : 'Заполнить содержимое'}</div>
+          <div class="doc-step-hint">${f.isStale ? 'Агент читает изменившиеся файлы и обновляет доку.' : 'Агент читает файлы и заполняет все секции.'}</div>
+          ${detailFillBtn}
+        </div>
+      </div>
+    </div>`;
 
   let changedFilesHtml = '';
   if (f.isStale && f.changedFilesSinceDoc.length > 0) {
@@ -3839,22 +3882,21 @@ async function renderDocFeatureDetail(c) {
     <div style="margin-bottom:16px">
       <button class="back-btn" id="docBackBtn">&#8592; Все фичи</button>
     </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <div style="width:4px;height:28px;border-radius:2px;background:${f.color}"></div>
       <h2 style="margin:0;font-size:18px;color:var(--text)">${escapeHtml(f.label)}</h2>
       <div style="display:flex;align-items:center;font-size:13px">${statusDot}<span style="color:${statusColor};font-weight:600">${statusText}</span></div>
       <span style="font-size:12px;color:var(--muted)">Обновлено: ${lastUpd}</span>
     </div>
-    ${agentTask ? `<div style="margin-bottom:16px"><button class="agent-card-btn doc-detail-agent-btn" data-task="${agentTask}" data-key="${f.key}">${agentLabel}</button></div>` : ''}
+    ${detailActionsHtml}
     ${changedFilesHtml}
     ${docContentHtml}`;
 
   document.getElementById('docBackBtn').onclick = () => backToFeatures();
 
-  const detailAgentBtn = c.querySelector('.doc-detail-agent-btn');
-  if (detailAgentBtn) {
-    detailAgentBtn.onclick = () => runAgentTask(detailAgentBtn.dataset.task, detailAgentBtn.dataset.key);
-  }
+  c.querySelectorAll('.doc-detail-agent-btn').forEach(btn => {
+    btn.addEventListener('click', () => runAgentTask(btn.dataset.task, btn.dataset.key));
+  });
 }
 
 function renderFeatureCards(c) {
