@@ -81,6 +81,7 @@ export interface ObservabilityCatalogItem {
   recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
   missingFields: string[];
   noisyMessages: string[]; // конкретные шумные сниппеты из этого модуля
+  featureKeys: string[];
 }
 
 export interface ObservabilityMetrics {
@@ -130,6 +131,20 @@ export interface ObservabilityReport {
   missingCriticalLogs: ObservabilityInsightItem[];
   missingCriticalLogsV2: MissingCriticalLogItem[];
   fieldGaps: Record<string, number>;
+  byFeature?: FeatureObservabilityResult[];
+}
+
+export interface FeatureObservabilityResult {
+  key: string;
+  label: string;
+  color: string;
+  score: number;
+  metrics: ObservabilityMetrics;
+  catalogCount: number;
+  noisyPatternCount: number;
+  missingCriticalCount: number;
+  fieldGapCount: number;
+  failurePointCount: number;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -632,7 +647,7 @@ function bucketFrequency(count: number): 'low' | 'medium' | 'high' {
   return 'low';
 }
 
-function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string): ObservabilityReport {
+function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, configFeatures?: Record<string, { label: string; color: string; include: string[] }>): ObservabilityReport {
   const sourceModules = modules.filter(m => m.type !== 'test' && !m.isInfra);
   const catalog: ObservabilityCatalogItem[] = [];
 
@@ -660,6 +675,8 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
   const moduleFailureData = new Map<string, { content: string; failurePoints: FailurePoint[] }>();
+  // Per-module stats for efficient per-feature aggregation
+  const moduleStats = new Map<string, { totalLogs: number; noiseLogs: number; totalErrors: number; actionableErrors: number; fieldChecks: number; fieldHits: number; hasCritCov: boolean }>();
 
   for (const module of sourceModules) {
     let content = '';
@@ -686,20 +703,25 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     );
 
     const moduleMissingFields = new Set<string>();
+    let mTotalLogs = 0, mTotalErrors = 0, mActionableErrors = 0, mFieldChecks = 0, mFieldHits = 0;
 
     for (const c of calls) {
       totalLogs += 1;
+      mTotalLogs += 1;
       if (c.level === 'error') {
         totalErrors += 1;
-        if (c.actionableError) actionableErrors += 1;
+        mTotalErrors += 1;
+        if (c.actionableError) { actionableErrors += 1; mActionableErrors += 1; }
       }
 
       const isWarnError = c.level === 'warn' || c.level === 'error' || c.level === 'fatal';
       const applicableFields = REQUIRED_FIELDS.filter(f => !f.warnErrorOnly || isWarnError);
       requiredFieldsChecks += applicableFields.length;
+      mFieldChecks += applicableFields.length;
       for (const field of applicableFields) {
         if (field.re.test(c.argsSnippet)) {
           requiredFieldsHits += 1;
+          mFieldHits += 1;
         } else {
           fieldGapCounts[field.name] += 1;
           moduleMissingFields.add(field.name);
@@ -745,6 +767,7 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       recommendation,
       missingFields: Array.from(moduleMissingFields).sort(),
       noisyMessages,
+      featureKeys: module.featureKeys || [],
     });
 
     for (const noisy of noisyCandidates) {
@@ -752,9 +775,16 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
       noisyMap.set(key, (noisyMap.get(key) || 0) + 1);
     }
 
-    if (calls.some(c => c.level === 'error' || c.level === 'warn')) {
+    const hasCritCov = calls.some(c => c.level === 'error' || c.level === 'warn');
+    if (hasCritCov) {
       criticalCoverage.add(module.relativePath);
     }
+
+    moduleStats.set(module.relativePath, {
+      totalLogs: mTotalLogs, noiseLogs: noisyCandidates.length,
+      totalErrors: mTotalErrors, actionableErrors: mActionableErrors,
+      fieldChecks: mFieldChecks, fieldHits: mFieldHits, hasCritCov,
+    });
   }
 
   const classifiedTrash = noiseLogs;
@@ -828,6 +858,66 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     coverage_of_key_flows: criticalCoverage.size / totalSource,
   };
 
+  // ── Build per-feature observability results ──
+  let byFeature: FeatureObservabilityResult[] | undefined;
+  if (configFeatures) {
+    const sortedCatalog = catalog.sort((a, b) => a.modulePath.localeCompare(b.modulePath));
+    // Build module→featureKeys lookup for missingCriticalLogsV2 matching
+    const moduleFeatureMap = new Map<string, string[]>();
+    for (const m of sourceModules) moduleFeatureMap.set(m.relativePath, m.featureKeys || []);
+
+    byFeature = Object.entries(configFeatures).map(([key, feat]) => {
+      const fCatalog = sortedCatalog.filter(c => c.featureKeys.includes(key));
+      const fMissing = missingCriticalLogsV2.filter(m => (moduleFeatureMap.get(m.modulePath) || []).includes(key));
+      const fSourceModules = sourceModules.filter(m => (m.featureKeys || []).includes(key));
+
+      // Aggregate from pre-computed per-module stats (no file re-reading)
+      let fTotalLogs = 0, fNoiseLogs = 0, fTotalErrors = 0, fActionableErrors = 0;
+      let fFieldChecks = 0, fFieldHits = 0;
+      let fCritCovCount = 0;
+
+      for (const m of fSourceModules) {
+        const s = moduleStats.get(m.relativePath);
+        if (!s) continue;
+        fTotalLogs += s.totalLogs;
+        fNoiseLogs += s.noiseLogs;
+        fTotalErrors += s.totalErrors;
+        fActionableErrors += s.actionableErrors;
+        fFieldChecks += s.fieldChecks;
+        fFieldHits += s.fieldHits;
+        if (s.hasCritCov) fCritCovCount++;
+      }
+
+      const fTotalSource = fSourceModules.length || 1;
+      const fMetrics: ObservabilityMetrics = {
+        noise_ratio: fTotalLogs ? fNoiseLogs / fTotalLogs : 0,
+        error_actionability: fTotalErrors ? fActionableErrors / fTotalErrors : 0,
+        structured_completeness: fFieldChecks ? fFieldHits / fFieldChecks : 0,
+        coverage_of_key_flows: fCritCovCount / fTotalSource,
+      };
+
+      const score = Math.round(
+        (1 - fMetrics.noise_ratio) * 25 +
+        fMetrics.structured_completeness * 25 +
+        fMetrics.error_actionability * 25 +
+        fMetrics.coverage_of_key_flows * 25
+      );
+
+      return {
+        key,
+        label: feat.label,
+        color: feat.color,
+        score,
+        metrics: fMetrics,
+        catalogCount: fCatalog.length,
+        noisyPatternCount: fCatalog.reduce((s, c) => s + c.noisyMessages.length, 0),
+        missingCriticalCount: fMissing.length,
+        fieldGapCount: fCatalog.reduce((s, c) => s + c.missingFields.length, 0),
+        failurePointCount: fMissing.reduce((s, m) => s + m.failurePoints.length, 0),
+      };
+    });
+  }
+
   return {
     catalog: catalog.sort((a, b) => a.modulePath.localeCompare(b.modulePath)),
     metrics,
@@ -840,6 +930,7 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string):
     missingCriticalLogs,
     missingCriticalLogsV2,
     fieldGaps: fieldGapCounts,
+    byFeature,
   };
 }
 
@@ -1155,6 +1246,6 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     infraCount: modules.filter(m => m.isInfra).length,
     agent: config?.agent,
     testRunner,
-    observability: computeObservabilityReport(modules, projectRoot),
+    observability: computeObservabilityReport(modules, projectRoot, config?.features),
   };
 }
