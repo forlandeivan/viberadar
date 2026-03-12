@@ -2982,7 +2982,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
       const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
       const totalFPs = items.reduce((s,m) => s + m.failurePoints.length, 0);
       const detailItems = items.map(m => {
-        const globalIdx = v2Data.indexOf(m);
+        const globalIdx = missingV2.indexOf(m); // index in full unfiltered array — must match server's missingCriticalLogsV2
         const fpCount = m.failurePoints.length;
         const fpPreview = m.failurePoints.slice(0,3).map(fp =>
           `<div class="obs-fp-item"><span class="obs-fp-type">${fpTypeLabels[fp.type]||fp.type}</span><span class="obs-fp-line">~${fp.lineApprox}</span></div>`
