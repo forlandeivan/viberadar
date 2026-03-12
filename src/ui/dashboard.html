@@ -389,6 +389,61 @@
     .feature-progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
     .feature-progress-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
+    /* ── Documentation screen ────────────────────────────────────────────────── */
+    .doc-kpi-strip {
+      display: flex; gap: 24px; padding: 12px 16px; margin-bottom: 16px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .doc-kpi { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .doc-kpi-val { font-size: 20px; font-weight: 700; color: var(--text); }
+    .doc-kpi-lbl { font-size: 11px; color: var(--muted); }
+    .doc-feature-card { cursor: pointer; }
+    .doc-agent-btn {
+      font-size: 11px; padding: 4px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg-hover); color: var(--text);
+      cursor: pointer; transition: background 0.15s;
+    }
+    .doc-agent-btn:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .doc-changed-section {
+      margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    }
+    .doc-changed-header {
+      padding: 8px 12px; background: var(--bg-card); color: var(--text);
+      font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    }
+    .doc-changed-arrow { font-size: 10px; transition: transform 0.2s; }
+    .doc-changed-section.open .doc-changed-arrow { transform: rotate(90deg); }
+    .doc-changed-list { display: none; padding: 8px 12px; }
+    .doc-changed-section.open .doc-changed-list { display: block; }
+    .doc-changed-file {
+      font-size: 12px; color: var(--yellow); padding: 3px 0;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+    .doc-content {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 20px 24px; line-height: 1.65; color: var(--text);
+    }
+    .doc-content .doc-h { margin: 20px 0 8px 0; color: var(--text); font-weight: 600; }
+    .doc-content h1.doc-h { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .doc-content h2.doc-h { font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .doc-content h3.doc-h { font-size: 15px; }
+    .doc-content .doc-p { margin: 8px 0; font-size: 14px; }
+    .doc-content .doc-list { margin: 8px 0; padding-left: 24px; font-size: 14px; }
+    .doc-content .doc-list li { margin: 4px 0; }
+    .doc-content .doc-code {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px 16px; overflow-x: auto; font-size: 13px; margin: 12px 0;
+    }
+    .doc-content .doc-inline-code {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+      padding: 1px 5px; font-size: 12px;
+    }
+    .back-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    .back-btn:hover { color: var(--text); border-color: var(--dim); }
+
     /* ── No config banner ────────────────────────────────────────────────────── */
     .no-config {
       display: flex;
@@ -1363,15 +1418,19 @@ function switchObsTab(tabId) {
 const modeStore = {
   qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
   observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
+  docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/observability')) return 'observability';
+  if (pathname.startsWith('/radar/docs')) return 'docs';
   return 'qa';
 }
 
 function routePathForMode(mode) {
-  return mode === 'observability' ? '/radar/observability' : '/radar/qa';
+  if (mode === 'observability') return '/radar/observability';
+  if (mode === 'docs') return '/radar/docs';
+  return '/radar/qa';
 }
 
 function setModeRoute(mode, replace = false) {
@@ -1408,8 +1467,8 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability') {
-    view = 'files';
+  if (contextMode === 'observability' || contextMode === 'docs') {
+    view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
     activePanelKey = null;
@@ -2618,6 +2677,7 @@ function renderModeSwitch() {
   const modes = [
     { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
     { key: 'observability', label: 'Наблюдаемость', hint: 'Логи, шум, сигналы ошибок' },
+    { key: 'docs', label: 'Документация', hint: 'Актуальность, генерация, обновление' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -2642,6 +2702,16 @@ function renderSidebar() {
       <div class="sidebar-label">Фокус наблюдаемости</div>
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
         Источники логов и качество сигналов для триажа инцидентов.
+      </div>`;
+    return;
+  }
+
+  if (contextMode === 'docs') {
+    tabs.style.display = 'none';
+    extra.innerHTML = `
+      <div class="sidebar-label">Документация</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
+        Статус и актуальность документации по фичам.
       </div>`;
     return;
   }
@@ -2688,6 +2758,10 @@ function renderContent() {
   const c = document.getElementById('content');
   if (contextMode === 'observability') {
     renderObservability(c);
+    return;
+  }
+  if (contextMode === 'docs') {
+    renderDocumentation(c);
     return;
   }
 
@@ -3529,6 +3603,258 @@ function renderObservabilityOverview(c) {
         Классификация: мусор ${o.classification.trash} · полезно ${o.classification.useful} · критично ${o.classification.critical}
       </div>
     </div>`;
+}
+
+// ─── Documentation screen ─────────────────────────────────────────────────────
+
+function renderDocumentation(c) {
+  const doc = D.documentation;
+  if (!doc) {
+    c.innerHTML = `<div class="onboarding-block"><h3>Документация</h3><p>Данные документации недоступны. Убедитесь, что в проекте есть <code>viberadar.config.json</code> с фичами и пересканируйте проект.</p></div>`;
+    return;
+  }
+  if (drillFeatureKey) renderDocFeatureDetail(c);
+  else renderDocFeatureCards(c);
+}
+
+function renderDocFeatureCards(c) {
+  const doc = D.documentation;
+  if (!doc || !doc.features.length) {
+    c.innerHTML = `<div class="onboarding-block"><h3>Документация</h3><p>Фичи не найдены. Добавьте фичи в viberadar.config.json.</p></div>`;
+    return;
+  }
+
+  const q = searchQuery.toLowerCase();
+  const filtered = doc.features.filter(f => !q || f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q));
+
+  const docPct = doc.totalFeatures > 0 ? Math.round(((doc.freshCount + doc.staleCount) / doc.totalFeatures) * 100) : 0;
+
+  let html = `
+    <div class="doc-kpi-strip">
+      <div class="doc-kpi"><span class="doc-kpi-val">${doc.totalFeatures}</span><span class="doc-kpi-lbl">Всего фич</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--green)">${doc.freshCount}</span><span class="doc-kpi-lbl">Актуальных</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--yellow)">${doc.staleCount}</span><span class="doc-kpi-lbl">Устаревших</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--red)">${doc.missingCount}</span><span class="doc-kpi-lbl">Без доки</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val">${docPct}%</span><span class="doc-kpi-lbl">Задокументировано</span></div>
+    </div>
+    <div class="features-grid">`;
+
+  for (const f of filtered) {
+    const statusColor = !f.docExists ? 'var(--red)' : f.isStale ? 'var(--yellow)' : 'var(--green)';
+    const statusText = !f.docExists ? 'Отсутствует' : f.isStale ? `Устарела (${f.changedFilesSinceDoc.length} файл.)` : 'Актуальна';
+    const statusDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};margin-right:6px"></span>`;
+    const lastUpd = f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString('ru-RU') : '—';
+    const freshFiles = f.docExists ? (f.sourceFileCount - f.changedFilesSinceDoc.length) : 0;
+    const progressPct = f.sourceFileCount > 0 ? Math.round((freshFiles / f.sourceFileCount) * 100) : 0;
+    const progressColor = !f.docExists ? 'var(--red)' : f.isStale ? 'var(--yellow)' : 'var(--green)';
+
+    const agentTask = !f.docExists ? 'generate-docs' : f.isStale ? 'update-docs' : null;
+    const agentLabel = !f.docExists ? 'Написать доку' : f.isStale ? 'Обновить доку' : '';
+    const agentBtn = agentTask
+      ? `<button class="agent-card-btn doc-agent-btn" data-task="${agentTask}" data-key="${f.key}" style="margin-top:8px">${agentLabel}</button>`
+      : `<div style="margin-top:8px;font-size:11px;color:var(--green)">Документация актуальна</div>`;
+
+    html += `
+      <div class="feature-card doc-feature-card" data-key="${f.key}">
+        <div class="feature-accent" style="background:${f.color}"></div>
+        <div class="feature-body">
+          <div class="feature-title">
+            <span>${escapeHtml(f.label)}</span>
+            <span class="feature-file-count">${f.sourceFileCount} файл.</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;margin:6px 0;font-size:12px">
+            ${statusDot}<span style="color:${statusColor};font-weight:600">${statusText}</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Обновлено: ${lastUpd}</div>
+          <div class="feature-progress-bar">
+            <div class="feature-progress-fill" style="width:${f.docExists ? progressPct : 0}%;background:${progressColor}"></div>
+          </div>
+          <div class="feature-progress-label">${f.docExists ? (f.isStale ? `${f.changedFilesSinceDoc.length} из ${f.sourceFileCount} изменены` : `${f.sourceFileCount} из ${f.sourceFileCount} актуальны`) : 'Документация отсутствует'}</div>
+          ${agentBtn}
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  c.innerHTML = html;
+
+  // Card click → drill-down
+  c.querySelectorAll('.doc-feature-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.doc-agent-btn')) return;
+      setFeatureDrill(card.dataset.key);
+    });
+  });
+
+  // Agent button clicks
+  c.querySelectorAll('.doc-agent-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runAgentTask(btn.dataset.task, btn.dataset.key);
+    });
+  });
+}
+
+// Lightweight markdown → HTML renderer
+function renderMarkdownToHtml(md) {
+  let html = '';
+  const lines = md.split('\n');
+  let inCodeBlock = false;
+  let codeBlockContent = '';
+  let inList = false;
+  let listType = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code blocks
+    if (line.trimStart().startsWith('```')) {
+      if (inCodeBlock) {
+        html += `<pre class="doc-code"><code>${escapeHtml(codeBlockContent.trimEnd())}</code></pre>`;
+        codeBlockContent = '';
+        inCodeBlock = false;
+      } else {
+        if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; }
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeBlockContent += line + '\n';
+      continue;
+    }
+
+    // Headings
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; }
+      const level = headingMatch[1].length;
+      html += `<h${level} class="doc-h">${inlineFormat(headingMatch[2])}</h${level}>`;
+      continue;
+    }
+
+    // Unordered list
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inList || listType !== 'ul') {
+        if (inList) html += listType === 'ul' ? '</ul>' : '</ol>';
+        html += '<ul class="doc-list">';
+        inList = true;
+        listType = 'ul';
+      }
+      html += `<li>${inlineFormat(line.replace(/^\s*[-*]\s+/, ''))}</li>`;
+      continue;
+    }
+
+    // Ordered list
+    if (/^\s*\d+\.\s+/.test(line)) {
+      if (!inList || listType !== 'ol') {
+        if (inList) html += listType === 'ul' ? '</ul>' : '</ol>';
+        html += '<ol class="doc-list">';
+        inList = true;
+        listType = 'ol';
+      }
+      html += `<li>${inlineFormat(line.replace(/^\s*\d+\.\s+/, ''))}</li>`;
+      continue;
+    }
+
+    // End list
+    if (inList && line.trim() === '') {
+      html += listType === 'ul' ? '</ul>' : '</ol>';
+      inList = false;
+    }
+
+    // Empty line
+    if (line.trim() === '') continue;
+
+    // Paragraph
+    if (!inList) {
+      html += `<p class="doc-p">${inlineFormat(line)}</p>`;
+    }
+  }
+
+  if (inCodeBlock) {
+    html += `<pre class="doc-code"><code>${escapeHtml(codeBlockContent.trimEnd())}</code></pre>`;
+  }
+  if (inList) html += listType === 'ul' ? '</ul>' : '</ol>';
+  return html;
+}
+
+function inlineFormat(text) {
+  let s = escapeHtml(text);
+  s = s.replace(/`([^`]+)`/g, '<code class="doc-inline-code">$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--blue)">$1</a>');
+  return s;
+}
+
+let docContentCache = {};
+
+async function renderDocFeatureDetail(c) {
+  const doc = D.documentation;
+  const f = doc?.features.find(x => x.key === drillFeatureKey);
+  if (!f) {
+    c.innerHTML = `<div class="onboarding-block"><p>Фича не найдена.</p></div>`;
+    return;
+  }
+
+  const statusColor = !f.docExists ? 'var(--red)' : f.isStale ? 'var(--yellow)' : 'var(--green)';
+  const statusText = !f.docExists ? 'Отсутствует' : f.isStale ? `Устарела (${f.changedFilesSinceDoc.length} файл.)` : 'Актуальна';
+  const statusDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};margin-right:6px"></span>`;
+  const lastUpd = f.lastUpdated ? new Date(f.lastUpdated).toLocaleDateString('ru-RU') : '—';
+
+  const agentTask = !f.docExists ? 'generate-docs' : f.isStale ? 'update-docs' : null;
+  const agentLabel = !f.docExists ? 'Сгенерировать документацию' : f.isStale ? `Обновить документацию (${f.changedFilesSinceDoc.length} файл.)` : '';
+
+  let changedFilesHtml = '';
+  if (f.isStale && f.changedFilesSinceDoc.length > 0) {
+    changedFilesHtml = `
+      <div class="doc-changed-section">
+        <div class="doc-changed-header" onclick="this.parentElement.classList.toggle('open')">
+          Изменённые файлы (${f.changedFilesSinceDoc.length})
+          <span class="doc-changed-arrow">&#9654;</span>
+        </div>
+        <div class="doc-changed-list">
+          ${f.changedFilesSinceDoc.map(fp => `<div class="doc-changed-file">${escapeHtml(fp)}</div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  let docContentHtml = '';
+  if (f.docExists) {
+    // Fetch content if not cached
+    if (!docContentCache[f.key]) {
+      try {
+        const resp = await fetch('/api/docs/content?feature=' + encodeURIComponent(f.key));
+        const data = await resp.json();
+        if (data.exists && data.content) docContentCache[f.key] = data.content;
+      } catch {}
+    }
+    const raw = docContentCache[f.key] || '';
+    docContentHtml = raw ? `<div class="doc-content">${renderMarkdownToHtml(raw)}</div>` : '<div style="color:var(--muted);padding:16px">Не удалось загрузить содержимое документации.</div>';
+  } else {
+    docContentHtml = `<div style="color:var(--muted);padding:16px;text-align:center">Документация ещё не создана. Нажмите кнопку ниже, чтобы сгенерировать.</div>`;
+  }
+
+  c.innerHTML = `
+    <div style="margin-bottom:16px">
+      <button class="back-btn" id="docBackBtn">&#8592; Все фичи</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="width:4px;height:28px;border-radius:2px;background:${f.color}"></div>
+      <h2 style="margin:0;font-size:18px;color:var(--text)">${escapeHtml(f.label)}</h2>
+      <div style="display:flex;align-items:center;font-size:13px">${statusDot}<span style="color:${statusColor};font-weight:600">${statusText}</span></div>
+      <span style="font-size:12px;color:var(--muted)">Обновлено: ${lastUpd}</span>
+    </div>
+    ${agentTask ? `<div style="margin-bottom:16px"><button class="agent-card-btn doc-detail-agent-btn" data-task="${agentTask}" data-key="${f.key}">${agentLabel}</button></div>` : ''}
+    ${changedFilesHtml}
+    ${docContentHtml}`;
+
+  document.getElementById('docBackBtn').onclick = () => backToFeatures();
+
+  const detailAgentBtn = c.querySelector('.doc-detail-agent-btn');
+  if (detailAgentBtn) {
+    detailAgentBtn.onclick = () => runAgentTask(detailAgentBtn.dataset.task, detailAgentBtn.dataset.key);
+  }
 }
 
 function renderFeatureCards(c) {
@@ -4637,6 +4963,7 @@ async function refreshData() {
   try {
     const res = await fetch('/api/data');
     D = await res.json();
+    docContentCache = {};
 
     // Update header timestamp
     document.getElementById('scannedAt').textContent =

@@ -1336,6 +1336,83 @@ function buildWriteE2eTestPrompt(feat: FeatureResult, plan: E2ePlan, modules: Mo
   ].filter(Boolean).join('\n');
 }
 
+// ─── Documentation prompt builders ───────────────────────────────────────────
+
+function buildGenerateDocsPrompt(feat: FeatureResult, modules: ModuleInfo[], projectRoot: string): string {
+  const sourceFiles = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+
+  return [
+    `Сгенерируй исчерпывающую пользовательскую документацию для фичи "${feat.label}".`,
+    ``,
+    feat.description ? `Описание фичи: ${feat.description}` : '',
+    ``,
+    `Файлы фичи (${sourceFiles.length}):`,
+    ...sourceFiles,
+    ``,
+    `Задача:`,
+    `1. Прочитай каждый файл фичи`,
+    `2. Разберись в архитектуре: как файлы связаны, какие API/функции они экспортируют`,
+    `3. Напиши документацию в формате Markdown`,
+    ``,
+    `Обязательные секции документа:`,
+    `## Overview — что делает фича, зачем нужна, какую задачу решает`,
+    `## Architecture — ключевые компоненты, data flow, связи между файлами`,
+    `## Usage — как использовать (API, функции, endpoints, компоненты)`,
+    `## Configuration — конфигурация, env-переменные, настройки`,
+    `## Key Files — список файлов с кратким описанием роли каждого`,
+    `## Dependencies — внешние пакеты и внутренние зависимости`,
+    ``,
+    `Требования:`,
+    `- Документация должна быть исчерпывающей, понятной для нового разработчика`,
+    `- Описывай каждый публичный API/экспорт`,
+    `- Приводи примеры использования`,
+    `- Запиши результат в файл: docs/features/${feat.key}.md`,
+    `- Создай директорию docs/features/ если её нет`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildUpdateDocsPrompt(
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  changedFiles: string[],
+  currentDoc: string,
+  projectRoot: string,
+): string {
+  const allSourceFiles = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+
+  return [
+    `Обнови документацию фичи "${feat.label}".`,
+    ``,
+    `Текущая документация:`,
+    '```markdown',
+    currentDoc,
+    '```',
+    ``,
+    `Файлы, изменённые после последнего обновления документации (${changedFiles.length}):`,
+    ...changedFiles.map(f => '- ' + f.replace(/\\/g, '/')),
+    ``,
+    `Все файлы фичи (${allSourceFiles.length}):`,
+    ...allSourceFiles,
+    ``,
+    `Задача:`,
+    `1. Прочитай каждый изменённый файл`,
+    `2. Определи, что изменилось по сравнению с текущей документацией`,
+    `3. Обнови соответствующие секции документа`,
+    `4. Сохрани структуру и стиль существующей документации`,
+    `5. Если добавлены новые файлы — добавь их в секцию Key Files`,
+    `6. Если удалены файлы — убери их из документации`,
+    ``,
+    `Требования:`,
+    `- Не переписывай весь документ, обнови только устаревшие секции`,
+    `- Сохрани существующие примеры, если они всё ещё валидны`,
+    `- Запиши обновлённый результат в файл: docs/features/${feat.key}.md`,
+  ].join('\n');
+}
+
 // ─── Main server ──────────────────────────────────────────────────────────────
 
 export function startServer({ data: initialData, port, projectRoot }: ServerOptions): Promise<ServerHandle> {
@@ -1789,6 +1866,22 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } else {
           failBeforeStart('Нет данных observability или модули не выбраны'); return;
         }
+      } else if (task === 'generate-docs') {
+        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
+        const feat = currentData.features.find(f => f.key === featureKey);
+        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
+        prompt = buildGenerateDocsPrompt(feat, currentData.modules, projectRoot);
+      } else if (task === 'update-docs') {
+        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
+        const feat = currentData.features.find(f => f.key === featureKey);
+        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
+        const docStatus = currentData.documentation?.features.find(f => f.key === featureKey);
+        let currentDoc = '';
+        try {
+          currentDoc = fs.readFileSync(path.join(projectRoot, 'docs', 'features', `${featureKey}.md`), 'utf-8');
+        } catch {}
+        const changedFiles = docStatus?.changedFilesSinceDoc || [];
+        prompt = buildUpdateDocsPrompt(feat, currentData.modules, changedFiles, currentDoc, projectRoot);
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }
@@ -2332,6 +2425,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     chokidar.watch([
       '**/*.{ts,tsx,js,jsx,vue,svelte}',
       'viberadar.config.json',
+      'docs/features/*.md',
     ], {
       cwd: projectRoot,
       ignored: [
@@ -2351,7 +2445,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const parsedUrl = new URL(rawUrl, 'http://127.0.0.1');
       const url = parsedUrl.pathname;
 
-      if (url === '/' || url === '/radar/qa' || url === '/radar/observability') {
+      if (url === '/' || url === '/radar/qa' || url === '/radar/observability' || url === '/radar/docs') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(DASHBOARD_HTML);
         return;
@@ -2861,6 +2955,50 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } catch {
           res.writeHead(404); res.end('Not found');
         }
+        return;
+      }
+
+      // ── Documentation API ─────────────────────────────────────────────────────
+      if (url === '/api/docs/content' && req.method === 'GET') {
+        const featureKey = parsedUrl.searchParams.get('feature');
+        if (!featureKey) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing feature param' }));
+          return;
+        }
+        const docPath = path.join(projectRoot, 'docs', 'features', `${featureKey}.md`);
+        try {
+          const content = fs.readFileSync(docPath, 'utf-8');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ content, exists: true }));
+        } catch {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ content: null, exists: false }));
+        }
+        return;
+      }
+
+      if (url === '/api/docs/save' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const { featureKey, content } = JSON.parse(body);
+            if (!featureKey || typeof content !== 'string') {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Missing featureKey or content' }));
+              return;
+            }
+            const docsDir = path.join(projectRoot, 'docs', 'features');
+            fs.mkdirSync(docsDir, { recursive: true });
+            fs.writeFileSync(path.join(docsDir, `${featureKey}.md`), content, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
         return;
       }
 

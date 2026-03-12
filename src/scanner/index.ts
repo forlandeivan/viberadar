@@ -70,6 +70,7 @@ export interface ScanResult {
   agent?: 'claude' | 'codex';  // configured AI agent
   testRunner?: string;          // detected test runner (vitest/jest)
   observability?: ObservabilityReport;
+  documentation?: DocumentationReport;
 }
 
 export interface ObservabilityCatalogItem {
@@ -145,6 +146,32 @@ export interface FeatureObservabilityResult {
   missingCriticalCount: number;
   fieldGapCount: number;
   failurePointCount: number;
+}
+
+// ─── Documentation report types ─────────────────────────────────────────────
+
+export interface FeatureDocStatus {
+  key: string;
+  label: string;
+  color: string;
+  docExists: boolean;
+  docPath: string;                // 'docs/features/{key}.md'
+  docMtime: number | null;        // mtimeMs of the doc file
+  maxSourceMtime: number;         // max mtimeMs across feature source files
+  isStale: boolean;               // maxSourceMtime > docMtime
+  changedFilesSinceDoc: string[]; // relativePaths of source files newer than doc
+  sourceFileCount: number;
+  docSizeBytes: number | null;
+  lastUpdated: string | null;     // ISO date string
+}
+
+export interface DocumentationReport {
+  docsDir: string;
+  features: FeatureDocStatus[];
+  totalFeatures: number;
+  freshCount: number;
+  staleCount: number;
+  missingCount: number;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -956,6 +983,90 @@ function loadCoverageMap(projectRoot: string): Map<string, CoverageInfo> {
   return coverageMap;
 }
 
+// ─── Documentation report ────────────────────────────────────────────────────
+
+function computeDocumentationReport(
+  modules: ModuleInfo[],
+  projectRoot: string,
+  configFeatures?: Record<string, FeatureConfig>,
+): DocumentationReport | undefined {
+  if (!configFeatures) return undefined;
+
+  const docsDir = path.join(projectRoot, 'docs', 'features');
+  const featureEntries = Object.entries(configFeatures);
+  let freshCount = 0;
+  let staleCount = 0;
+  let missingCount = 0;
+
+  const features: FeatureDocStatus[] = featureEntries.map(([key, fc]) => {
+    const sourceModules = modules.filter(
+      m => m.type !== 'test' && !m.isInfra && m.featureKeys.includes(key),
+    );
+
+    // Collect mtimes of source files
+    const mtimes: number[] = [];
+    for (const m of sourceModules) {
+      try { mtimes.push(fs.statSync(m.path).mtimeMs); } catch { /* deleted */ }
+    }
+    const maxSourceMtime = mtimes.length > 0 ? Math.max(...mtimes) : 0;
+
+    const docFilePath = path.join(docsDir, `${key}.md`);
+    const docRelPath = `docs/features/${key}.md`;
+    let docExists = false;
+    let docMtime: number | null = null;
+    let docSizeBytes: number | null = null;
+
+    try {
+      const st = fs.statSync(docFilePath);
+      docExists = true;
+      docMtime = st.mtimeMs;
+      docSizeBytes = st.size;
+    } catch { /* file does not exist */ }
+
+    const isStale = docExists && docMtime !== null && maxSourceMtime > docMtime;
+    const isMissing = !docExists;
+
+    const changedFilesSinceDoc: string[] = [];
+    if (docExists && docMtime !== null) {
+      for (const m of sourceModules) {
+        try {
+          if (fs.statSync(m.path).mtimeMs > docMtime) {
+            changedFilesSinceDoc.push(m.relativePath);
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    if (isMissing) missingCount++;
+    else if (isStale) staleCount++;
+    else freshCount++;
+
+    return {
+      key,
+      label: fc.label,
+      color: fc.color,
+      docExists,
+      docPath: docRelPath,
+      docMtime,
+      maxSourceMtime,
+      isStale,
+      changedFilesSinceDoc,
+      sourceFileCount: sourceModules.length,
+      docSizeBytes,
+      lastUpdated: docMtime ? new Date(docMtime).toISOString() : null,
+    };
+  });
+
+  return {
+    docsDir,
+    features,
+    totalFeatures: featureEntries.length,
+    freshCount,
+    staleCount,
+    missingCount,
+  };
+}
+
 // ─── Main scan function ───────────────────────────────────────────────────────
 
 export async function scanProject(projectRoot: string): Promise<ScanResult> {
@@ -1247,5 +1358,6 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     agent: config?.agent,
     testRunner,
     observability: computeObservabilityReport(modules, projectRoot, config?.features),
+    documentation: computeDocumentationReport(modules, projectRoot, config?.features),
   };
 }
