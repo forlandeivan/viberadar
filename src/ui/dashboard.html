@@ -3784,6 +3784,20 @@ function renderMarkdownToHtml(md) {
     // Empty line
     if (line.trim() === '') continue;
 
+    // Image line: ![alt](screenshots/file.png)
+    const imgMatch = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; }
+      const alt = escapeHtml(imgMatch[1]);
+      let src = imgMatch[2];
+      // Rewrite relative screenshot paths to API endpoint
+      if (src.startsWith('screenshots/') && drillFeatureKey) {
+        src = '/api/docs/screenshot/' + drillFeatureKey + '/' + src;
+      }
+      html += `<div style="margin:12px 0;text-align:center"><img src="${src}" alt="${alt}" style="max-width:100%;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--muted);margin-top:4px">${alt}</div></div>`;
+      continue;
+    }
+
     // Paragraph
     if (!inList) {
       html += `<p class="doc-p">${inlineFormat(line)}</p>`;

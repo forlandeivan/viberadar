@@ -35,6 +35,7 @@ export interface FeatureConfig {
   description?: string;
   include: string[];
   color: string;
+  routes?: string[];  // URL paths for doc screenshots: ["/login", "/profile"]
 }
 
 export interface VibeRadarConfig {
@@ -56,6 +57,7 @@ export interface FeatureResult {
   unitTestCount: number;      // test files of type 'unit'
   integrationTestCount: number;
   e2eTestCount: number;
+  routes?: string[];          // URL paths for doc screenshots
 }
 
 export interface ScanResult {
@@ -1356,6 +1358,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
         unitTestCount:        tstFiles.filter(m => m.testType === 'unit').length,
         integrationTestCount: tstFiles.filter(m => m.testType === 'integration').length,
         e2eTestCount:         tstFiles.filter(m => m.testType === 'e2e').length,
+        routes: feat.routes,
       };
     });
   }

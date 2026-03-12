@@ -1338,6 +1338,33 @@ function buildWriteE2eTestPrompt(feat: FeatureResult, plan: E2ePlan, modules: Mo
 
 // ─── Documentation prompt builders ───────────────────────────────────────────
 
+function buildScreenshotInstructions(featureKey: string, routes: string[]): string {
+  const screenshotDir = `docs/features/${featureKey}/screenshots`;
+  return [
+    ``,
+    `Скриншоты интерфейса:`,
+    `Перед написанием документации сделай скриншоты страниц.`,
+    ``,
+    `Маршруты для скриншотов (${routes.length}):`,
+    ...routes.map(r => `- ${r}`),
+    ``,
+    `Инструкции:`,
+    `1. Убедись что dev-сервер запущен (npm run dev, порт 5000). Если нет — запусти.`,
+    `2. Залогинься через UI (credentials из .env: E2E_USER_EMAIL / E2E_USER_PASSWORD).`,
+    `3. Для каждого маршрута:`,
+    `   - Перейди на http://localhost:5000{route}`,
+    `   - Дождись полной загрузки страницы`,
+    `   - Сделай скриншот (полная страница)`,
+    `   - Сохрани в: ${screenshotDir}/{route-name}.png`,
+    `     Именование: /login → login.png, /forgot-password → forgot-password.png, / → index.png`,
+    `4. Создай директорию ${screenshotDir}/ если её нет`,
+    ``,
+    `В документации:`,
+    `- Вставляй скриншот сразу после заголовка раздела: ![Описание экрана](screenshots/{filename}.png)`,
+    `- Под каждым скриншотом — курсивная подпись: *Экран входа в систему*`,
+  ].join('\n');
+}
+
 function buildActualizeDocsPrompt(
   feat: FeatureResult,
   modules: ModuleInfo[],
@@ -1351,6 +1378,9 @@ function buildActualizeDocsPrompt(
 
   const isFirstVersion = nextVersion === 1;
   const outPath = `docs/features/${feat.key}/v${nextVersion}.md`;
+  const screenshotBlock = feat.routes && feat.routes.length > 0
+    ? buildScreenshotInstructions(feat.key, feat.routes)
+    : '';
 
   if (isFirstVersion) {
     return [
@@ -1379,6 +1409,7 @@ function buildActualizeDocsPrompt(
       `- Callout-блоки (> текст) для важных предупреждений`,
       ``,
       `В конце — раздел "Частые проблемы": таблица | Проблема | Что делать |`,
+      screenshotBlock,
       ``,
       `Требования:`,
       `- Простой язык, без технических терминов и деталей реализации`,
@@ -1411,12 +1442,14 @@ function buildActualizeDocsPrompt(
     `4. Обнови только те разделы, которые устарели или требуют дополнений`,
     `5. Добавь новые разделы если появились новые сценарии`,
     `6. Удали разделы если соответствующие возможности убраны`,
+    screenshotBlock,
     ``,
     `Требования:`,
     `- Не переписывай весь документ — меняй только то, что изменилось`,
     `- Сохрани структуру и стиль текущей версии`,
     `- Простой язык, без технических терминов`,
     `- Не упоминать имена файлов, компонентов, API-эндпоинтов`,
+    `- Обнови скриншоты если экраны изменились`,
     `- Запиши результат как НОВЫЙ файл: ${outPath}`,
     `- Не удаляй и не изменяй предыдущую версию v${nextVersion - 1}`,
     `- Создай директорию docs/features/${feat.key}/ если её нет`,
@@ -2947,6 +2980,26 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
           }
         });
+        return;
+      }
+
+      // Serve doc screenshots: /api/docs/screenshot/{featureKey}/{filename}
+      if (url.startsWith('/api/docs/screenshot/') && req.method === 'GET') {
+        const relPath = decodeURIComponent(url.slice('/api/docs/screenshot/'.length));
+        const screenshotBase = path.join(projectRoot, 'docs', 'features');
+        const safePath = path.resolve(screenshotBase, relPath);
+        if (!safePath.startsWith(screenshotBase)) {
+          res.writeHead(403); res.end('Forbidden'); return;
+        }
+        try {
+          const img = fs.readFileSync(safePath);
+          const ext = path.extname(safePath).toLowerCase();
+          const mime = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/webp';
+          res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=300' });
+          res.end(img);
+        } catch {
+          res.writeHead(404); res.end('Not found');
+        }
         return;
       }
 
