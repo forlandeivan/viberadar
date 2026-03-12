@@ -155,14 +155,16 @@ export interface FeatureDocStatus {
   label: string;
   color: string;
   docExists: boolean;
-  docPath: string;                // 'docs/features/{key}.md'
-  docMtime: number | null;        // mtimeMs of the doc file
+  docPath: string;                // 'docs/features/{key}/v{N}.md' — latest version
+  docMtime: number | null;        // mtimeMs of the latest version file
   maxSourceMtime: number;         // max mtimeMs across feature source files
   isStale: boolean;               // maxSourceMtime > docMtime
   changedFilesSinceDoc: string[]; // relativePaths of source files newer than doc
   sourceFileCount: number;
   docSizeBytes: number | null;
   lastUpdated: string | null;     // ISO date string
+  latestVersion: number | null;   // current version number (1, 2, 3, ...)
+  docVersions: string[];          // all version paths relative to project root
 }
 
 export interface DocumentationReport {
@@ -1010,18 +1012,37 @@ function computeDocumentationReport(
     }
     const maxSourceMtime = mtimes.length > 0 ? Math.max(...mtimes) : 0;
 
-    const docFilePath = path.join(docsDir, `${key}.md`);
-    const docRelPath = `docs/features/${key}.md`;
+    // Versioned docs: docs/features/{key}/v1.md, v2.md, ...
+    const docDir = path.join(docsDir, key);
     let docExists = false;
     let docMtime: number | null = null;
     let docSizeBytes: number | null = null;
+    let latestVersion: number | null = null;
+    let docVersions: string[] = [];
+    let latestDocFilePath: string | null = null;
 
     try {
-      const st = fs.statSync(docFilePath);
-      docExists = true;
-      docMtime = st.mtimeMs;
-      docSizeBytes = st.size;
-    } catch { /* file does not exist */ }
+      const entries = fs.readdirSync(docDir);
+      const versionFiles = entries
+        .map(e => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+        .filter((x): x is { file: string; n: number } => x !== null)
+        .sort((a, b) => a.n - b.n);
+
+      if (versionFiles.length > 0) {
+        docVersions = versionFiles.map(v => `docs/features/${key}/${v.file}`);
+        const latest = versionFiles[versionFiles.length - 1];
+        latestVersion = latest.n;
+        latestDocFilePath = path.join(docDir, latest.file);
+        const st = fs.statSync(latestDocFilePath);
+        docExists = true;
+        docMtime = st.mtimeMs;
+        docSizeBytes = st.size;
+      }
+    } catch { /* dir does not exist */ }
+
+    const docRelPath = latestDocFilePath
+      ? `docs/features/${key}/v${latestVersion}.md`
+      : `docs/features/${key}/v1.md`;
 
     const isStale = docExists && docMtime !== null && maxSourceMtime > docMtime;
     const isMissing = !docExists;
@@ -1054,6 +1075,8 @@ function computeDocumentationReport(
       sourceFileCount: sourceModules.length,
       docSizeBytes,
       lastUpdated: docMtime ? new Date(docMtime).toISOString() : null,
+      latestVersion,
+      docVersions,
     };
   });
 

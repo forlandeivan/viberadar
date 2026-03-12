@@ -1338,150 +1338,89 @@ function buildWriteE2eTestPrompt(feat: FeatureResult, plan: E2ePlan, modules: Mo
 
 // ─── Documentation prompt builders ───────────────────────────────────────────
 
-function buildGenerateDocsPrompt(feat: FeatureResult, modules: ModuleInfo[], projectRoot: string): string {
+function buildActualizeDocsPrompt(
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  currentDoc: string | null,
+  nextVersion: number,
+  changedFiles: string[],
+): string {
   const sourceFiles = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
     .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
 
-  return [
-    `Напиши пользовательскую документацию для фичи "${feat.label}".`,
-    ``,
-    feat.description ? `Описание фичи: ${feat.description}` : '',
-    ``,
-    `Файлы фичи (${sourceFiles.length}):`,
-    ...sourceFiles,
-    ``,
-    `Задача:`,
-    `1. Прочитай каждый файл фичи`,
-    `2. Пойми, что пользователь может делать с этой фичей — какие экраны видит, какие действия совершает, какие сценарии проходит`,
-    `3. Напиши документацию от лица пользователя в формате Markdown`,
-    ``,
-    `Структура документа:`,
-    `# {название фичи}`,
-    `> одна строка — зачем это нужно пользователю`,
-    ``,
-    `## Содержание — список якорей на разделы`,
-    ``,
-    `Далее — разделы по каждому сценарию использования. Для каждого сценария:`,
-    `- Заголовок = действие, которое совершает пользователь (например "Вход в систему", "Восстановление пароля")`,
-    `- Пошаговые инструкции: что нажать, что ввести, что произойдёт`,
-    `- Подразделы для подсценариев (если есть разные ветки поведения)`,
-    `- Callout-блоки (> текст) для важных предупреждений и подсказок`,
-    ``,
-    `В конце — раздел "Частые проблемы" в виде таблицы: | Проблема | Что делать |`,
-    ``,
-    `Требования:`,
-    `- Писать простым языком, без технических терминов и деталей реализации`,
-    `- Не упоминать названия файлов, компонентов, API-эндпоинтов`,
-    `- Описывать только то, что видит и делает пользователь`,
-    `- Покрыть все сценарии, включая ошибочные и крайние случаи`,
-    `- Запиши результат в файл: docs/features/${feat.key}.md`,
-    `- Создай директорию docs/features/ если её нет`,
-  ].filter(Boolean).join('\n');
-}
+  const isFirstVersion = nextVersion === 1;
+  const outPath = `docs/features/${feat.key}/v${nextVersion}.md`;
 
-function buildUpdateDocsPrompt(
-  feat: FeatureResult,
-  modules: ModuleInfo[],
-  changedFiles: string[],
-  currentDoc: string,
-  projectRoot: string,
-): string {
-  const allSourceFiles = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
-    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+  if (isFirstVersion) {
+    return [
+      `Напиши пользовательскую документацию для фичи "${feat.label}".`,
+      ``,
+      feat.description ? `Описание фичи: ${feat.description}` : '',
+      ``,
+      `Файлы фичи (${sourceFiles.length}):`,
+      ...sourceFiles,
+      ``,
+      `Задача:`,
+      `1. Прочитай каждый файл фичи`,
+      `2. Пойми, что пользователь может делать с этой фичей — какие экраны видит, какие действия совершает, какие сценарии проходит`,
+      `3. Напиши документацию от лица пользователя в формате Markdown`,
+      ``,
+      `Структура документа:`,
+      `# ${feat.label}`,
+      `> одна строка — зачем это нужно пользователю`,
+      ``,
+      `## Содержание — список якорей на разделы`,
+      ``,
+      `Далее — разделы по каждому сценарию. Для каждого сценария:`,
+      `- Заголовок = действие пользователя (например "Вход в систему", "Восстановление пароля")`,
+      `- Пошаговые инструкции: что нажать, что ввести, что произойдёт`,
+      `- Подразделы для разных веток поведения если есть`,
+      `- Callout-блоки (> текст) для важных предупреждений`,
+      ``,
+      `В конце — раздел "Частые проблемы": таблица | Проблема | Что делать |`,
+      ``,
+      `Требования:`,
+      `- Простой язык, без технических терминов и деталей реализации`,
+      `- Не упоминать имена файлов, компонентов, API-эндпоинтов`,
+      `- Описывать только то, что видит и делает пользователь`,
+      `- Покрыть все сценарии включая ошибочные`,
+      `- Запиши результат в: ${outPath}`,
+      `- Создай директорию docs/features/${feat.key}/ если её нет`,
+    ].filter(Boolean).join('\n');
+  }
 
   return [
-    `Обнови документацию фичи "${feat.label}".`,
+    `Актуализируй пользовательскую документацию для фичи "${feat.label}".`,
     ``,
-    `Текущая документация:`,
+    `Текущая версия документации (v${nextVersion - 1}):`,
     '```markdown',
     currentDoc,
     '```',
     ``,
-    `Файлы, изменённые после последнего обновления документации (${changedFiles.length}):`,
+    `Файлы фичи, изменившиеся с момента последней версии (${changedFiles.length}):`,
     ...changedFiles.map(f => '- ' + f.replace(/\\/g, '/')),
     ``,
-    `Все файлы фичи (${allSourceFiles.length}):`,
-    ...allSourceFiles,
+    `Все файлы фичи (${sourceFiles.length}):`,
+    ...sourceFiles,
     ``,
     `Задача:`,
-    `1. Прочитай каждый изменённый файл`,
-    `2. Пойми, что изменилось с точки зрения пользователя — появились новые экраны, действия, сценарии, или изменилось поведение существующих`,
-    `3. Обнови соответствующие разделы документации`,
-    `4. Сохрани структуру и стиль существующей документации`,
-    `5. Если добавлены новые пользовательские сценарии — добавь разделы для них`,
-    `6. Если сценарии удалены или изменились — обнови или удали соответствующие разделы`,
+    `1. Прочитай каждый изменившийся файл`,
+    `2. Пойми, что изменилось с точки зрения пользователя — новые сценарии, изменилось поведение, убраны возможности`,
+    `3. Возьми текущую версию документации за основу`,
+    `4. Обнови только те разделы, которые устарели или требуют дополнений`,
+    `5. Добавь новые разделы если появились новые сценарии`,
+    `6. Удали разделы если соответствующие возможности убраны`,
     ``,
     `Требования:`,
-    `- Не переписывай весь документ, обнови только устаревшие разделы`,
-    `- Сохрани существующие инструкции, если они всё ещё актуальны`,
-    `- Писать простым языком, без технических терминов и деталей реализации`,
-    `- Не упоминать названия файлов, компонентов, API-эндпоинтов`,
-    `- Описывать только то, что видит и делает пользователь`,
-    `- Запиши обновлённый результат в файл: docs/features/${feat.key}.md`,
+    `- Не переписывай весь документ — меняй только то, что изменилось`,
+    `- Сохрани структуру и стиль текущей версии`,
+    `- Простой язык, без технических терминов`,
+    `- Не упоминать имена файлов, компонентов, API-эндпоинтов`,
+    `- Запиши результат как НОВЫЙ файл: ${outPath}`,
+    `- Не удаляй и не изменяй предыдущую версию v${nextVersion - 1}`,
+    `- Создай директорию docs/features/${feat.key}/ если её нет`,
   ].join('\n');
-}
-
-function buildSyncDocsStructurePrompt(feat: FeatureResult, modules: ModuleInfo[]): string {
-  const sourceFiles = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
-    .map(m => m.relativePath.replace(/\\/g, '/'));
-
-  const testFiles = modules
-    .filter(m => m.featureKeys.includes(feat.key) && m.type === 'test')
-    .map(m => m.relativePath.replace(/\\/g, '/'));
-
-  const skeleton = [
-    `# ${feat.label}`,
-    ``,
-    feat.description ? `> ${feat.description}` : `> TODO: одна строка — зачем это нужно пользователю`,
-    ``,
-    `---`,
-    ``,
-    `## Содержание`,
-    ``,
-    `TODO: список якорей на разделы по сценариям использования.`,
-    ``,
-    `---`,
-    ``,
-    `## TODO: Название первого сценария (например "Как начать работу")`,
-    ``,
-    `TODO: пошаговые инструкции — что нажать, что ввести, что произойдёт.`,
-    ``,
-    `---`,
-    ``,
-    `## Частые проблемы`,
-    ``,
-    `| Проблема | Что делать |`,
-    `|---|---|`,
-    `| TODO | TODO |`,
-  ].join('\n');
-
-  return [
-    `Актуализируй структуру пользовательской документации для фичи "${feat.label}".`,
-    ``,
-    `Файлы фичи (${sourceFiles.length}):`,
-    ...sourceFiles.map(f => '- ' + f),
-    testFiles.length > 0 ? `\nТест-файлы (${testFiles.length}):` : '',
-    ...testFiles.map(f => '- ' + f),
-    ``,
-    `Задача:`,
-    `1. Если файл docs/features/${feat.key}.md НЕ существует — создай его по шаблону ниже`,
-    `2. Если файл СУЩЕСТВУЕТ — не трогай содержимое, только проверь что файл на месте`,
-    ``,
-    `Шаблон для нового файла (строго Markdown, сохрани эту структуру):`,
-    `\`\`\`markdown`,
-    skeleton,
-    `\`\`\``,
-    ``,
-    `Требования:`,
-    `- Файл должен быть валидным Markdown`,
-    `- Это пользовательская документация — никаких Key Files, Architecture, Dependencies`,
-    `- Запиши результат в: docs/features/${feat.key}.md`,
-    `- Создай директорию docs/features/ если её нет`,
-    `- Не читай содержимое исходных файлов — только создай заготовку`,
-  ].filter(l => l !== '').join('\n');
 }
 
 // ─── Main server ──────────────────────────────────────────────────────────────
@@ -1937,27 +1876,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } else {
           failBeforeStart('Нет данных observability или модули не выбраны'); return;
         }
-      } else if (task === 'sync-docs-structure') {
-        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
-        const feat = currentData.features.find(f => f.key === featureKey);
-        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
-        prompt = buildSyncDocsStructurePrompt(feat, currentData.modules);
-      } else if (task === 'generate-docs') {
-        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
-        const feat = currentData.features.find(f => f.key === featureKey);
-        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
-        prompt = buildGenerateDocsPrompt(feat, currentData.modules, projectRoot);
-      } else if (task === 'update-docs') {
+      } else if (task === 'actualize-docs') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);
         if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
         const docStatus = currentData.documentation?.features.find(f => f.key === featureKey);
-        let currentDoc = '';
-        try {
-          currentDoc = fs.readFileSync(path.join(projectRoot, 'docs', 'features', `${featureKey}.md`), 'utf-8');
-        } catch {}
+        const latestVersion = docStatus?.latestVersion ?? null;
+        const nextVersion = (latestVersion ?? 0) + 1;
+        let currentDoc: string | null = null;
+        if (latestVersion !== null) {
+          try {
+            currentDoc = fs.readFileSync(
+              path.join(projectRoot, 'docs', 'features', featureKey, `v${latestVersion}.md`),
+              'utf-8'
+            );
+          } catch {}
+        }
         const changedFiles = docStatus?.changedFilesSinceDoc || [];
-        prompt = buildUpdateDocsPrompt(feat, currentData.modules, changedFiles, currentDoc, projectRoot);
+        prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles);
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }
@@ -2501,7 +2437,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     chokidar.watch([
       '**/*.{ts,tsx,js,jsx,vue,svelte}',
       'viberadar.config.json',
-      'docs/features/*.md',
+      'docs/features/*/*.md',
     ], {
       cwd: projectRoot,
       ignored: [
@@ -3042,11 +2978,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           res.end(JSON.stringify({ error: 'Missing feature param' }));
           return;
         }
-        const docPath = path.join(projectRoot, 'docs', 'features', `${featureKey}.md`);
+        // Versioned docs: find latest vN.md in docs/features/{key}/
+        const docDir = path.join(projectRoot, 'docs', 'features', featureKey);
         try {
-          const content = fs.readFileSync(docPath, 'utf-8');
+          const entries = fs.readdirSync(docDir);
+          const versions = entries
+            .map(e => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+            .filter((x): x is { file: string; n: number } => x !== null)
+            .sort((a, b) => b.n - a.n);
+          if (versions.length === 0) throw new Error('no versions');
+          const content = fs.readFileSync(path.join(docDir, versions[0].file), 'utf-8');
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ content, exists: true }));
+          res.end(JSON.stringify({ content, exists: true, version: versions[0].n }));
         } catch {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ content: null, exists: false }));
