@@ -1641,6 +1641,7 @@ const runSessionMap    = new Map(); // runId -> sessionId
 const sessionRunMap    = new Map(); // sessionId -> runId
 const SESSION_MAX      = 25;
 const SESSION_LINE_LIMIT = 3000;
+const RENDER_LINE_LIMIT  = 500;  // max DOM nodes rendered at once
 const SESSIONS_KEY     = 'viberadar_sessions';
 let terminalSearchQuery = '';
 let terminalSearchErrorsOnly = false;
@@ -1909,10 +1910,23 @@ function renderActiveSession() {
   if (normalizedQuery && terminalSearchRegex) {
     try { regex = new RegExp(normalizedQuery, 'i'); } catch { regex = null; }
   }
-  for (let i = 0; i < s.lines.length; i++) {
-    const ln = s.lines[i];
+
+  // Cap rendered lines to avoid browser freeze on large agent output
+  const allLines = s.lines;
+  const renderStart = Math.max(0, allLines.length - RENDER_LINE_LIMIT);
+  if (renderStart > 0) {
+    const notice = document.createElement('div');
+    notice.className = 'agent-line dim';
+    notice.textContent = `... показаны последние ${RENDER_LINE_LIMIT} из ${allLines.length} строк ...`;
+    term.appendChild(notice);
+  }
+
+  for (let i = renderStart; i < allLines.length; i++) {
+    const ln = allLines[i];
     const text = extractLineText(ln);
-    const isErrorLine = !!ln.isError || /(^|\s)❌/.test(text) || /\berror\b/i.test(text);
+    // Exclude diff lines (+/-) from error detection to avoid false positives
+    const isDiffLine = /^[+\-]/.test(text.trimStart());
+    const isErrorLine = !!ln.isError || /(^|\s)❌/.test(text) || (!isDiffLine && /\berror\b/i.test(text));
     const isCommandLine = /^\s*⚡\s*\$/.test(text);
     if (terminalSearchCurrentRunOnly && currentRunId && s.runId && s.runId !== currentRunId) continue;
     if (terminalSearchErrorsOnly && !isErrorLine) continue;
