@@ -2488,12 +2488,17 @@ function obsMissingRunSelected(groupId) {
   const container = document.getElementById('obs-detail-' + groupId);
   if (!container) return;
   const indices = [];
+  const checkedLabels = [];
   container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
     const idx = parseInt(cb.dataset.missingIdx, 10);
     if (!isNaN(idx)) indices.push(idx);
+    const label = cb.closest('label');
+    if (label) checkedLabels.push(label);
   });
   if (indices.length === 0) return;
   runAgentTask('obs-fix-selected', null, null, null, { missingLogIndices: indices, recommendationType: 'add event' });
+  checkedLabels.forEach(el => el.remove());
+  obsUpdateSelectedCount(groupId);
 }
 
 async function runTests(featureKey, testType) {
@@ -2950,7 +2955,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   }).join('') || '<div class="obs-sub">Шумных паттернов не обнаружено</div>';
 
   // ── Missing critical logs (V2: grouped by risk tier with failure points) ──
-  const v2Data = missingV2;
+  const v2Data = missingV2.filter(m => m.failurePoints.length > 0);
   window.__obsMissingV2 = v2Data;
   const fpTypeLabels = {
     'empty-catch':'пустой catch','catch-no-log':'catch без лога','promise-catch-no-log':'.catch без лога',
