@@ -34,6 +34,7 @@ interface RuntimeEnvSettings {
   agentCooldownMaxMs: number;
   autoFixFailedTests: boolean;
   autoFixMaxRetries: number;
+  autoStage: boolean;
   envFilePath: string | null;
 }
 
@@ -54,6 +55,10 @@ const DEFAULT_RUNTIME_ENV_CONTENT = [
   '',
   '# Codex sandbox mode: read-only | workspace-write | danger-full-access',
   'VIBERADAR_CODEX_SANDBOX=workspace-write',
+  '',
+  '# Auto-stage agent changes after each run (git add, no commit)',
+  '# Staged = agent changes (green in VSCode), unstaged = your own changes (red)',
+  'VIBERADAR_AUTO_STAGE=true',
   '',
 ].join('\n');
 
@@ -128,6 +133,7 @@ function loadRuntimeEnv(projectRoot: string): RuntimeEnvSettings {
     agentCooldownMaxMs,
     autoFixFailedTests: readEnvBool('VIBERADAR_AUTO_FIX_FAILED_TESTS', true),
     autoFixMaxRetries: readEnvInt('VIBERADAR_AUTO_FIX_MAX_RETRIES', 1, 0, 5),
+    autoStage: readEnvBool('VIBERADAR_AUTO_STAGE', true),
     envFilePath: fs.existsSync(envPath) ? envPath : null,
   };
 }
@@ -157,6 +163,42 @@ function detectQueueBlockSignal(line: string): 403 | 429 | null {
   );
   if (is429) return 429;
   return null;
+}
+
+/**
+ * Returns set of files that have uncommitted changes (modified + untracked).
+ * Used to diff before/after agent run so we stage only agent-made changes.
+ */
+function getGitDirtyFiles(cwd: string): Set<string> {
+  const result = new Set<string>();
+  try {
+    const { execSync } = require('child_process') as typeof import('child_process');
+    // Modified/deleted tracked files
+    const modified = execSync('git diff --name-only HEAD', { cwd, encoding: 'utf-8' }).trim();
+    // New untracked files
+    const untracked = execSync('git ls-files --others --exclude-standard', { cwd, encoding: 'utf-8' }).trim();
+    for (const f of [...modified.split('\n'), ...untracked.split('\n')]) {
+      if (f.trim()) result.add(f.trim());
+    }
+  } catch { /* not a git repo or git not available */ }
+  return result;
+}
+
+/**
+ * Stages files that are in `after` but not in `before` (agent-made changes).
+ * Skips .viberadar/ internals. Returns count of staged files.
+ */
+function stageAgentChanges(cwd: string, before: Set<string>, after: Set<string>): number {
+  const toStage = [...after].filter(f =>
+    !before.has(f) && !f.startsWith('.viberadar/')
+  );
+  if (toStage.length === 0) return 0;
+  try {
+    const { execSync } = require('child_process') as typeof import('child_process');
+    const escaped = toStage.map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+    execSync(`git add -- ${escaped}`, { cwd });
+    return toStage.length;
+  } catch { return 0; }
 }
 
 /**
@@ -2013,6 +2055,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         fs.writeFileSync(taskFile, prompt, 'utf-8');
       } catch {}
 
+      // Snapshot dirty files BEFORE agent runs (to detect agent-made changes later)
+      const dirtyBeforeAgent = runtimeEnv.autoStage ? getGitDirtyFiles(projectRoot) : new Set<string>();
+
       // Spawn via shell, reading prompt from file
       if (agent === 'codex') patchCodexConfig();
       const shellCmd = buildAgentShellCmd(agent, taskFile, runtimeEnv.codexSandboxMode, (currentData as any).model);
@@ -2298,6 +2343,17 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
 
           process.stdout.write('   ✅ Agent done, rescanning...\n');
+
+          // Auto-stage: stage only files the agent changed (not user's pre-existing changes)
+          if (runtimeEnv.autoStage) {
+            const dirtyAfterAgent = getGitDirtyFiles(projectRoot);
+            const stagedCount = stageAgentChanges(projectRoot, dirtyBeforeAgent, dirtyAfterAgent);
+            if (stagedCount > 0) {
+              emitOutput(`📦 Auto-staged ${stagedCount} file${stagedCount > 1 ? 's' : ''} (staged = agent changes, unstaged = yours)`);
+              process.stdout.write(`   📦 Auto-staged ${stagedCount} agent-changed file(s)\n`);
+            }
+          }
+
           try {
             if (targetSourcePaths.length > 0) {
               setRunPhase(runId, 'validating', { targetSourcePaths });
