@@ -1065,7 +1065,7 @@ function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: 
 
 function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], catalog: ObservabilityCatalogItem[]): string {
   const moduleBlocks = items.map(item => {
-    const fpSummary = item.failurePoints.slice(0, 5).map(fp =>
+    const fpSummary = item.failurePoints.map(fp =>
       `  - строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type} — \`${fp.snippet}\``
     ).join('\n');
     return `### \`${item.modulePath}\` (${item.roleHint}, ${item.riskTier})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
