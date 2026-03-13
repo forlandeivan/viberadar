@@ -961,7 +961,11 @@ const LOGGING_STANDARD_INLINE = [
   `Обязательные поля для каждого структурированного лога:`,
   `- timestamp (ISO-8601) — обычно ставится логгером автоматически`,
   `- service — имя сервиса (billing-api, auth и т.д.)`,
-  `- env — среда (local|dev|stage|prod), из NODE_ENV`,
+  `- env — среда (local|dev|stage|prod):`,
+  `    ⚠️ КРИТИЧНО: способ получения зависит от окружения файла:`,
+  `    • Серверный файл (server/, Node.js, .ts без JSX): process.env.NODE_ENV ?? "local"`,
+  `    • Клиентский файл (client/, Vite, .tsx, React-компонент): import.meta.env.MODE ?? "local"`,
+  `    • НЕЛЬЗЯ использовать process.env в клиентском коде — Vite его не поддерживает, это сломает сборку`,
   `- level — DEBUG|INFO|WARN|ERROR`,
   `- trace_id — ID распределённого трейса`,
   `- request_id — сквозной request-id`,
@@ -1145,7 +1149,7 @@ function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCata
 
   const fieldHints: Record<string, string> = {
     service: 'Имя сервиса. Берётся из конфига или env-переменной, не хардкодится.',
-    env: 'Среда (local|dev|stage|prod). Берётся из NODE_ENV или конфига.',
+    env: 'Среда (local|dev|stage|prod). ⚠️ КРИТИЧНО — способ зависит от файла: серверный код (server/, Node.js) → process.env.NODE_ENV ?? "local"; клиентский код (client/, Vite, .tsx, React) → import.meta.env.MODE ?? "local". НЕЛЬЗЯ использовать process.env в Vite/React — сломает сборку.',
     trace_id: 'ID распределённого трейса. Передаётся через middleware из заголовка или генерируется.',
     request_id: 'Сквозной ID запроса. Берётся из заголовка X-Request-Id или генерируется middleware.',
     event_name: 'Доменное событие. Формат: <domain>.<entity>.<action> (lower_snake_case через точку).',
