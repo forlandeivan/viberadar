@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as readline from 'readline';
@@ -163,6 +164,30 @@ function detectQueueBlockSignal(line: string): 403 | 429 | null {
  * --output-format stream-json gives real-time events (tool calls, writes, etc.)
  * File piping avoids TUI mode in Claude Code v2+.
  */
+/**
+ * Codex with danger-full-access rewrites ~/.codex/config.toml and can set
+ * model_reasoning_effort = "xhigh" which is not a valid value and causes
+ * Codex to exit with code 1 before doing any work. Patch it to "high" every
+ * time before launching Codex.
+ */
+function patchCodexConfig(): void {
+  const configPath = path.join(os.homedir(), '.codex', 'config.toml');
+  try {
+    if (!fs.existsSync(configPath)) return;
+    const original = fs.readFileSync(configPath, 'utf8');
+    const patched = original.replace(
+      /model_reasoning_effort\s*=\s*"xhigh"/g,
+      'model_reasoning_effort = "high"'
+    );
+    if (patched !== original) {
+      fs.writeFileSync(configPath, patched, 'utf8');
+      process.stdout.write('   🔧 Patched ~/.codex/config.toml: xhigh → high\n');
+    }
+  } catch {
+    // non-fatal: if we can't patch, Codex will error on its own
+  }
+}
+
 function buildAgentShellCmd(agent: string, taskFile: string, codexSandboxMode: CodexSandboxMode, model?: string): string {
   const escaped = taskFile.replace(/\\/g, '\\\\');
   const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
@@ -1976,6 +2001,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } catch {}
 
       // Spawn via shell, reading prompt from file
+      if (agent === 'codex') patchCodexConfig();
       const shellCmd = buildAgentShellCmd(agent, taskFile, runtimeEnv.codexSandboxMode, (currentData as any).model);
       process.stdout.write(`   🚀 Shell cmd: ${shellCmd}\n`);
       const proc = spawn(shellCmd, [], {
