@@ -1306,7 +1306,7 @@ function buildObsFixModulePrompt(modulePath: string, catalogItem: ObservabilityC
   ].filter(Boolean).join('\n');
 }
 
-function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], meta: Record<string, any>): string {
+function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], meta: Record<string, any>): string | null {
   const fieldName = meta.fieldName;
   const recommendationType = meta.recommendationType;
 
@@ -1315,9 +1315,9 @@ function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], me
     ? selectedItems.filter(ci => ci.missingFields.includes(fieldName))
     : selectedItems;
 
-  // All modules already compliant — nothing to do
+  // All modules already compliant — signal caller to skip agent launch
   if (items.length === 0) {
-    return `Все выбранные модули уже содержат поле \`${fieldName}\`. Никаких изменений не требуется.`;
+    return null;
   }
 
   const isSuppressTask = recommendationType === 'suppress' ||
@@ -2018,7 +2018,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           // Existing catalog-based flow
           const selectedItems = indices.map(i => obs.catalog[i]).filter(Boolean);
           if (selectedItems.length === 0) { failBeforeStart('Выбранные модули не найдены в каталоге'); return; }
-          prompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
+          const builtPrompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
+          if (builtPrompt === null) { failBeforeStart('Все выбранные модули уже соответствуют стандарту — нечего исправлять'); return; }
+          prompt = builtPrompt;
         } else {
           failBeforeStart('Нет данных observability или модули не выбраны'); return;
         }
