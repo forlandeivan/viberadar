@@ -1083,7 +1083,7 @@ function buildObsAddCriticalLogsPrompt(modulePath: string, catalog: Observabilit
     `- Добавь logger.warn или logger.error с обязательными полями по стандарту`,
     `- Каждый лог должен включать: event_name, outcome, error_code (для error)`,
     `- Именование event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
-    `- Используй error_code из утверждённого словаря (config/logging-error-codes.json)`,
+    `- Используй error_code из допустимых кодов в стандарте ниже`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
   ].filter(Boolean).join('\n');
@@ -1202,7 +1202,7 @@ function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCata
     request_id: 'Сквозной ID запроса. Берётся из заголовка X-Request-Id или генерируется middleware.',
     event_name: 'Доменное событие. Формат: <domain>.<entity>.<action> (lower_snake_case через точку).',
     outcome: 'Результат операции: success|failure|partial.',
-    error_code: 'Код ошибки из словаря (config/logging-error-codes.json). Обязателен для WARN/ERROR.',
+    error_code: 'Код ошибки из допустимых кодов (см. стандарт ниже). Обязателен для WARN/ERROR.',
     user_id: 'ID пользователя (user_id для внутренних, user_hash для внешних). Берётся из контекста auth.',
   };
 
@@ -1261,7 +1261,7 @@ function buildObsBatchRecommendationPrompt(recommendationType: string, catalog: 
     `Требования:`,
     `- Обработай каждый модуль из списка`,
     `- Для event_name используй формат <domain>.<entity>.<action>`,
-    `- Для error_code используй коды из словаря (config/logging-error-codes.json)`,
+    `- Для error_code используй допустимые коды из стандарта ниже`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
   ].filter(Boolean).join('\n');
@@ -1310,10 +1310,20 @@ function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], me
   const fieldName = meta.fieldName;
   const recommendationType = meta.recommendationType;
 
-  const isSuppressTask = recommendationType === 'suppress' ||
-    selectedItems.every(ci => ci.recommendation === 'suppress');
+  // Filter out modules where the target field is already present — no work needed
+  const items = fieldName
+    ? selectedItems.filter(ci => ci.missingFields.includes(fieldName))
+    : selectedItems;
 
-  const moduleList = selectedItems.map(ci => {
+  // All modules already compliant — nothing to do
+  if (items.length === 0) {
+    return `Все выбранные модули уже содержат поле \`${fieldName}\`. Никаких изменений не требуется.`;
+  }
+
+  const isSuppressTask = recommendationType === 'suppress' ||
+    items.every(ci => ci.recommendation === 'suppress');
+
+  const moduleList = items.map(ci => {
     const mf = ci.missingFields.length > 0 ? ci.missingFields.join(', ') : 'нет';
     const snippets = (ci.noisyMessages || []).slice(0, 4);
     const snippetBlock = snippets.length > 0
@@ -1361,7 +1371,7 @@ function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], me
   }
 
   return [
-    `Исправь логирование в ${selectedItems.length} модулях.`,
+    `Исправь логирование в ${items.length} модулях.`,
     ``,
     actionBlock,
     ``,
@@ -1370,7 +1380,7 @@ function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], me
     `Требования:`,
     `- Обработай каждый модуль из списка`,
     `- Для event_name используй формат <domain>.<entity>.<action> (lower_snake_case через точку)`,
-    `- Для error_code используй коды из словаря (config/logging-error-codes.json)`,
+    `- Для error_code используй допустимые коды из стандарта ниже (словарь logging-error-codes.json в этом проекте отсутствует)`,
     `- Переведи console.* вызовы в структурированный logger`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
