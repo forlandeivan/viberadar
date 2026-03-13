@@ -188,7 +188,7 @@ const IGNORE_DIRS = [
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
 const TEST_PATTERNS = ['.test.', '.spec.', '__tests__', '.fixture.'];
 const INFRA_FILE_PATTERNS = [/\.d\.ts$/];  // type declarations — never source files
-const LOG_CALL_RE = /(?:console|logger|log(?:ger)?|winston|pino|bunyan|\w*[Ll]ogger|\w*[Ll]og)\.(trace|debug|info|warn|error|fatal)\s*\(([^\n;]*)/g;
+const LOG_CALL_RE = /\b(console|logger|log(?:ger)?|winston|pino|bunyan|\w*[Ll]ogger|\w*[Ll]og)\.(trace|debug|info|warn|error|fatal)\s*\(([^\n;]*)/g;
 
 interface ParsedLogCall {
   level: string;
@@ -196,6 +196,8 @@ interface ParsedLogCall {
   message: string;
   structured: boolean;
   actionableError: boolean;
+  /** true when the call site is console.* (not a custom/framework logger) */
+  isConsoleCall: boolean;
 }
 
 // ─── Glob pattern matcher ─────────────────────────────────────────────────────
@@ -649,8 +651,9 @@ function parseLogCalls(content: string): ParsedLogCall[] {
   const re = new RegExp(LOG_CALL_RE);
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
-    const level = (m[1] || '').toLowerCase();
-    let argsSnippet = (m[2] || '').trim();
+    const isConsoleCall = (m[1] || '').toLowerCase() === 'console';
+    const level = (m[2] || '').toLowerCase();
+    let argsSnippet = (m[3] || '').trim();
 
     // Multi-line call: object arg may start on the same line (argsSnippet = "{...") OR
     // on the next line (argsSnippet = "" when logger.error(\n  { ... })).
@@ -671,11 +674,11 @@ function parseLogCalls(content: string): ParsedLogCall[] {
 
     const msgMatch = argsSnippet.match(/['"`]([^'"`]{3,200})['"`]/);
     const message = (msgMatch?.[1] || '').trim();
-    const structured = /^\{/.test((m[2] || '').trim()) || /\{[^}]*\}/.test(argsSnippet);
+    const structured = /^\{/.test((m[3] || '').trim()) || /\{[^}]*\}/.test(argsSnippet);
     const actionableError =
       level === 'error' &&
       (/(id|status|code|path|url|feature|module|retry|hint|action)/i.test(argsSnippet) || structured);
-    calls.push({ level, argsSnippet, message, structured, actionableError });
+    calls.push({ level, argsSnippet, message, structured, actionableError, isConsoleCall });
   }
   return calls;
 }
@@ -710,6 +713,11 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
   ];
   const fieldGapCounts: Record<string, number> = {};
   for (const f of REQUIRED_FIELDS) fieldGapCounts[f.name] = 0;
+
+  // Fields auto-injected by custom logger wrappers (not visible at call site).
+  // Custom loggers (structuredLogger, winston, pino, etc.) typically inject service/env/
+  // trace_id/request_id from their own config. We only penalise console.* calls for these.
+  const FRAMEWORK_AUTO_FIELDS = new Set(['service', 'env', 'trace_id', 'request_id']);
 
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
@@ -765,7 +773,10 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
         .test(c.argsSnippet);
 
       for (const field of applicableFields) {
-        if (hasContextSpread || field.re.test(c.argsSnippet)) {
+        // Non-console loggers (structuredLogger, pino, winston, etc.) inject service/env/
+        // trace_id/request_id from their own config — don't penalise missing them at call site.
+        const autoProvided = !c.isConsoleCall && FRAMEWORK_AUTO_FIELDS.has(field.name);
+        if (hasContextSpread || autoProvided || field.re.test(c.argsSnippet)) {
           requiredFieldsHits += 1;
           mFieldHits += 1;
         } else {
