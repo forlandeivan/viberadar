@@ -653,15 +653,14 @@ function parseLogCalls(content: string): ParsedLogCall[] {
     let argsSnippet = (m[2] || '').trim();
 
     // Multi-line call: argsSnippet captured only "{" (object starts but doesn't close on same line).
-    // Scan up to 10 subsequent lines to find the closing }, "message string" pattern.
-    // e.g. logger.debug({ key: val }, "[MODULE] Human readable message")
+    // Scan up to 25 subsequent lines and include the full body so field-name regexes can match.
+    // e.g. structuredLogger.error({ service, env, user_id, ... }, "message")
     if (/^\{[^}]*$/.test(argsSnippet)) {
       const callLine = content.slice(0, m.index).split('\n').length; // 1-based line index
-      const lookahead = lines.slice(callLine, callLine + 10).join(' ');
-      const afterClose = lookahead.match(/\}\s*,\s*['"`]([^'"`]{3,200})['"`]/);
-      if (afterClose) {
-        argsSnippet = argsSnippet + ` ... "${afterClose[1]}"`;
-      }
+      const bodyLines = lines.slice(callLine, callLine + 25);
+      const body = bodyLines.join(' ');
+      // Append full body so REQUIRED_FIELDS regexes can match field names (service, user_id, env, …)
+      argsSnippet = (argsSnippet + ' ' + body).slice(0, 800);
     }
 
     const msgMatch = argsSnippet.match(/['"`]([^'"`]{3,200})['"`]/);
