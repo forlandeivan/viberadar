@@ -876,7 +876,8 @@ function buildFixTestsPrompt(filePath: string, errors: TestFileError[]): string 
     `- Не удаляй тесты — исправь логику или моки`,
     `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
     `- Если ошибка в исходном коде, а не в тесте — исправь код`,
-    `- После исправления запусти тест, чтобы убедиться что он проходит`,
+    `- После исправления запусти ТОЛЬКО этот файл: npm run test -- ${normalPath}`,
+    `- НЕ запускай npm run test без аргументов — зависнет на integration-тестах с БД`,
   ].join('\n');
 }
 
@@ -899,7 +900,8 @@ function buildFixAllTestsPrompt(failedFiles: Array<{ filePath: string; errors: T
     `- Не удаляй тесты — исправь логику или моки`,
     `- Если тест проверяет несуществующее поведение — адаптируй под реальное поведение кода`,
     `- Если ошибка в исходном коде, а не в тесте — исправь код`,
-    `- После исправления каждого файла запусти его тесты, чтобы убедиться что проходят`,
+    `- После исправления каждого файла запускай ТОЛЬКО его тест: npm run test -- <путь/к/тесту.test.ts>`,
+    `- НЕ запускай npm run test без аргументов — зависнет на integration-тестах с БД`,
   ].join('\n');
 }
 
@@ -1063,6 +1065,13 @@ function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: 
   ].filter(Boolean).join('\n');
 }
 
+function guessTestFile(modulePath: string): string | null {
+  // server/llm-client.ts → tests/llm-client.test.ts
+  const basename = modulePath.replace(/\\/g, '/').split('/').pop()?.replace(/\.(ts|tsx|js|jsx)$/, '') ?? '';
+  if (!basename) return null;
+  return `tests/${basename}.test.ts`;
+}
+
 function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], catalog: ObservabilityCatalogItem[]): string {
   const moduleBlocks = items.map(item => {
     const fpSummary = item.failurePoints.map(fp =>
@@ -1070,6 +1079,13 @@ function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], cat
     ).join('\n');
     return `### \`${item.modulePath}\` (${item.roleHint}, ${item.riskTier})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
   }).join('\n\n');
+
+  const testCommands = items
+    .map(item => guessTestFile(item.modulePath))
+    .filter((f): f is string => f !== null)
+    .filter((f, i, arr) => arr.indexOf(f) === i) // dedupe
+    .map(f => `  npm run test -- ${f}`)
+    .join('\n');
 
   return [
     `Добавь критичные логи в ${items.length} модулей.`,
@@ -1084,6 +1100,13 @@ function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], cat
     `- error_code из словаря (VALIDATION_ERROR, DEPENDENCY_TIMEOUT, INTERNAL_ERROR и т.д.)`,
     `- Пустые catch: добавь logger.error, не оставляй пустыми`,
     `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    ``,
+    `⚠️ ВАЖНО — проверка после изменений:`,
+    `- Запускай ТОЛЬКО тест-файл изменённого модуля — НЕ весь suite`,
+    `- Команды для запуска (по одной за раз):`,
+    testCommands || `  npm run test -- tests/<basename>.test.ts`,
+    `- Запуск \`npm run test\` без аргументов ЗАПРЕЩЁН — зависнет на integration-тестах с БД`,
+    `- Если тест-файл не найден — пропусти шаг проверки`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
   ].filter(Boolean).join('\n');
