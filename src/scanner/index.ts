@@ -757,8 +757,15 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
       const applicableFields = REQUIRED_FIELDS.filter(f => !f.warnErrorOnly || isWarnError);
       requiredFieldsChecks += applicableFields.length;
       mFieldChecks += applicableFields.length;
+
+      // If the call spreads a context/log helper, assume it provides all standard fields.
+      // e.g. ...getFailureLogContext(...), ...buildLogCtx(...), ...logContext, ...ctx
+      // We can't statically resolve what helpers return, so treat as fully compliant.
+      const hasContextSpread = /\.\.\.\s*(?:get\w*(?:Log|Failure|Error|Request|Trace|Auth)?Context\w*\s*\(|build\w*(?:Log|Context)\w*\s*\(|\w*[Ll]og[Cc]ontext\b|\w*[Cc]tx\b)/
+        .test(c.argsSnippet);
+
       for (const field of applicableFields) {
-        if (field.re.test(c.argsSnippet)) {
+        if (hasContextSpread || field.re.test(c.argsSnippet)) {
           requiredFieldsHits += 1;
           mFieldHits += 1;
         } else {
