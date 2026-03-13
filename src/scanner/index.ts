@@ -580,14 +580,14 @@ function detectFailurePoints(content: string): FailurePoint[] {
 
     // 2. catch without logging
     if (/\bcatch\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 15, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 20, lines.length))) {
         points.push({ type: 'catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
 
     // 3. .catch() without logging
     if (/\.catch\s*\(/.test(trimmed) && !/(?:console|logger|log)\.\w+\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 10, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 15, lines.length))) {
         points.push({ type: 'promise-catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
@@ -616,16 +616,16 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 6. throw without preceding logger.error
-    // 15-line lookback: structured logger.error({ ...context }, "msg") spans 8–12 lines.
+    // 25-line lookback: structured logger.error({ ...context }, "msg") can span 16–20 lines.
     if (/\bthrow\s+new\s+\w*Error/.test(trimmed)) {
-      if (!hasLogInRange(Math.max(0, i - 15), i + 1)) {
+      if (!hasLogInRange(Math.max(0, i - 25), i + 1)) {
         points.push({ type: 'throw-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
 
     // 7. if (err) / if (error) without logging
     if (/\bif\s*\(\s*!?(err|error|e)\b/.test(trimmed) && !/\.test\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 8, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 12, lines.length))) {
         points.push({ type: 'error-check-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
@@ -640,7 +640,7 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
   }
 
-  return Array.from(seen.values()).sort((a, b) => a.lineApprox - b.lineApprox).slice(0, 10);
+  return Array.from(seen.values()).sort((a, b) => a.lineApprox - b.lineApprox);
 }
 
 function parseLogCalls(content: string): ParsedLogCall[] {
