@@ -652,15 +652,21 @@ function parseLogCalls(content: string): ParsedLogCall[] {
     const level = (m[1] || '').toLowerCase();
     let argsSnippet = (m[2] || '').trim();
 
-    // Multi-line call: argsSnippet captured only "{" (object starts but doesn't close on same line).
-    // Scan up to 25 subsequent lines and include the full body so field-name regexes can match.
-    // e.g. structuredLogger.error({ service, env, user_id, ... }, "message")
+    // Multi-line call: object arg may start on the same line (argsSnippet = "{...") OR
+    // on the next line (argsSnippet = "" when logger.error(\n  { ... })).
+    // Expand up to 25 subsequent lines so field-name regexes can match.
+    const callLine = content.slice(0, m.index).split('\n').length; // 1-based line index
     if (/^\{[^}]*$/.test(argsSnippet)) {
-      const callLine = content.slice(0, m.index).split('\n').length; // 1-based line index
-      const bodyLines = lines.slice(callLine, callLine + 25);
-      const body = bodyLines.join(' ');
-      // Append full body so REQUIRED_FIELDS regexes can match field names (service, user_id, env, …)
+      // Case 1: opening { on same line, body continues below
+      const body = lines.slice(callLine, callLine + 25).join(' ');
       argsSnippet = (argsSnippet + ' ' + body).slice(0, 800);
+    } else if (argsSnippet === '') {
+      // Case 2: first arg is on the next line — check if it's an object
+      const nextLine = (lines[callLine] || '').trim();
+      if (nextLine.startsWith('{')) {
+        const body = lines.slice(callLine, callLine + 25).join(' ');
+        argsSnippet = body.slice(0, 800);
+      }
     }
 
     const msgMatch = argsSnippet.match(/['"`]([^'"`]{3,200})['"`]/);
