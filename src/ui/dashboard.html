@@ -2995,10 +2995,17 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   window.__noisyPatterns = topNoisy.map(i => ({ pattern: i.pattern, recommendation: i.recommendation }));
 
   const noisyRows = topNoisy.map((i, idx) => {
-    // Find related modules from catalog that contain this pattern in noisyMessages
+    // Find related modules from catalog that contain this pattern in noisyMessages.
+    // No recommendation filter — a module can have any top-level recommendation but still
+    // contribute noisy messages that match this pattern.
+    // Both i.pattern (noisyMap key, 90-char truncated) and noisyMessages entries (80-char truncated)
+    // come from the same source string, so we match by: exact, or one is prefix of the other.
     const relatedModules = catalog.filter(c =>
-      (c.recommendation === 'suppress' || c.recommendation === 'downgrade level') &&
-      (c.noisyMessages || []).some(m => m.includes(i.pattern) || i.pattern.includes(m))
+      (c.noisyMessages || []).some(m => {
+        if (!m) return false;
+        const p = i.pattern;
+        return m === p || m.startsWith(p) || p.startsWith(m);
+      })
     );
     const moduleCount = relatedModules.length;
 
