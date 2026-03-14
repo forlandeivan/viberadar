@@ -2448,9 +2448,16 @@ function obsUpdateSelectedCount(groupId) {
   const checked = container.querySelectorAll('input[type="checkbox"]:checked').length;
   const btn = container.querySelector('.obs-run-selected');
   if (btn) {
-    const baseLabel = btn.dataset.baseLabel || btn.textContent.replace(/\s*\(\d+\)$/, '');
-    btn.dataset.baseLabel = baseLabel;
-    btn.textContent = checked > 0 ? `${baseLabel} (${checked})` : baseLabel;
+    const fieldName = btn.dataset.obsFieldName;
+    if (fieldName) {
+      const n = checked;
+      const suffix = n === 1 ? 'модуль' : n < 5 ? 'модуля' : 'модулей';
+      btn.textContent = n > 0 ? `Добавить \`${fieldName}\` в ${n} ${suffix}` : `Добавить \`${fieldName}\``;
+    } else {
+      const baseLabel = btn.dataset.baseLabel || btn.textContent.replace(/\s*\(\d+\)$/, '');
+      btn.dataset.baseLabel = baseLabel;
+      btn.textContent = checked > 0 ? `${baseLabel} (${checked})` : baseLabel;
+    }
     btn.disabled = checked === 0;
   }
   // Update floating action bar
@@ -2458,11 +2465,12 @@ function obsUpdateSelectedCount(groupId) {
   if (!bar) return;
   if (checked > 0) {
     const action = container.dataset.obsAction || '';
-    const actionLabels = { missing: 'добавить логи', field: 'обогатить поля', rec: 'исправить' };
+    const actionLabels = { missing: 'добавить логи', field: 'Добавить поле', rec: 'исправить' };
     const groupLabel = container.dataset.obsLabel || '';
+    const fieldMeta = action === 'field' && container.dataset.obsMeta ? JSON.parse(container.dataset.obsMeta) : null;
     bar.dataset.groupId = groupId;
     document.getElementById('obsFloatingCount').textContent = `${checked} выбрано`;
-    document.getElementById('obsFloatingLabel').textContent = groupLabel;
+    document.getElementById('obsFloatingLabel').textContent = fieldMeta ? `\`${fieldMeta.fieldName}\`` : groupLabel;
     document.getElementById('obsFloatingBtn').textContent = actionLabels[action] || 'исправить';
     bar.classList.add('visible');
   } else {
@@ -3124,7 +3132,9 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
     const detailItems = affectedItems.map(ci => {
       const catIdx = catalog.indexOf(ci);
-      return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
+      const otherMissing = (ci.missingFields||[]).filter(f => f !== name);
+      const otherHint = otherMissing.length > 0 ? `<span style="color:var(--dim);font-size:0.8em;flex-shrink:0" title="также отсутствуют: ${escapeHtml(otherMissing.join(', '))}">+${escapeHtml(otherMissing.join(', '))}</span>` : '';
+      return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span>${otherHint}</label>`;
     }).join('');
     const detail = hasAgent ? `
       <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="field" data-obs-meta='{"fieldName":"${escapeHtml(name)}"}' data-obs-label="поле ${escapeHtml(name)}">
@@ -3133,13 +3143,13 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
         </div>
         <div class="obs-detail-list">${detailItems}</div>
         <div class="obs-detail-bar">
-          <button class="obs-run-selected" disabled onclick="obsRunSelected('${groupId}','obs-fix-selected',{fieldName:'${escapeHtml(name)}'})">обогатить выбранные</button>
+          <button class="obs-run-selected" disabled data-obs-field-name="${escapeHtml(name)}" onclick="obsRunSelected('${groupId}','obs-fix-selected',{fieldName:'${escapeHtml(name)}'})">Добавить \`${escapeHtml(name)}\`</button>
         </div>
       </div>` : '';
     return `<div>
       <div class="obs-list-item">
         <span><code>${escapeHtml(name)}</code></span>
-        <strong style="color:${count > 20 ? 'var(--red)' : count > 5 ? 'var(--yellow)' : 'var(--muted)'}">${count} пропусков</strong>
+        <strong style="color:${count > 20 ? 'var(--red)' : count > 5 ? 'var(--yellow)' : 'var(--muted)'}">${count} пропусков в ${affectedItems.length} модул${affectedItems.length === 1 ? 'е' : affectedItems.length < 5 ? 'ях' : 'ях'}</strong>
         ${expandBtn}
       </div>
       ${detail}
@@ -3479,7 +3489,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
           </div>
           <div class="obs-hint-section">
             <div class="obs-hint-section-title">Как использовать</div>
-            <p>Каждая строчка — пропущенное поле и сколько раз оно отсутствует. Раскрой строку, выбери затронутые модули и нажми <strong>«обогатить выбранные»</strong> — агент добавит поля в существующие лог-вызовы.</p>
+            <p>Каждая строчка — пропущенное поле и сколько раз оно отсутствует. Раскрой строку, выбери затронутые модули и нажми <strong>«Добавить `поле`»</strong> — агент добавит поле во все лог-вызовы выбранных модулей.</p>
           </div>
         </div>
       </div>
