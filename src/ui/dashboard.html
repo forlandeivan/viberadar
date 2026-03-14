@@ -771,6 +771,20 @@
     .obs-tier-normal { background:rgba(139,148,158,0.15); color:var(--muted); }
     .obs-fp-list { font-size:11px; color:var(--muted); margin:4px 0 0 18px; }
     .obs-fp-item { display:flex; gap:6px; padding:1px 0; align-items:baseline; }
+    .obs-noisy-detail { display:none; padding:6px 0 2px 0; border-top:1px dashed var(--border); margin-top:4px; }
+    .obs-noisy-detail.open { display:block; }
+    .obs-noisy-module { font-size:11px; color:var(--muted); padding:4px 4px 4px 8px; }
+    .obs-noisy-module-path { color:var(--fg); font-family:monospace; font-size:11px; }
+    .obs-noisy-msg { color:var(--dim); font-size:11px; padding-left:16px; font-style:italic; }
+    .obs-noisy-confirm { display:none; margin-top:8px; padding:10px; border:1px solid var(--border); border-radius:6px; background:rgba(255,255,255,0.03); }
+    .obs-noisy-confirm.open { display:block; }
+    .obs-noisy-confirm p { font-size:12px; color:var(--muted); margin:0 0 4px 0; line-height:1.5; }
+    .obs-noisy-confirm .obs-confirm-safe { font-size:11px; color:var(--green); margin:4px 0 8px 0; }
+    .obs-noisy-confirm-btns { display:flex; gap:8px; }
+    .obs-noisy-cancel { padding:6px 14px; font-size:12px; background:transparent; border:1px solid var(--border); border-radius:4px; color:var(--dim); cursor:pointer; }
+    .obs-noisy-cancel:hover { border-color:var(--muted); color:var(--muted); }
+    .obs-noisy-apply { padding:6px 14px; font-size:12px; font-weight:600; background:var(--accent); color:var(--bg); border:none; border-radius:4px; cursor:pointer; }
+    .obs-noisy-apply:hover { opacity:0.85; }
     .obs-fp-type { color:var(--yellow); font-weight:600; white-space:nowrap; font-size:11px; }
     .obs-fp-line { color:var(--dim); font-size:10px; flex-shrink:0; }
     .obs-tier-group { margin-bottom:8px; }
@@ -2400,6 +2414,34 @@ function toggleObsDetail(id) {
   if (el) el.classList.toggle('open');
 }
 
+function toggleNoisyDetail(idx) {
+  const el = document.getElementById('obs-noisy-detail-' + idx);
+  if (el) el.classList.toggle('open');
+}
+
+function showNoisySuppressConfirm(idx) {
+  // Ensure detail is open so user sees the confirm block inside
+  const detail = document.getElementById('obs-noisy-detail-' + idx);
+  if (detail && !detail.classList.contains('open')) detail.classList.add('open');
+  const el = document.getElementById('obs-noisy-confirm-' + idx);
+  if (el) el.classList.add('open');
+}
+
+function hideNoisySuppressConfirm(idx) {
+  const el = document.getElementById('obs-noisy-confirm-' + idx);
+  if (el) el.classList.remove('open');
+}
+
+function confirmNoisySuppress(idx) {
+  const data = window.__noisyPatterns && window.__noisyPatterns[idx];
+  if (!data) return;
+  hideNoisySuppressConfirm(idx);
+  runAgentTask('obs-suppress-pattern', null, null, null, {
+    pattern: data.pattern,
+    recommendation: data.recommendation,
+  });
+}
+
 function obsUpdateSelectedCount(groupId) {
   const container = document.getElementById('obs-detail-' + groupId);
   if (!container) return;
@@ -2949,17 +2991,62 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   // Store catalog for buttons to reference by index (avoids inline JSON in onclick)
   window.__obsCatalog = catalog;
 
-  const noisyRows = topNoisy.map(i => {
-    const safePattern = escapeHtml(i.pattern).replace(/'/g, '&#39;');
-    const btn = hasAgent
-      ? `<button class="obs-action-btn" onclick="event.stopPropagation();runAgentTask('obs-suppress-pattern',null,null,null,{pattern:'${safePattern}',recommendation:'${i.recommendation}'})">убрать</button>`
+  // Store noisy patterns data for confirmation flow
+  window.__noisyPatterns = topNoisy.map(i => ({ pattern: i.pattern, recommendation: i.recommendation }));
+
+  const noisyRows = topNoisy.map((i, idx) => {
+    // Find related modules from catalog that contain this pattern in noisyMessages
+    const relatedModules = catalog.filter(c =>
+      (c.recommendation === 'suppress' || c.recommendation === 'downgrade level') &&
+      (c.noisyMessages || []).some(m => m.includes(i.pattern) || i.pattern.includes(m))
+    );
+    const moduleCount = relatedModules.length;
+
+    const expandBtn = hasAgent
+      ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleNoisyDetail(${idx})">▼</button>`
       : '';
+    const actionLabel = i.recommendation === 'suppress' ? '\u{1F916} Исправить' : '\u{1F916} Понизить';
+    const btn = hasAgent
+      ? `<button class="obs-action-btn" onclick="event.stopPropagation();showNoisySuppressConfirm(${idx})">${actionLabel}</button>`
+      : '';
+
+    // Module list for detail section
+    const moduleRows = relatedModules.map(c => {
+      const msgs = (c.noisyMessages || []).slice(0, 3).map(m => `<div class="obs-noisy-msg">• "${escapeHtml(m)}"</div>`).join('');
+      return `<div class="obs-noisy-module"><span class="obs-noisy-module-path">${escapeHtml(c.modulePath)}</span>${msgs}</div>`;
+    }).join('');
+
+    // Confirmation block
+    const confirmDesc = i.recommendation === 'suppress'
+      ? `Агент удалит lifecycle-мусор и реструктурирует остальное в <code>logger.debug({...})</code> для паттерна «${escapeHtml(i.pattern)}»`
+      : `Агент понизит уровень INFO → DEBUG для паттерна «${escapeHtml(i.pattern)}»`;
+    const confirmBlock = hasAgent ? `
+      <div id="obs-noisy-confirm-${idx}" class="obs-noisy-confirm">
+        <p>${confirmDesc}</p>
+        <p>Затронуто модулей: <strong>${moduleCount}</strong></p>
+        <div class="obs-confirm-safe">⛔ warn / error / fatal не будут затронуты</div>
+        <div class="obs-noisy-confirm-btns">
+          <button class="obs-noisy-cancel" onclick="event.stopPropagation();hideNoisySuppressConfirm(${idx})">Отмена</button>
+          <button class="obs-noisy-apply" onclick="event.stopPropagation();confirmNoisySuppress(${idx})">Применить</button>
+        </div>
+      </div>` : '';
+
+    const moduleLabel = moduleCount > 0 ? `<span style="color:var(--dim);font-size:11px;flex-shrink:0">${moduleCount} мод.</span>` : '';
+
     return `
-    <div class="obs-list-item">
-      <span class="obs-priority-${i.priority}" style="flex-shrink:0">[${i.priority}]</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.pattern)}">${escapeHtml(i.pattern)}</span>
-      <strong style="flex-shrink:0;color:var(--red)">×${i.count} → ${recLabels[i.recommendation] || i.recommendation}</strong>
-      ${btn}
+    <div>
+      <div class="obs-list-item">
+        <span class="obs-priority-${i.priority}" style="flex-shrink:0">[${i.priority}]</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.pattern)}">${escapeHtml(i.pattern)}</span>
+        <strong style="flex-shrink:0;color:var(--red)">×${i.count} → ${recLabels[i.recommendation] || i.recommendation}</strong>
+        ${moduleLabel}
+        ${btn}
+        ${expandBtn}
+      </div>
+      <div id="obs-noisy-detail-${idx}" class="obs-noisy-detail">
+        ${moduleRows || '<div class="obs-noisy-module" style="color:var(--dim)">Модули не найдены в каталоге</div>'}
+        ${confirmBlock}
+      </div>
     </div>`;
   }).join('') || '<div class="obs-sub">Шумных паттернов не обнаружено</div>';
 

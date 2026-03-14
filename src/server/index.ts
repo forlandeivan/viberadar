@@ -2531,7 +2531,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         title = `${agentLabel} — пишу E2E тесты для "${feat.label}"`;
       } else if (task === 'obs-suppress-pattern') {
         const pattern = meta?.pattern || 'unknown';
-        title = `${agentLabel} — убрать шумный паттерн "${String(pattern).slice(0, 40)}"`;
+        title = `${agentLabel} — исправить шумный паттерн "${String(pattern).slice(0, 40)}"`;
       } else if (task === 'obs-add-critical-logs') {
         const modulePath = meta?.modulePath || 'unknown';
         title = `${agentLabel} — добавить критичные логи в "${modulePath}"`;
