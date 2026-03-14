@@ -1063,7 +1063,7 @@ function buildObsSuppressPatternPrompt(pattern: string, recommendation: string, 
     `- СТРУКТУРИРУЙ в logger.debug({ service, event_name, outcome, ...данные }), если несёт диагностическую ценность`,
     `- НЕ ТРОГАЙ, если это logger.warn / logger.error / logger.fatal — даже если сообщение похоже на шум`,
     ``,
-    `Проверки после правки: для лог-изменений достаточно \`npm run check\` (tsc). Полный тест-сьют запускай только если изменил логику, а не просто лог-вызовы.`,
+    `⛔ НЕ ЗАПУСКАЙ npm test / vitest / playwright — это лог-правка, не изменение логики. Единственная нужная проверка: \`npm run check\` (tsc).`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
   ].filter(Boolean).join('\n');
