@@ -1037,8 +1037,10 @@ const SUPPRESS_GUARD = `
 `.trim();
 
 function buildObsSuppressPatternPrompt(pattern: string, recommendation: string, catalog: ObservabilityCatalogItem[]): string {
+  // Only include modules whose noisyMessages actually contain this pattern.
+  // Use prefix matching to handle 80/90-char truncation differences.
   const relatedModules = catalog
-    .filter(c => c.recommendation === 'suppress' || c.recommendation === 'downgrade level')
+    .filter(c => (c.noisyMessages || []).some(m => m && (m === pattern || m.startsWith(pattern) || pattern.startsWith(m))))
     .map(c => {
       const snippets = (c.noisyMessages || []).slice(0, 3).map(m => `    • "${m}"`).join('\n');
       return `- ${c.modulePath} (format: ${c.format})\n${snippets}`;
