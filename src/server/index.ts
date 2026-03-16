@@ -2925,6 +2925,38 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return;
       }
 
+      if (url === '/api/agent-reauth' && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        const agent = currentData.agent || 'codex';
+        const emit = (line: string, isError = false) => broadcast('agent-output', { runId: null, line, isError });
+        const done = () => broadcast('agent-done', { queueLength: 0 });
+        emit(`🔑 Перелогинивание ${agent === 'claude' ? 'Claude Code' : 'Codex'}…`);
+        const logoutCmd = WIN
+          ? (agent === 'claude' ? 'claude.cmd logout' : 'codex.cmd logout')
+          : (agent === 'claude' ? 'claude logout' : 'codex logout');
+        const loginCmd = WIN
+          ? (agent === 'claude' ? 'claude.cmd' : 'codex.cmd login')
+          : (agent === 'claude' ? 'claude' : 'codex login');
+        emit(`   → ${logoutCmd}`);
+        const logout = spawn(logoutCmd, [], { shell: true, cwd: projectRoot });
+        logout.stdout.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
+        logout.stderr.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l, true)));
+        logout.on('close', () => {
+          emit(`   → ${loginCmd}`);
+          emit('   Сейчас откроется браузер для авторизации…');
+          const login = spawn(loginCmd, [], { shell: true, cwd: projectRoot, detached: false });
+          login.stdout.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
+          login.stderr.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l, true)));
+          login.on('close', (code: number | null) => {
+            if (code === 0) emit('✅ Авторизация успешна!');
+            else emit(`⚠️ Завершено с кодом ${code}`, true);
+            done();
+          });
+        });
+        return;
+      }
+
       if (url === '/api/cancel-agent' && req.method === 'POST') {
         const nowReason = 'canceled-by-user';
         if (activeRunId) {
