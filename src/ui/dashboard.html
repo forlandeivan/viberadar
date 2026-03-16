@@ -693,6 +693,53 @@
     .tt-fix-btn:hover { background: rgba(255,200,0,0.1); color: var(--yellow); border-color: var(--yellow); }
     .tt-write-btn { border-color: var(--accent); color: var(--accent); }
     .tt-write-btn:hover { background: rgba(88,166,255,0.1); color: var(--accent); border-color: var(--accent); }
+
+    /* ─── Test Navigator ──────────────────────────────────────────────── */
+    .tn-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .tn-stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    .tn-stat-val { font-size: 24px; font-weight: 700; line-height: 1; margin-bottom: 2px; }
+    .tn-stat-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.4px; }
+    .tn-rows { display: flex; flex-direction: column; gap: 2px; contain: content; }
+    .tn-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; transition: background 0.1s;
+      content-visibility: auto; contain-intrinsic-size: 34px;
+    }
+    .tn-row:hover { background: var(--bg-card); }
+    .tn-row.active { background: var(--bg-card); outline: 1px solid var(--accent); }
+    .tn-row.has-problem { border-left: 3px solid var(--red); }
+    .tn-row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+    .tn-row-dir { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; flex-shrink: 2; min-width: 0; }
+    .tn-badges { display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+    .tn-feature-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border); cursor: pointer;
+    }
+    .tn-feature-badge:hover { border-color: var(--dim); }
+    .tn-problem-badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600;
+    }
+    .tn-problem-badge.orphan { background: #3a1a1a; color: var(--red); }
+    .tn-problem-badge.stale { background: #3a3020; color: var(--yellow); }
+    .tn-problem-badge.duplicate { background: #2a2a3a; color: #b388ff; }
+    .tn-source-link { font-size: 11px; color: var(--muted); cursor: pointer; flex-shrink: 0; }
+    .tn-source-link:hover { color: var(--text); text-decoration: underline; }
+    .tn-no-source { font-size: 11px; color: var(--red); font-style: italic; flex-shrink: 0; }
+    .tn-test-count { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); flex-shrink: 0; }
+    .tn-sidebar-section { margin-bottom: 14px; }
+    .tn-sidebar-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-bottom: 6px; }
+    .tn-filter {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border-radius: 5px; cursor: pointer;
+      font-size: 12px; color: var(--muted); transition: background 0.1s, color 0.1s;
+    }
+    .tn-filter:hover { background: var(--bg-hover); color: var(--text); }
+    .tn-filter.active { background: var(--bg-card); color: var(--text); font-weight: 600; }
+    .tn-filter-count { margin-left: auto; font-size: 10px; color: var(--dim); }
+    .tn-filter-count.red { color: var(--red); }
+    .tn-filter-count.yellow { color: var(--yellow); }
     .file-rows { display: flex; flex-direction: column; gap: 2px; contain: content; }
     .file-row {
       display: flex;
@@ -1362,6 +1409,7 @@
     <div class="view-tabs" id="viewTabs">
       <div class="view-tab" data-view="features">Features</div>
       <div class="view-tab" data-view="files">Files</div>
+      <div class="view-tab" data-view="tests">Tests</div>
     </div>
     <input class="search-input" id="searchInput" type="text" placeholder="Search…" />
     <div id="sidebarExtra"></div>
@@ -1429,6 +1477,9 @@ const FILE_ROWS_INITIAL_LIMIT = 250;
 const FILE_ROWS_LIMIT_STEP = 250;
 let fileRowsRenderKey = '';
 let fileRowsRenderLimit = FILE_ROWS_INITIAL_LIMIT;
+let testNavType      = 'all';  // 'all'|'unit'|'integration'|'e2e'
+let testNavFeature   = null;   // null | featureKey string
+let testNavProblem   = null;   // null|'no-feature'|'no-source'|'duplicate'|'stale'
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 let obsActiveTab    = 'overview'; // active observability tab
@@ -1447,9 +1498,9 @@ function switchObsTab(tabId) {
   });
 }
 const modeStore = {
-  qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
-  observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
-  docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false },
+  qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
@@ -1479,6 +1530,9 @@ function saveModeState(mode) {
     drillTestType,
     activePanelKey,
     showOnlyUntestedInFeature,
+    testNavType,
+    testNavFeature,
+    testNavProblem,
   };
 }
 
@@ -1491,6 +1545,9 @@ function restoreModeState(mode) {
   drillTestType = state.drillTestType;
   activePanelKey = state.activePanelKey;
   showOnlyUntestedInFeature = !!state.showOnlyUntestedInFeature;
+  testNavType = state.testNavType || 'all';
+  testNavFeature = state.testNavFeature || null;
+  testNavProblem = state.testNavProblem || null;
 }
 
 function switchMode(nextMode) {
@@ -1602,6 +1659,17 @@ function applyHashRoute() {
     return;
   }
   const params = new URLSearchParams(hash);
+
+  // tests view hash: #view=tests&type=e2e&problem=stale&feature=auth
+  if (params.get('view') === 'tests') {
+    view = 'tests';
+    testNavType = params.get('type') || 'all';
+    testNavProblem = params.get('problem') || null;
+    testNavFeature = params.get('tfeature') || null;
+    activePanelKey = null;
+    return;
+  }
+
   const featureKey = params.get('feature');
   if (!featureKey) return;
   const isKnownFeature = Array.isArray(D?.features) && D.features.some(f => f.key === featureKey);
@@ -2802,6 +2870,7 @@ function renderSidebar() {
     t.classList.toggle('active', t.dataset.view === view)
   );
 
+  if (view === 'tests') { renderTestNavSidebar(extra); return; }
   if (view !== 'files') { extra.innerHTML = ''; return; }
 
   const types = [...new Set(D.modules.map(m => m.type))].sort();
@@ -2850,6 +2919,8 @@ function renderContent() {
     if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
     else if (drillFeatureKey) renderFeatureDetail(c);
     else renderFeatureCards(c);
+  } else if (view === 'tests') {
+    renderTestNavigator(c);
   } else {
     renderModuleGrid(c);
   }
@@ -4781,6 +4852,269 @@ function toggleSourceSelection(relPath, checked) {
   renderContent();
 }
 
+// ─── Test Navigator ──────────────────────────────────────────────────────────
+function buildTestNavData() {
+  const allTests = D.modules.filter(m => m.type === 'test');
+  // reverse map: testRelPath → source modules that reference it
+  const testToSources = new Map();
+  // sourceRelPath → test relPaths (for duplicate detection)
+  const sourceToTests = new Map();
+  for (const m of D.modules) {
+    if (m.type === 'test' || !m.testFile) continue;
+    const tf = m.testFile.replace(/\\/g, '/');
+    if (!testToSources.has(tf)) testToSources.set(tf, []);
+    testToSources.get(tf).push(m);
+    const sp = m.relativePath.replace(/\\/g, '/');
+    if (!sourceToTests.has(sp)) sourceToTests.set(sp, []);
+    sourceToTests.get(sp).push(tf);
+  }
+  return allTests.map(t => {
+    const rel = t.relativePath.replace(/\\/g, '/');
+    const linkedSources = testToSources.get(rel) || [];
+    const features = t.featureKeys || [];
+    const noFeature = features.length === 0;
+    const noSource = linkedSources.length === 0;
+    const stale = t.testStale === true;
+    // duplicate: any linked source is also covered by another test of same type
+    const duplicate = linkedSources.some(s => {
+      const sp = s.relativePath.replace(/\\/g, '/');
+      const tests = sourceToTests.get(sp) || [];
+      if (tests.length <= 1) return false;
+      const sameTypeTests = tests.filter(tp => {
+        const tm = allTests.find(x => x.relativePath.replace(/\\/g, '/') === tp);
+        return tm && tm.testType === t.testType;
+      });
+      return sameTypeTests.length > 1;
+    });
+    const problems = [];
+    if (noFeature) problems.push('no-feature');
+    if (noSource) problems.push('no-source');
+    if (duplicate) problems.push('duplicate');
+    if (stale) problems.push('stale');
+    return { module: t, linkedSources, features, problems };
+  });
+}
+
+function renderTestNavSidebar(extra) {
+  const data = buildTestNavData();
+  const counts = { all: data.length, unit: 0, integration: 0, e2e: 0 };
+  const problemCounts = { 'no-feature': 0, 'no-source': 0, duplicate: 0, stale: 0 };
+  for (const d of data) {
+    if (d.module.testType) counts[d.module.testType] = (counts[d.module.testType] || 0) + 1;
+    for (const p of d.problems) problemCounts[p]++;
+  }
+  const totalProblems = data.filter(d => d.problems.length > 0).length;
+
+  const typeFilters = [
+    { key: 'all', label: 'Все', count: counts.all, color: '#7d8590' },
+    { key: 'unit', label: 'Unit', count: counts.unit, color: '#e3b341' },
+    { key: 'integration', label: 'Integration', count: counts.integration, color: '#58a6ff' },
+    { key: 'e2e', label: 'E2E', count: counts.e2e, color: '#d2a8ff' },
+  ];
+
+  const problemFilters = [
+    { key: null, label: 'Все тесты', count: counts.all },
+    { key: 'no-feature', label: 'Без фичи', count: problemCounts['no-feature'], cls: 'red' },
+    { key: 'no-source', label: 'Без исходника', count: problemCounts['no-source'], cls: 'red' },
+    { key: 'duplicate', label: 'Дубли', count: problemCounts.duplicate, cls: 'yellow' },
+    { key: 'stale', label: 'Устаревшие', count: problemCounts.stale, cls: 'yellow' },
+  ];
+
+  const featureSet = new Map();
+  for (const d of data) {
+    for (const fk of d.features) {
+      if (!featureSet.has(fk)) featureSet.set(fk, 0);
+      featureSet.set(fk, featureSet.get(fk) + 1);
+    }
+  }
+  const noFeatureCount = problemCounts['no-feature'];
+
+  extra.innerHTML = `
+    <div class="tn-sidebar-section">
+      <div class="tn-sidebar-label">Тип</div>
+      ${typeFilters.map(f => `
+        <div class="tn-filter ${testNavType === f.key ? 'active' : ''}" data-tn-type="${f.key}">
+          <span class="type-dot" style="background:${f.color}"></span>
+          ${f.label}
+          <span class="tn-filter-count">${f.count}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div class="tn-sidebar-section">
+      <div class="tn-sidebar-label">Проблемы</div>
+      ${problemFilters.map(f => `
+        <div class="tn-filter ${testNavProblem === f.key ? 'active' : ''}" data-tn-problem="${f.key || ''}">
+          ${f.label}
+          <span class="tn-filter-count ${f.cls || ''}">${f.count}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div class="tn-sidebar-section">
+      <div class="tn-sidebar-label">Фича</div>
+      <div class="tn-filter ${testNavFeature === null ? 'active' : ''}" data-tn-feature="">
+        Все фичи
+        <span class="tn-filter-count">${counts.all}</span>
+      </div>
+      ${Array.from(featureSet.entries()).map(([fk, cnt]) => {
+        const feat = D.features.find(f => f.key === fk);
+        const color = feat ? feat.color : '#484f58';
+        const label = feat ? feat.label : fk;
+        return `<div class="tn-filter ${testNavFeature === fk ? 'active' : ''}" data-tn-feature="${fk}">
+          <span class="type-dot" style="background:${color}"></span>
+          ${label}
+          <span class="tn-filter-count">${cnt}</span>
+        </div>`;
+      }).join('')}
+      ${noFeatureCount > 0 ? `
+        <div class="tn-filter ${testNavFeature === '__none__' ? 'active' : ''}" data-tn-feature="__none__">
+          <span class="type-dot" style="background:#484f58"></span>
+          (Без фичи)
+          <span class="tn-filter-count red">${noFeatureCount}</span>
+        </div>` : ''}
+    </div>
+  `;
+
+  extra.querySelectorAll('[data-tn-type]').forEach(el => {
+    el.onclick = () => { testNavType = el.dataset.tnType; renderSidebar(); renderContent(); };
+  });
+  extra.querySelectorAll('[data-tn-problem]').forEach(el => {
+    el.onclick = () => { testNavProblem = el.dataset.tnProblem || null; renderSidebar(); renderContent(); };
+  });
+  extra.querySelectorAll('[data-tn-feature]').forEach(el => {
+    el.onclick = () => {
+      const v = el.dataset.tnFeature;
+      testNavFeature = v === '' ? null : v;
+      renderSidebar(); renderContent();
+    };
+  });
+}
+
+function renderTestNavigator(c) {
+  const data = buildTestNavData();
+  // apply filters
+  let filtered = data;
+  if (testNavType !== 'all') filtered = filtered.filter(d => d.module.testType === testNavType);
+  if (testNavProblem) filtered = filtered.filter(d => d.problems.includes(testNavProblem));
+  if (testNavFeature === '__none__') filtered = filtered.filter(d => d.features.length === 0);
+  else if (testNavFeature) filtered = filtered.filter(d => d.features.includes(testNavFeature));
+
+  const q = searchQuery.toLowerCase();
+  if (q) filtered = filtered.filter(d =>
+    d.module.name.toLowerCase().includes(q) || d.module.relativePath.toLowerCase().includes(q)
+  );
+
+  // stats
+  const totalProblems = filtered.filter(d => d.problems.length > 0).length;
+  const staleCount = filtered.filter(d => d.problems.includes('stale')).length;
+  const typeCounts = { unit: 0, integration: 0, e2e: 0 };
+  for (const d of filtered) { if (d.module.testType) typeCounts[d.module.testType]++; }
+
+  const rowsRenderKey = `testnav:${testNavType}:${testNavProblem}:${testNavFeature}:${q}`;
+  const { visibleRows, hiddenRows, hasMoreRows } = getFileRowsWindow(filtered, rowsRenderKey);
+
+  c.innerHTML = `
+    <div class="tn-summary">
+      <div class="tn-stat-card">
+        <div class="tn-stat-val">${filtered.length}</div>
+        <div class="tn-stat-label">Тестов</div>
+      </div>
+      <div class="tn-stat-card">
+        <div class="tn-stat-val" style="color:${totalProblems > 0 ? 'var(--red)' : 'var(--text)'}">${totalProblems}</div>
+        <div class="tn-stat-label">С проблемами</div>
+      </div>
+      <div class="tn-stat-card">
+        <div class="tn-stat-val" style="color:${staleCount > 0 ? 'var(--yellow)' : 'var(--text)'}">${staleCount}</div>
+        <div class="tn-stat-label">Устаревших</div>
+      </div>
+      <div class="tn-stat-card">
+        <div class="tn-stat-val" style="font-size:14px;line-height:1.8">
+          <span style="color:#e3b341">${typeCounts.unit}</span> unit
+          <span style="color:#58a6ff">${typeCounts.integration}</span> integ
+          <span style="color:#d2a8ff">${typeCounts.e2e}</span> e2e
+        </div>
+        <div class="tn-stat-label">По типам</div>
+      </div>
+    </div>
+    ${!filtered.length ? '<div class="empty">Ничего не найдено</div>' : ''}
+    <div class="tn-rows" id="tnRows"></div>
+    ${hasMoreRows ? `
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);font-size:12px;color:var(--dim)">
+        <span>Показано ${visibleRows.length} из ${filtered.length} тестов</span>
+        <button class="bulk-actions-btn" id="tnLoadMoreBtn">Показать ещё ${Math.min(FILE_ROWS_LIMIT_STEP, hiddenRows)}</button>
+      </div>` : ''}
+  `;
+
+  const rowsContainer = document.getElementById('tnRows');
+  for (const d of visibleRows) {
+    const row = document.createElement('div');
+    const isActive = activePanelKey === d.module.id;
+    const hasProblem = d.problems.length > 0;
+    row.className = 'tn-row' + (isActive ? ' active' : '') + (hasProblem ? ' has-problem' : '');
+
+    const ttMeta = TEST_TYPE_META[d.module.testType];
+    const typeIcon = ttMeta ? `<span class="type-dot" style="background:${ttMeta.color}"></span>` : '';
+    const testCountBadge = d.module.testCount ? `<span class="tn-test-count">${d.module.testCount} case${d.module.testCount > 1 ? 's' : ''}</span>` : '';
+
+    const featureBadges = d.features.map(fk => {
+      const feat = D.features.find(f => f.key === fk);
+      const color = feat ? feat.color : '#484f58';
+      const label = feat ? feat.label : fk;
+      return `<span class="tn-feature-badge" data-feature-key="${fk}" title="${label}"><span class="type-dot" style="background:${color}"></span>${label}</span>`;
+    }).join('');
+
+    let sourceHtml = '';
+    if (d.linkedSources.length > 0) {
+      const src = d.linkedSources[0];
+      sourceHtml = `<span class="tn-source-link" data-source-id="${src.id}" title="${src.relativePath}">${src.name}</span>`;
+      if (d.linkedSources.length > 1) sourceHtml += `<span class="tn-source-link"> +${d.linkedSources.length - 1}</span>`;
+    } else {
+      sourceHtml = '<span class="tn-no-source">нет исходника</span>';
+    }
+
+    const problemBadges = d.problems.map(p => {
+      const labels = { 'no-feature': 'без фичи', 'no-source': 'без исходника', duplicate: 'дубль', stale: 'устарел' };
+      const cls = p === 'stale' ? 'stale' : p === 'duplicate' ? 'duplicate' : 'orphan';
+      return `<span class="tn-problem-badge ${cls}">${labels[p]}</span>`;
+    }).join('');
+
+    const dir = d.module.relativePath.replace(/[^/\\]+$/, '').replace(/[/\\]$/, '');
+    row.innerHTML = `
+      ${typeIcon}
+      <span class="tn-row-name">${d.module.name}</span>
+      ${testCountBadge}
+      <div class="tn-badges">${featureBadges}${problemBadges}</div>
+      ${sourceHtml}
+      <span class="tn-row-dir">${dir}</span>
+    `;
+
+    row.onclick = (e) => {
+      if (e.target.closest('[data-feature-key]')) {
+        const fk = e.target.closest('[data-feature-key]').dataset.featureKey;
+        view = 'features';
+        drillFeatureKey = fk;
+        drillTestType = null;
+        window.location.hash = 'feature=' + fk;
+        renderSidebar();
+        renderContent();
+        return;
+      }
+      if (e.target.closest('[data-source-id]')) {
+        const sid = e.target.closest('[data-source-id]').dataset.sourceId;
+        const srcMod = D.modules.find(m => m.id === sid);
+        if (srcMod) openModulePanel(srcMod);
+        return;
+      }
+      openModulePanel(d.module);
+    };
+    rowsContainer.appendChild(row);
+  }
+
+  const loadMoreBtn = document.getElementById('tnLoadMoreBtn');
+  if (loadMoreBtn) {
+    loadMoreBtn.onclick = () => { increaseFileRowsLimit(); renderContent(); };
+  }
+}
+
 function renderModuleGrid(c) {
   const q = searchQuery.toLowerCase();
   const list = D.modules.filter(m => {
@@ -5074,6 +5408,9 @@ document.querySelectorAll('.view-tab').forEach(tab => {
     activePanelKey = null;
     searchQuery = '';
     activeTypes.clear();
+    testNavType = 'all';
+    testNavFeature = null;
+    testNavProblem = null;
     document.getElementById('searchInput').value = '';
     document.getElementById('panel').classList.remove('open');
     if (view !== 'features') clearFeatureHash();

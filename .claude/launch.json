@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "viberadar-dev",
+      "runtimeExecutable": "npx.cmd",
+      "runtimeArgs": ["ts-node", "src/cli.ts"],
+      "port": 4242
+    },
+    {
+      "name": "viberadar-start",
+      "runtimeExecutable": "node.exe",
+      "runtimeArgs": ["dist/cli.js"],
+      "port": 4242
+    },
+    {
+      "name": "viberadar-rospartner",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["launch-rospartner.js"],
+      "port": 4242
+    }
+  ]
+}
