@@ -4948,6 +4948,14 @@ function renderTestNavSidebar(extra) {
           <span class="tn-filter-count ${f.cls || ''}">${f.count}</span>
         </div>
       `).join('')}
+      ${D.agent && problemCounts['no-source'] > 0 ? `
+        <button id="tnLinkOrphanBtn" style="margin:8px 0 2px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;color:var(--accent);font-size:11px;cursor:pointer;width:100%;text-align:left;">
+          ▶ Связать с исходниками (${problemCounts['no-source']})
+        </button>` : ''}
+      ${D.agent && problemCounts['no-feature'] > 0 ? `
+        <button id="tnClassifyOrphanBtn" style="margin:2px 0 0;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;color:var(--accent);font-size:11px;cursor:pointer;width:100%;text-align:left;">
+          ▶ Привязать к фичам (${problemCounts['no-feature']})
+        </button>` : ''}
     </div>
     <div class="tn-sidebar-section">
       <div class="tn-sidebar-label">Фича</div>
@@ -4987,6 +4995,10 @@ function renderTestNavSidebar(extra) {
       renderSidebar(); renderContent();
     };
   });
+  const linkBtn = document.getElementById('tnLinkOrphanBtn');
+  if (linkBtn) linkBtn.onclick = () => runAgentTask('link-orphan-tests', null, null, null, { batch: 0 });
+  const classifyBtn = document.getElementById('tnClassifyOrphanBtn');
+  if (classifyBtn) classifyBtn.onclick = () => runAgentTask('classify-orphan-tests', null, null, null, { batch: 0 });
 }
 
 function renderTestNavigator(c) {

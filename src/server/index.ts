@@ -996,6 +996,122 @@ function buildMapUnmappedPrompt(modules: ModuleInfo[], features: FeatureResult[]
   ].join('\n');
 }
 
+// ─── Orphan test helpers & prompt builders ─────────────────────────────────────
+
+const CLASSIFY_BATCH_SIZE = 30;
+const LINK_BATCH_SIZE = 30;
+
+function getOrphanTests(modules: ModuleInfo[]) {
+  const testModules = modules.filter(m => m.type === 'test');
+  const linkedTestPaths = new Set(
+    modules.filter(m => m.type !== 'test' && m.testFile)
+      .map(m => m.testFile!.replace(/\\/g, '/'))
+  );
+  return {
+    noFeature: testModules.filter(m => m.featureKeys.length === 0),
+    noSource: testModules.filter(m => !linkedTestPaths.has(m.relativePath.replace(/\\/g, '/'))),
+  };
+}
+
+function buildClassifyOrphanTestsPrompt(modules: ModuleInfo[], features: FeatureResult[], projectRoot: string, batch: number): string | null {
+  const orphans = getOrphanTests(modules).noFeature;
+  const start = batch * CLASSIFY_BATCH_SIZE;
+  const slice = orphans.slice(start, start + CLASSIFY_BATCH_SIZE);
+  if (slice.length === 0) return null;
+
+  const totalBatches = Math.ceil(orphans.length / CLASSIFY_BATCH_SIZE);
+
+  // Read config to show current include patterns
+  let configFeatures: Record<string, { label: string; include: string[] }> = {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(projectRoot, 'viberadar.config.json'), 'utf-8'));
+    if (raw.features) {
+      for (const [k, v] of Object.entries(raw.features) as [string, any][]) {
+        configFeatures[k] = { label: v.label || k, include: v.include || [] };
+      }
+    }
+  } catch {}
+
+  // Build source map for tests that have linked sources
+  const testSourceMap = new Map<string, string[]>();
+  for (const m of modules) {
+    if (m.type !== 'test' && m.testFile) {
+      const key = m.testFile.replace(/\\/g, '/');
+      if (!testSourceMap.has(key)) testSourceMap.set(key, []);
+      testSourceMap.get(key)!.push(m.relativePath.replace(/\\/g, '/'));
+    }
+  }
+
+  const featureList = Object.entries(configFeatures).map(([k, v]) =>
+    `  • ${k} — ${v.label}\n    include: ${JSON.stringify(v.include)}`
+  ).join('\n');
+
+  const testList = slice.map(m => {
+    const rel = m.relativePath.replace(/\\/g, '/');
+    const sources = testSourceMap.get(rel);
+    return sources
+      ? `- ${rel}  (исходник: ${sources.join(', ')})`
+      : `- ${rel}`;
+  }).join('\n');
+
+  return [
+    `В проекте ${orphans.length} тестов без привязки к фичам (пакет ${batch + 1}/${totalBatches}).`,
+    ``,
+    `Для каждого теста:`,
+    `1. Прочитай файл теста и определи, какой модуль/фичу он тестирует`,
+    `2. Относится к существующей фиче → добавь glob-паттерн в "include" этой фичи в viberadar.config.json`,
+    `3. Это инфраструктура (setup, helpers, fixtures, mocks, shared utils) → добавь glob в массив "ignore"`,
+    `4. Непонятно → пропусти`,
+    ``,
+    `Существующие фичи:`,
+    featureList,
+    ``,
+    `Тесты без фичи:`,
+    testList,
+    ``,
+    `Важно:`,
+    `- НЕ создавай новые фичи. Используй только существующие.`,
+    `- Добавляй конкретные glob-паттерны (напр. "tests/*storage*", "e2e/billing*"), а НЕ широкие вроде "tests/**"`,
+    `- Для каждого теста: прочитай файл, определи какой модуль он тестирует, найди фичу этого модуля`,
+    `- НЕ запускай тесты и НЕ меняй код тестов — только viberadar.config.json`,
+  ].join('\n');
+}
+
+function buildLinkOrphanTestsPrompt(modules: ModuleInfo[], batch: number): string | null {
+  const orphans = getOrphanTests(modules).noSource;
+  const start = batch * LINK_BATCH_SIZE;
+  const slice = orphans.slice(start, start + LINK_BATCH_SIZE);
+  if (slice.length === 0) return null;
+
+  const totalBatches = Math.ceil(orphans.length / LINK_BATCH_SIZE);
+
+  const testList = slice.map(m => `- ${m.relativePath.replace(/\\/g, '/')}`).join('\n');
+
+  return [
+    `В проекте ${orphans.length} тестов без привязки к исходному файлу (пакет ${batch + 1}/${totalBatches}).`,
+    ``,
+    `Сканер связывает тесты с исходниками тремя способами:`,
+    `1. По имени файла (auth.test.ts → auth.ts, tests/auth.test.ts → src/auth.ts)`,
+    `2. По import-анализу (если тест импортирует исходник)`,
+    `3. По fuzzy-matching (workspace-storage → WorkspaceStorage)`,
+    ``,
+    `Для каждого теста ниже:`,
+    `1. Прочитай файл теста и определи, какой исходный модуль он тестирует`,
+    `2. Если тест НЕ импортирует этот модуль напрямую — добавь import в начало файла:`,
+    `   import '<относительный_путь_к_исходнику>' // viberadar:source-link`,
+    `   (Это может быть type-only import если нужно: import type {...} from '...')`,
+    `3. Если тест автономный (fixture, helper, тестирует только внутреннюю логику) → пропусти`,
+    ``,
+    `Тесты без исходника:`,
+    testList,
+    ``,
+    `Важно:`,
+    `- Добавляй ТОЛЬКО import для связи со сканером — НЕ меняй логику тестов`,
+    `- НЕ запускай тесты`,
+    `- Если не можешь найти исходник — пропусти тест`,
+  ].join('\n');
+}
+
 // ─── Observability prompt builders ────────────────────────────────────────────
 
 const LOGGING_STANDARD_INLINE = [
@@ -2046,6 +2162,16 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
         const changedFiles = docStatus?.changedFilesSinceDoc || [];
         prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles);
+      } else if (task === 'classify-orphan-tests') {
+        const batch = item.meta?.batch ?? 0;
+        const built = buildClassifyOrphanTestsPrompt(currentData.modules, currentData.features || [], projectRoot, batch);
+        if (!built) { failBeforeStart('Нет тестов без фичи для этого пакета'); return; }
+        prompt = built;
+      } else if (task === 'link-orphan-tests') {
+        const batch = item.meta?.batch ?? 0;
+        const built = buildLinkOrphanTestsPrompt(currentData.modules, batch);
+        if (!built) { failBeforeStart('Нет тестов без исходника для этого пакета'); return; }
+        prompt = built;
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }
@@ -2554,6 +2680,22 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
         const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
         title = `${agentLabel} — ${label} (${count} модулей)`;
+      } else if (task === 'classify-orphan-tests') {
+        const orphanCount = getOrphanTests(currentData.modules).noFeature.length;
+        if (orphanCount === 0) {
+          broadcast('agent-error', { message: 'Нет тестов без привязки к фичам' }); return null;
+        }
+        const batch = meta?.batch ?? 0;
+        const totalBatches = Math.ceil(orphanCount / CLASSIFY_BATCH_SIZE);
+        title = `${agentLabel} — привязать тесты к фичам (${batch + 1}/${totalBatches})`;
+      } else if (task === 'link-orphan-tests') {
+        const orphanCount = getOrphanTests(currentData.modules).noSource.length;
+        if (orphanCount === 0) {
+          broadcast('agent-error', { message: 'Нет тестов без привязки к исходникам' }); return null;
+        }
+        const batch = meta?.batch ?? 0;
+        const totalBatches = Math.ceil(orphanCount / LINK_BATCH_SIZE);
+        title = `${agentLabel} — связать тесты с исходниками (${batch + 1}/${totalBatches})`;
       } else {
         title = `${agentLabel} — разобрать unmapped`;
       }
