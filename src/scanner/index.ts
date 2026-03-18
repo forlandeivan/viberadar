@@ -11,6 +11,7 @@ export interface ModuleInfo {
   type: 'component' | 'util' | 'service' | 'test' | 'config' | 'other';
   hasTests: boolean;
   testFile?: string;
+  testFiles?: string[];  // all linked test files (1:N mapping)
   coverage?: CoverageInfo;
   size: number;
   dependencies: string[];
@@ -1299,6 +1300,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       type: detectType(filePath),
       hasTests: !!testFile || isTest,
       testFile: testFile ? path.relative(projectRoot, testFile) : undefined,
+      testFiles: testFile ? [path.relative(projectRoot, testFile)] : [],
       coverage: coverageMap.get(filePath),
       size,
       dependencies: extractDependencies(filePath),
@@ -1332,6 +1334,9 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
         if (!srcMod.testFile) {
           srcMod.testFile = path.relative(projectRoot, testMod.path);
         }
+        const testRel = path.relative(projectRoot, testMod.path);
+        if (!srcMod.testFiles) srcMod.testFiles = [];
+        if (!srcMod.testFiles.includes(testRel)) srcMod.testFiles.push(testRel);
       }
     }
   }
@@ -1395,7 +1400,10 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
       const matched = testByCleanName.get(clean);
       if (matched) {
         m.hasTests = true;
-        m.testFile = path.relative(projectRoot, matched);
+        const matchedRel = path.relative(projectRoot, matched);
+        m.testFile = matchedRel;
+        if (!m.testFiles) m.testFiles = [];
+        if (!m.testFiles.includes(matchedRel)) m.testFiles.push(matchedRel);
         break;
       }
     }

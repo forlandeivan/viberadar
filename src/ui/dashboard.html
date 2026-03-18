@@ -5436,13 +5436,18 @@ function buildTestNavData() {
   // sourceRelPath → test relPaths (for duplicate detection)
   const sourceToTests = new Map();
   for (const m of D.modules) {
-    if (m.type === 'test' || !m.testFile) continue;
-    const tf = m.testFile.replace(/\\/g, '/');
-    if (!testToSources.has(tf)) testToSources.set(tf, []);
-    testToSources.get(tf).push(m);
+    if (m.type === 'test') continue;
+    const tfs = m.testFiles && m.testFiles.length ? m.testFiles : (m.testFile ? [m.testFile] : []);
+    if (!tfs.length) continue;
     const sp = m.relativePath.replace(/\\/g, '/');
-    if (!sourceToTests.has(sp)) sourceToTests.set(sp, []);
-    sourceToTests.get(sp).push(tf);
+    for (const raw of tfs) {
+      const tf = raw.replace(/\\/g, '/');
+      if (!testToSources.has(tf)) testToSources.set(tf, []);
+      const arr = testToSources.get(tf);
+      if (!arr.some(s => s.id === m.id)) arr.push(m);
+      if (!sourceToTests.has(sp)) sourceToTests.set(sp, []);
+      if (!sourceToTests.get(sp).includes(tf)) sourceToTests.get(sp).push(tf);
+    }
   }
   return allTests.map(t => {
     const rel = t.relativePath.replace(/\\/g, '/');
