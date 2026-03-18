@@ -5,7 +5,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import * as readline from 'readline';
 import chokidar from 'chokidar';
-import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint } from '../scanner';
+import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint, ServiceMapReport } from '../scanner';
 
 interface ServerOptions {
   data: ScanResult;
@@ -1689,6 +1689,119 @@ function buildActualizeDocsPrompt(
   ].join('\n');
 }
 
+// ─── Pipeline generation prompt ───────────────────────────────────────────────
+
+function buildGeneratePipelinesPrompt(
+  feat: FeatureResult,
+  modules: ModuleInfo[],
+  serviceMap: ServiceMapReport | undefined,
+  existingConfig: string | null,
+): string {
+  const sourceFiles = modules
+    .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
+    .map(m => '- ' + m.relativePath.replace(/\\/g, '/'));
+
+  const serviceNodes = serviceMap?.nodes || [];
+  const existingPipelines = serviceMap?.pipelines || [];
+  const existingEdges = serviceMap?.edges || [];
+
+  const servicesList = serviceNodes.length > 0
+    ? `\nИзвестные сервисы (автодискаверинг + конфиг):\n${serviceNodes.map(n => `- ${n.id}: ${n.label} (${n.category})`).join('\n')}\n`
+    : '';
+
+  const existingPipelinesBlock = existingPipelines.length > 0
+    ? `\nУже существующие пайплайны (не дублируй их):\n${existingPipelines.map(p => `- ${p.id}: ${p.label}`).join('\n')}\n`
+    : '';
+
+  const existingEdgesBlock = existingEdges.length > 0
+    ? `\nУже существующие рёбра:\n${existingEdges.map(e => `- ${e.from} → ${e.to} (${e.type}${e.label ? ', ' + e.label : ''})`).join('\n')}\n`
+    : '';
+
+  return [
+    `# Генерация пайплайнов и зависимостей для фичи "${feat.label}"`,
+    ``,
+    feat.description ? `Описание фичи: ${feat.description}` : '',
+    ``,
+    `Файлы фичи (${sourceFiles.length}):`,
+    ...sourceFiles,
+    ``,
+    servicesList,
+    existingPipelinesBlock,
+    existingEdgesBlock,
+    `## Задача`,
+    ``,
+    `1. Прочитай КАЖДЫЙ файл фичи`,
+    `2. Найди все потоки данных (пайплайны):`,
+    `   - HTTP запросы пользователя → обработка → ответ`,
+    `   - Фоновые задачи (воркеры, cron, очереди)`,
+    `   - Событийные цепочки (pubsub, webhooks)`,
+    `   - Цепочки импорта/обработки/сохранения данных`,
+    `3. Для каждого пайплайна определи:`,
+    `   - Какие сервисы задействованы на каждом шаге (PostgreSQL, Redis, MinIO, LLM и т.д.)`,
+    `   - Какие алгоритмы/дефолты используются (chunking, embedding dimensions, timeout'ы)`,
+    `   - Что триггерит пайплайн (HTTP endpoint, cron, событие)`,
+    `4. Определи зависимости (edges):`,
+    `   - Какие сервисы вызываются синхронно (sync), какие асинхронно (async)`,
+    `   - Какие зависимости критичные (если сервис падает — фича полностью не работает)`,
+    `5. Определи алерт-хинты:`,
+    `   - Какие метрики стоит мониторить для каждого задействованного сервиса`,
+    `   - Какие пороги критичны`,
+    ``,
+    `## Формат результата`,
+    ``,
+    `Обнови файл \`viberadar.config.json\` — добавь/обнови секцию \`services\`.`,
+    ``,
+    `**ВАЖНО**: Не перезаписывай весь файл! Прочитай текущий конфиг и ДОПОЛНИ секцию services:`,
+    `- Добавляй пайплайны в массив \`services.pipelines\` (не дублируй существующие по id)`,
+    `- Добавляй рёбра в массив \`services.edges\` (не дублируй существующие)`,
+    `- Добавляй ноды в \`services.nodes\` только для сервисов, которых нет в автодискаверинге`,
+    `- Добавляй \`alerts\` к существующим нодам через nodes с тем же id`,
+    ``,
+    `Формат пайплайна:`,
+    '```json',
+    `{`,
+    `  "id": "kb-indexing",`,
+    `  "label": "KB Indexing Pipeline",`,
+    `  "description": "Загрузка документа → парсинг (Docling/pdfjs) → чанкинг (default 1200 символов) → эмбеддинг (via embedding provider) → Qdrant + PG metadata",`,
+    `  "steps": [`,
+    `    { "id": "upload", "label": "File Upload", "serviceId": "minio", "description": "Загрузка файла в S3-совместимое хранилище" },`,
+    `    { "id": "parse", "label": "Document Parsing", "serviceId": "docling", "description": "Извлечение текста из PDF/DOCX/HTML через Docling или pdfjs" },`,
+    `    { "id": "chunk", "label": "Text Chunking", "description": "Разбиение на чанки (default 1200 символов, configurable)" },`,
+    `    { "id": "embed", "label": "Embedding Generation", "serviceId": "openai", "description": "Векторизация через настроенный embedding provider (1536-3072 dims)" },`,
+    `    { "id": "store-vector", "label": "Vector Storage", "serviceId": "qdrant", "description": "Сохранение в коллекцию ws-{workspaceId}, hybrid search (BM25 + vector)" },`,
+    `    { "id": "store-meta", "label": "Metadata Index", "serviceId": "postgres", "description": "tsvector + pg_trgm для текстового поиска" }`,
+    `  ],`,
+    `  "triggers": ["POST /api/kb/upload", "file-event-outbox worker"]`,
+    `}`,
+    '```',
+    ``,
+    `Формат рёбер:`,
+    '```json',
+    `{ "from": "app", "to": "postgres", "label": "sessions, data", "type": "sync", "critical": true }`,
+    '```',
+    ``,
+    `Типы рёбер: sync (синхронный вызов), async (асинхронный), pubsub (pub/sub), data (поток данных)`,
+    ``,
+    `## Требования к description пайплайна и шагов`,
+    ``,
+    `**Описания должны быть МАКСИМАЛЬНО подробными для вайбкодера:**`,
+    `- Указывай конкретные дефолтные значения (chunk size, dimensions, timeouts)`,
+    `- Указывай алгоритмы (RRF для fusion, BM25 для текстового поиска)`,
+    `- Указывай fallback-логику (если Redis недоступен — in-memory cache)`,
+    `- Указывай паттерны именования (коллекции ws-{id}, бакеты ws-{id})`,
+    `- Указывай ветвления логики (если DOCLING_ENABLED — Docling, иначе pdfjs)`,
+    ``,
+    `## Требования к алертам`,
+    ``,
+    `Для каждого задействованного сервиса добавь алерт-хинты:`,
+    '```json',
+    `{ "metric": "pg_connection_pool_exhausted", "severity": "critical", "description": "Все соединения к PostgreSQL заняты" }`,
+    '```',
+    ``,
+    `Severity: critical (фича полностью не работает), warning (деградация), info (для мониторинга)`,
+  ].filter(Boolean).join('\n');
+}
+
 // ─── Main server ──────────────────────────────────────────────────────────────
 
 export function startServer({ data: initialData, port, projectRoot }: ServerOptions): Promise<ServerHandle> {
@@ -2162,6 +2275,16 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
         const changedFiles = docStatus?.changedFilesSinceDoc || [];
         prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles);
+      } else if (task === 'generate-pipelines') {
+        if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
+        const feat = currentData.features.find(f => f.key === featureKey);
+        if (!feat) { failBeforeStart(`Фича ${featureKey} не найдена`); return; }
+        // Read current config to pass to the prompt
+        let existingConfig: string | null = null;
+        try {
+          existingConfig = fs.readFileSync(path.join(projectRoot, 'viberadar.config.json'), 'utf-8');
+        } catch {}
+        prompt = buildGeneratePipelinesPrompt(feat, currentData.modules, currentData.serviceMap, existingConfig);
       } else if (task === 'classify-orphan-tests') {
         const batch = item.meta?.batch ?? 0;
         const built = buildClassifyOrphanTestsPrompt(currentData.modules, currentData.features || [], projectRoot, batch);
@@ -2680,6 +2803,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
         const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
         title = `${agentLabel} — ${label} (${count} модулей)`;
+      } else if (task === 'generate-pipelines') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
+        title = `${agentLabel} — пайплайны для "${feat.label}"`;
       } else if (task === 'classify-orphan-tests') {
         const orphanCount = getOrphanTests(currentData.modules).noFeature.length;
         if (orphanCount === 0) {

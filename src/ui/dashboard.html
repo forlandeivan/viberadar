@@ -1420,6 +1420,24 @@
   .svc-detail-row { font-size:12px; color:var(--text); padding:3px 0; }
   .svc-detail-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; }
 
+  /* Service Map: pipeline generation cards */
+  .svc-gen-section { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+  .svc-gen-section-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:4px; }
+  .svc-gen-section-hint { font-size:12px; color:var(--muted); margin-bottom:16px; line-height:1.5; }
+  .svc-gen-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px; }
+  .svc-gen-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:6px; }
+  .svc-gen-card-header { display:flex; justify-content:space-between; align-items:center; }
+  .svc-gen-card-label { font-size:13px; font-weight:600; color:var(--text); }
+  .svc-gen-card-files { font-size:11px; color:var(--muted); }
+  .svc-gen-card-desc { font-size:11px; color:var(--muted); line-height:1.4; }
+  .svc-gen-card-status { font-size:11px; color:#3fb950; }
+  .svc-gen-btn { background:none; border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:11px; transition:all 0.15s; margin-top:4px; }
+  .svc-gen-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .svc-gen-btn:disabled { opacity:0.5; cursor:default; }
+  .svc-gen-all-btn { margin-top:16px; background:var(--accent); border:none; color:#fff; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:500; transition:opacity 0.15s; }
+  .svc-gen-all-btn:hover { opacity:0.85; }
+  .svc-gen-all-btn:disabled { opacity:0.5; cursor:default; }
+
   </style>
 </head>
 <body>
@@ -3207,39 +3225,111 @@ function truncateText(text, maxLen) {
 }
 
 function renderSvcPipelines(c, sm) {
-  if (!sm.pipelines || sm.pipelines.length === 0) {
-    c.innerHTML = `<div class="svc-empty">
-      <h3>Пайплайны не заданы</h3>
-      <p>Добавь секцию <code>pipelines</code> в <code>services</code> конфиг, чтобы визуализировать потоки данных.</p>
-    </div>`;
-    return;
+  const features = D.features || [];
+  const hasPipelines = sm.pipelines && sm.pipelines.length > 0;
+  const hasFeatures = features.length > 0;
+  const agentAvailable = !!D.agent;
+
+  // Render existing pipelines
+  let pipelinesHtml = '';
+  if (hasPipelines) {
+    pipelinesHtml = sm.pipelines.map(p => {
+      const triggers = (p.triggers || []).map(t => `<span class="svc-pipeline-trigger">${t}</span>`).join('');
+      const steps = p.steps.map((s, i) => {
+        const arrow = i < p.steps.length - 1 ? '<span class="svc-step-arrow">→</span>' : '';
+        const svcNode = s.serviceId ? sm.nodes.find(n => n.id === s.serviceId) : null;
+        const svcLabel = svcNode ? `${svcNode.icon || ''} ${svcNode.label}` : (s.serviceId || '');
+        const descTooltip = s.description ? ` title="${(s.description||'').replace(/"/g, '&quot;')}"` : '';
+        return `<div class="svc-step">
+          <div class="svc-step-box" ${s.serviceId ? `data-svcid="${s.serviceId}"` : ''}${descTooltip}>
+            <div class="svc-step-label">${s.label}</div>
+            ${svcLabel ? `<div class="svc-step-service">${svcLabel}</div>` : ''}
+          </div>
+        </div>${arrow}`;
+      }).join('');
+      return `<div class="svc-pipeline">
+        <div class="svc-pipeline-title">${p.label}</div>
+        ${p.description ? `<div class="svc-pipeline-desc">${p.description}</div>` : ''}
+        ${triggers ? `<div class="svc-pipeline-triggers">${triggers}</div>` : ''}
+        <div class="svc-pipeline-steps">${steps}</div>
+      </div>`;
+    }).join('');
   }
 
-  c.innerHTML = `<div class="svc-pipeline-container">${sm.pipelines.map(p => {
-    const triggers = (p.triggers || []).map(t => `<span class="svc-pipeline-trigger">${t}</span>`).join('');
-    const steps = p.steps.map((s, i) => {
-      const arrow = i < p.steps.length - 1 ? '<span class="svc-step-arrow">→</span>' : '';
-      const svcNode = s.serviceId ? sm.nodes.find(n => n.id === s.serviceId) : null;
-      const svcLabel = svcNode ? `${svcNode.icon || ''} ${svcNode.label}` : (s.serviceId || '');
-      return `<div class="svc-step">
-        <div class="svc-step-box" ${s.serviceId ? `data-svcid="${s.serviceId}"` : ''}>
-          <div class="svc-step-label">${s.label}</div>
-          ${svcLabel ? `<div class="svc-step-service">${svcLabel}</div>` : ''}
+  // Generate per-feature cards
+  let generateHtml = '';
+  if (hasFeatures && agentAvailable) {
+    const featureCards = features.map(f => {
+      const matchingPipes = (sm.pipelines || []).filter(p =>
+        p.id.includes(f.key) || p.label.toLowerCase().includes(f.label.toLowerCase())
+      );
+      const hasPipe = matchingPipes.length > 0;
+      return `<div class="svc-gen-card" style="border-left:3px solid ${f.color}">
+        <div class="svc-gen-card-header">
+          <span class="svc-gen-card-label">${f.label}</span>
+          <span class="svc-gen-card-files">${f.fileCount} файлов</span>
         </div>
-      </div>${arrow}`;
+        ${f.description ? `<div class="svc-gen-card-desc">${f.description}</div>` : ''}
+        ${hasPipe ? `<div class="svc-gen-card-status">✅ ${matchingPipes.length} пайплайн(ов)</div>` : ''}
+        <button class="svc-gen-btn" data-feature="${f.key}">
+          ${hasPipe ? '🔄 Перегенерировать' : '▶ Сгенерировать'}
+        </button>
+      </div>`;
     }).join('');
-    return `<div class="svc-pipeline">
-      <div class="svc-pipeline-title">${p.label}</div>
-      ${p.description ? `<div class="svc-pipeline-desc">${p.description}</div>` : ''}
-      ${triggers ? `<div class="svc-pipeline-triggers">${triggers}</div>` : ''}
-      <div class="svc-pipeline-steps">${steps}</div>
+
+    const allAtOnceBtn = features.length > 1
+      ? `<button class="svc-gen-all-btn" id="svcGenAll">🚀 Сгенерировать для всех фич (по очереди)</button>`
+      : '';
+
+    generateHtml = `
+      <div class="svc-gen-section">
+        <div class="svc-gen-section-title">Генерация пайплайнов по фичам</div>
+        <div class="svc-gen-section-hint">AI-агент прочитает файлы каждой фичи и найдёт все потоки данных, алгоритмы, дефолты и зависимости между сервисами.</div>
+        <div class="svc-gen-cards">${featureCards}</div>
+        ${allAtOnceBtn}
+      </div>`;
+  } else if (!agentAvailable && hasFeatures) {
+    generateHtml = `<div class="svc-gen-section">
+      <div class="svc-gen-section-hint" style="color:var(--muted)">⚠️ Для генерации пайплайнов укажи <code>agent</code> в <code>viberadar.config.json</code> (claude или codex).</div>
     </div>`;
-  }).join('')}</div>`;
+  } else if (!hasFeatures) {
+    generateHtml = `<div class="svc-gen-section">
+      <div class="svc-gen-section-hint" style="color:var(--muted)">⚠️ Для генерации пайплайнов нужны фичи. Запусти <code>viberadar init</code> для создания конфига.</div>
+    </div>`;
+  }
+
+  c.innerHTML = `<div class="svc-pipeline-container">${pipelinesHtml}${generateHtml}</div>`;
 
   // Click on step to open service detail
   c.querySelectorAll('.svc-step-box[data-svcid]').forEach(box => {
     box.onclick = () => openSvcPanel(box.dataset.svcid);
   });
+
+  // Generate pipelines per feature
+  c.querySelectorAll('.svc-gen-btn').forEach(btn => {
+    btn.onclick = () => {
+      const featureKey = btn.dataset.feature;
+      btn.disabled = true;
+      btn.textContent = '⏳ В очереди…';
+      runAgentTask('generate-pipelines', featureKey);
+    };
+  });
+
+  // Generate all at once
+  const genAllBtn = document.getElementById('svcGenAll');
+  if (genAllBtn) {
+    genAllBtn.onclick = () => {
+      genAllBtn.disabled = true;
+      genAllBtn.textContent = '⏳ Добавляю в очередь…';
+      const featureKeys = features.map(f => f.key);
+      featureKeys.forEach((fk, i) => {
+        setTimeout(() => runAgentTask('generate-pipelines', fk), i * 200);
+      });
+      setTimeout(() => {
+        genAllBtn.textContent = `✅ ${featureKeys.length} задач в очереди`;
+      }, featureKeys.length * 200 + 100);
+    };
+  }
 }
 
 function renderSvcExport(c, sm) {
