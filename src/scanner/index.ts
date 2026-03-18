@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
+import * as yaml from 'js-yaml';
 
 export interface ModuleInfo {
   id: string;
@@ -43,6 +44,7 @@ export interface VibeRadarConfig {
   agent?: 'claude' | 'codex';  // AI agent CLI to use
   ignore?: string[];   // glob patterns for infra/system files (excluded from unmapped)
   features: Record<string, FeatureConfig>;
+  services?: ServiceMapConfig;
 }
 
 export interface FeatureResult {
@@ -73,6 +75,7 @@ export interface ScanResult {
   testRunner?: string;          // detected test runner (vitest/jest)
   observability?: ObservabilityReport;
   documentation?: DocumentationReport;
+  serviceMap?: ServiceMapReport;
 }
 
 export interface ObservabilityCatalogItem {
@@ -176,6 +179,89 @@ export interface DocumentationReport {
   freshCount: number;
   staleCount: number;
   missingCount: number;
+}
+
+// ─── Service Map types ────────────────────────────────────────────────────────
+
+export type ServiceCategory =
+  | 'database' | 'cache' | 'queue' | 'storage'
+  | 'external-api' | 'internal-service' | 'worker' | 'gateway';
+
+export type ServiceSource = 'autodiscovery' | 'config' | 'both';
+
+export interface ServiceNode {
+  id: string;
+  label: string;
+  category: ServiceCategory;
+  source: ServiceSource;
+  host?: string;
+  port?: number;
+  healthCheck?: HealthCheckDef;
+  alerts?: AlertHint[];
+  icon?: string;
+  color?: string;
+  group?: string;
+}
+
+export interface ServiceEdge {
+  from: string;
+  to: string;
+  label?: string;
+  type: 'sync' | 'async' | 'pubsub' | 'data';
+  critical?: boolean;
+}
+
+export interface PipelineStep {
+  id: string;
+  label: string;
+  serviceId?: string;
+  description?: string;
+}
+
+export interface PipelineDef {
+  id: string;
+  label: string;
+  description?: string;
+  steps: PipelineStep[];
+  triggers?: string[];
+}
+
+export interface HealthCheckDef {
+  type: 'tcp' | 'http' | 'command';
+  target: string;
+  interval?: string;
+}
+
+export interface AlertHint {
+  metric: string;
+  severity: 'critical' | 'warning' | 'info';
+  description: string;
+}
+
+export interface ServiceMapReport {
+  nodes: ServiceNode[];
+  edges: ServiceEdge[];
+  pipelines: PipelineDef[];
+  autodiscovery: {
+    dockerServices: number;
+    envConnections: number;
+    npmServices: number;
+    workerFiles: number;
+  };
+}
+
+export interface ServiceMapConfig {
+  nodes?: Partial<ServiceNode>[];
+  edges?: ServiceEdge[];
+  pipelines?: PipelineDef[];
+  autodiscovery?: {
+    dockerCompose?: boolean;
+    envFiles?: boolean;
+    npmDeps?: boolean;
+    workers?: boolean;
+  };
+  workerPatterns?: string[];
+  routePatterns?: string[];
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1411,5 +1497,299 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     testRunner,
     observability: computeObservabilityReport(modules, projectRoot, config?.features),
     documentation: computeDocumentationReport(modules, projectRoot, config?.features),
+    serviceMap: computeServiceMapReport(projectRoot, config?.services),
+  };
+}
+
+// ─── Service Map autodiscovery ───────────────────────────────────────────────
+
+const DOCKER_IMAGE_MAP: Record<string, { category: ServiceCategory; label: string; icon: string }> = {
+  postgres:   { category: 'database',  label: 'PostgreSQL',  icon: '🐘' },
+  postgresql: { category: 'database',  label: 'PostgreSQL',  icon: '🐘' },
+  mysql:      { category: 'database',  label: 'MySQL',       icon: '🐬' },
+  mariadb:    { category: 'database',  label: 'MariaDB',     icon: '🐬' },
+  mongo:      { category: 'database',  label: 'MongoDB',     icon: '🍃' },
+  redis:      { category: 'cache',     label: 'Redis',       icon: '⚡' },
+  valkey:     { category: 'cache',     label: 'Valkey',      icon: '⚡' },
+  memcached:  { category: 'cache',     label: 'Memcached',   icon: '⚡' },
+  rabbitmq:   { category: 'queue',     label: 'RabbitMQ',    icon: '🐰' },
+  kafka:      { category: 'queue',     label: 'Kafka',       icon: '📨' },
+  nats:       { category: 'queue',     label: 'NATS',        icon: '📨' },
+  minio:      { category: 'storage',   label: 'MinIO',       icon: '📦' },
+  qdrant:     { category: 'database',  label: 'Qdrant',      icon: '🔍' },
+  weaviate:   { category: 'database',  label: 'Weaviate',    icon: '🔍' },
+  elasticsearch: { category: 'database', label: 'Elasticsearch', icon: '🔎' },
+  opensearch: { category: 'database',  label: 'OpenSearch',  icon: '🔎' },
+  clickhouse: { category: 'database',  label: 'ClickHouse',  icon: '🏠' },
+  nginx:      { category: 'gateway',   label: 'Nginx',       icon: '🌐' },
+  traefik:    { category: 'gateway',   label: 'Traefik',     icon: '🌐' },
+  caddy:      { category: 'gateway',   label: 'Caddy',       icon: '🌐' },
+  vault:      { category: 'internal-service', label: 'Vault', icon: '🔐' },
+  consul:     { category: 'internal-service', label: 'Consul', icon: '📋' },
+};
+
+const NPM_PACKAGE_MAP: Record<string, { id: string; category: ServiceCategory; label: string; icon: string }> = {
+  'pg':                     { id: 'postgres',       category: 'database',      label: 'PostgreSQL',     icon: '🐘' },
+  '@prisma/client':         { id: 'postgres',       category: 'database',      label: 'PostgreSQL',     icon: '🐘' },
+  'typeorm':                { id: 'postgres',       category: 'database',      label: 'PostgreSQL',     icon: '🐘' },
+  'sequelize':              { id: 'postgres',       category: 'database',      label: 'PostgreSQL',     icon: '🐘' },
+  'drizzle-orm':            { id: 'postgres',       category: 'database',      label: 'PostgreSQL',     icon: '🐘' },
+  'mysql2':                 { id: 'mysql',          category: 'database',      label: 'MySQL',          icon: '🐬' },
+  'mongoose':               { id: 'mongodb',        category: 'database',      label: 'MongoDB',        icon: '🍃' },
+  'mongodb':                { id: 'mongodb',        category: 'database',      label: 'MongoDB',        icon: '🍃' },
+  'ioredis':                { id: 'redis',          category: 'cache',         label: 'Redis',          icon: '⚡' },
+  'redis':                  { id: 'redis',          category: 'cache',         label: 'Redis',          icon: '⚡' },
+  '@qdrant/js-client-rest': { id: 'qdrant',         category: 'database',      label: 'Qdrant',         icon: '🔍' },
+  'minio':                  { id: 'minio',          category: 'storage',       label: 'MinIO',          icon: '📦' },
+  '@aws-sdk/client-s3':     { id: 'minio',           category: 'storage',       label: 'S3/MinIO',       icon: '📦' },
+  'amqplib':                { id: 'rabbitmq',       category: 'queue',         label: 'RabbitMQ',       icon: '🐰' },
+  'kafkajs':                { id: 'kafka',          category: 'queue',         label: 'Kafka',          icon: '📨' },
+  'bullmq':                 { id: 'bullmq',         category: 'queue',         label: 'BullMQ',         icon: '🐂' },
+  'bull':                   { id: 'bull',           category: 'queue',         label: 'Bull',           icon: '🐂' },
+  'openai':                 { id: 'openai',         category: 'external-api',  label: 'OpenAI',         icon: '🤖' },
+  '@anthropic-ai/sdk':      { id: 'anthropic',      category: 'external-api',  label: 'Anthropic',      icon: '🤖' },
+  'nodemailer':             { id: 'smtp',           category: 'external-api',  label: 'SMTP',           icon: '📧' },
+  '@elastic/elasticsearch': { id: 'elasticsearch',  category: 'database',      label: 'Elasticsearch',  icon: '🔎' },
+  '@clickhouse/client':     { id: 'clickhouse',     category: 'database',      label: 'ClickHouse',     icon: '🏠' },
+};
+
+const ENV_PATTERNS: { pattern: RegExp; id: string; category: ServiceCategory; label: string; icon: string }[] = [
+  { pattern: /^(DATABASE_URL|PG_HOST|POSTGRES_HOST)/,   id: 'postgres',  category: 'database',     label: 'PostgreSQL',     icon: '🐘' },
+  { pattern: /^(REDIS_URL|REDIS_HOST)/,                 id: 'redis',     category: 'cache',        label: 'Redis',          icon: '⚡' },
+  { pattern: /^(QDRANT_URL|QDRANT_HOST)/,               id: 'qdrant',    category: 'database',     label: 'Qdrant',         icon: '🔍' },
+  { pattern: /^(MINIO_ENDPOINT|MINIO_HOST|S3_ENDPOINT)/,id: 'minio',    category: 'storage',      label: 'MinIO',          icon: '📦' },
+  { pattern: /^(SMTP_HOST|MAIL_HOST)/,                  id: 'smtp',      category: 'external-api', label: 'SMTP',           icon: '📧' },
+  { pattern: /^OPENAI_API_KEY$/,                        id: 'openai',    category: 'external-api', label: 'OpenAI',         icon: '🤖' },
+  { pattern: /^ANTHROPIC_API_KEY$/,                     id: 'anthropic', category: 'external-api', label: 'Anthropic',      icon: '🤖' },
+  { pattern: /^(MONGO_URL|MONGODB_URI|MONGO_HOST)/,     id: 'mongodb',   category: 'database',     label: 'MongoDB',        icon: '🍃' },
+  { pattern: /^(RABBITMQ_URL|AMQP_URL)/,                id: 'rabbitmq',  category: 'queue',        label: 'RabbitMQ',       icon: '🐰' },
+  { pattern: /^(KAFKA_BROKERS|KAFKA_URL)/,               id: 'kafka',     category: 'queue',        label: 'Kafka',          icon: '📨' },
+  { pattern: /^(ELASTICSEARCH_URL|ES_HOST)/,              id: 'elasticsearch', category: 'database', label: 'Elasticsearch', icon: '🔎' },
+  { pattern: /^(CLICKHOUSE_URL|CLICKHOUSE_HOST)/,        id: 'clickhouse', category: 'database',    label: 'ClickHouse',    icon: '🏠' },
+];
+
+function scanDockerCompose(projectRoot: string): ServiceNode[] {
+  const nodes: ServiceNode[] = [];
+  const names = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
+  for (const name of names) {
+    const filePath = path.join(projectRoot, name);
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const doc = yaml.load(content) as any;
+      if (!doc || typeof doc !== 'object' || !doc.services) continue;
+      for (const [svcName, svcDef] of Object.entries(doc.services as Record<string, any>)) {
+        const image: string = svcDef?.image || '';
+        const imageLower = image.toLowerCase();
+        // Find matching known image
+        let matched = false;
+        for (const [key, meta] of Object.entries(DOCKER_IMAGE_MAP)) {
+          if (imageLower.includes(key)) {
+            nodes.push({
+              id: key,
+              label: meta.label,
+              category: meta.category,
+              source: 'autodiscovery',
+              icon: meta.icon,
+              host: svcName,
+              port: extractPort(svcDef),
+              group: meta.category === 'database' ? 'databases' :
+                     meta.category === 'cache' ? 'cache' :
+                     meta.category === 'queue' ? 'queues' :
+                     meta.category === 'storage' ? 'storage' :
+                     meta.category === 'gateway' ? 'gateway' : 'services',
+            });
+            matched = true;
+            break;
+          }
+        }
+        // Unknown service from docker-compose
+        if (!matched && image) {
+          nodes.push({
+            id: svcName,
+            label: svcName,
+            category: 'internal-service',
+            source: 'autodiscovery',
+            icon: '🐳',
+            host: svcName,
+            port: extractPort(svcDef),
+            group: 'services',
+          });
+        }
+      }
+    } catch {}
+    break; // only parse first found compose file
+  }
+  return nodes;
+}
+
+function extractPort(svcDef: any): number | undefined {
+  if (!svcDef?.ports || !Array.isArray(svcDef.ports)) return undefined;
+  for (const p of svcDef.ports) {
+    const str = String(p);
+    // "8080:80" → 80, "5432" → 5432
+    const parts = str.split(':');
+    const last = parts[parts.length - 1].replace(/\/.*/, ''); // strip /tcp etc.
+    const num = parseInt(last, 10);
+    if (!isNaN(num)) return num;
+  }
+  return undefined;
+}
+
+function scanEnvFiles(projectRoot: string): ServiceNode[] {
+  const nodes: ServiceNode[] = [];
+  const seen = new Set<string>();
+  const envFiles = ['.env', '.env.local', '.env.example', '.env.development'];
+  for (const envFile of envFiles) {
+    const filePath = path.join(projectRoot, envFile);
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx < 0) continue;
+        const key = trimmed.substring(0, eqIdx).trim();
+        const value = trimmed.substring(eqIdx + 1).trim();
+        for (const ep of ENV_PATTERNS) {
+          if (ep.pattern.test(key) && !seen.has(ep.id)) {
+            seen.add(ep.id);
+            nodes.push({
+              id: ep.id,
+              label: ep.label,
+              category: ep.category,
+              source: 'autodiscovery',
+              icon: ep.icon,
+              host: value || undefined,
+              group: ep.category === 'database' ? 'databases' :
+                     ep.category === 'cache' ? 'cache' :
+                     ep.category === 'queue' ? 'queues' :
+                     ep.category === 'storage' ? 'storage' : 'external',
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+  return nodes;
+}
+
+function scanNpmDeps(projectRoot: string): ServiceNode[] {
+  const nodes: ServiceNode[] = [];
+  const pkgPath = path.join(projectRoot, 'package.json');
+  if (!fs.existsSync(pkgPath)) return nodes;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const seen = new Set<string>();
+    for (const [depName] of Object.entries(deps)) {
+      const mapping = NPM_PACKAGE_MAP[depName];
+      if (mapping && !seen.has(mapping.id)) {
+        seen.add(mapping.id);
+        nodes.push({
+          id: mapping.id,
+          label: mapping.label,
+          category: mapping.category,
+          source: 'autodiscovery',
+          icon: mapping.icon,
+          group: mapping.category === 'database' ? 'databases' :
+                 mapping.category === 'cache' ? 'cache' :
+                 mapping.category === 'queue' ? 'queues' :
+                 mapping.category === 'storage' ? 'storage' : 'external',
+        });
+      }
+    }
+  } catch {}
+  return nodes;
+}
+
+function scanWorkerFiles(projectRoot: string): ServiceNode[] {
+  const nodes: ServiceNode[] = [];
+  const workerPatterns = ['**/workers/**/*.{ts,js}', '**/jobs/**/*.{ts,js}', '**/queues/**/*.{ts,js}', '**/cron/**/*.{ts,js}'];
+  for (const pattern of workerPatterns) {
+    try {
+      const files = glob.sync(pattern, {
+        cwd: projectRoot,
+        ignore: IGNORE_DIRS.map(d => `**/${d}/**`),
+        absolute: false,
+      });
+      for (const f of files) {
+        const base = path.basename(f, path.extname(f));
+        if (base === 'index') continue; // skip barrel files
+        const id = `worker-${base}`;
+        nodes.push({
+          id,
+          label: base.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          category: 'worker',
+          source: 'autodiscovery',
+          icon: '⚙️',
+          group: 'workers',
+        });
+      }
+    } catch {}
+  }
+  return nodes;
+}
+
+function computeServiceMapReport(projectRoot: string, svcConfig?: ServiceMapConfig): ServiceMapReport {
+  const toggles = svcConfig?.autodiscovery ?? {};
+  const autoDocker = toggles.dockerCompose !== false;
+  const autoEnv = toggles.envFiles !== false;
+  const autoNpm = toggles.npmDeps !== false;
+  const autoWorkers = toggles.workers !== false;
+
+  // Autodiscovery
+  const dockerNodes = autoDocker ? scanDockerCompose(projectRoot) : [];
+  const envNodes = autoEnv ? scanEnvFiles(projectRoot) : [];
+  const npmNodes = autoNpm ? scanNpmDeps(projectRoot) : [];
+  const workerNodes = autoWorkers ? scanWorkerFiles(projectRoot) : [];
+
+  // Merge autodiscovered nodes (dedup by id, first wins with enrichment)
+  const nodeMap = new Map<string, ServiceNode>();
+  for (const node of [...dockerNodes, ...envNodes, ...npmNodes, ...workerNodes]) {
+    if (nodeMap.has(node.id)) {
+      // Enrich existing node with any missing fields
+      const existing = nodeMap.get(node.id)!;
+      if (!existing.host && node.host) existing.host = node.host;
+      if (!existing.port && node.port) existing.port = node.port;
+    } else {
+      nodeMap.set(node.id, { ...node });
+    }
+  }
+
+  // Merge config nodes (override autodiscovery)
+  if (svcConfig?.nodes) {
+    for (const cfgNode of svcConfig.nodes) {
+      if (!cfgNode.id) continue;
+      const existing = nodeMap.get(cfgNode.id);
+      if (existing) {
+        Object.assign(existing, cfgNode, { source: 'both' as ServiceSource });
+      } else {
+        nodeMap.set(cfgNode.id, {
+          id: cfgNode.id,
+          label: cfgNode.label || cfgNode.id,
+          category: cfgNode.category || 'internal-service',
+          source: 'config',
+          ...cfgNode,
+        } as ServiceNode);
+      }
+    }
+  }
+
+  const nodes = Array.from(nodeMap.values());
+  const edges = svcConfig?.edges ?? [];
+  const pipelines = svcConfig?.pipelines ?? [];
+
+  return {
+    nodes,
+    edges,
+    pipelines,
+    autodiscovery: {
+      dockerServices: dockerNodes.length,
+      envConnections: envNodes.length,
+      npmServices: npmNodes.length,
+      workerFiles: workerNodes.length,
+    },
   };
 }

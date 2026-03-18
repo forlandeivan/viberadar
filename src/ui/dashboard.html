@@ -1354,6 +1354,72 @@
   .e2e-screenshot-modal { position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; cursor:pointer; }
   .e2e-screenshot-modal img { max-width:90vw; max-height:90vh; border-radius:8px; }
   .e2e-plan-indicator { font-size:10px; color:#d2a8ff; margin-left:4px; }
+
+  /* ─── Service Map styles ──────────────────────────────────────────────────── */
+  .svc-sidebar-tabs { display:flex; flex-direction:column; gap:4px; padding:0 6px; }
+  .svc-sidebar-tab { background:none; border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; cursor:pointer; font-size:12px; text-align:left; transition:all 0.15s; }
+  .svc-sidebar-tab:hover { background:var(--surface); }
+  .svc-sidebar-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  .svc-graph-wrap { position:relative; width:100%; height:calc(100vh - 160px); overflow:hidden; border:1px solid var(--border); border-radius:8px; background:var(--bg); }
+  .svc-graph-svg { width:100%; height:100%; }
+  .svc-graph-svg text { font-family:inherit; }
+
+  .svc-node-group { cursor:pointer; }
+  .svc-node-rect { rx:8; ry:8; stroke-width:1.5; transition:stroke 0.15s, filter 0.15s; }
+  .svc-node-group:hover .svc-node-rect { stroke:var(--accent); filter:drop-shadow(0 0 6px rgba(88,166,255,0.4)); }
+  .svc-node-icon { font-size:18px; pointer-events:none; }
+  .svc-node-label { fill:var(--text); font-size:11px; pointer-events:none; }
+  .svc-node-category { fill:var(--muted); font-size:9px; pointer-events:none; }
+
+  .svc-edge { fill:none; stroke:var(--border); stroke-width:1.5; }
+  .svc-edge.critical { stroke:#f85149; stroke-width:2.5; }
+  .svc-edge-label { fill:var(--muted); font-size:9px; }
+  .svc-edge.highlighted { stroke:var(--accent); stroke-width:2; }
+
+  .svc-group-label { fill:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+
+  .svc-legend { position:absolute; bottom:12px; left:12px; display:flex; gap:12px; font-size:11px; color:var(--muted); background:var(--surface); padding:6px 12px; border-radius:6px; border:1px solid var(--border); }
+  .svc-legend-item { display:flex; align-items:center; gap:4px; }
+  .svc-legend-dot { width:10px; height:10px; border-radius:50%; }
+
+  .svc-pipeline-container { display:flex; flex-direction:column; gap:24px; padding:16px; }
+  .svc-pipeline { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .svc-pipeline-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:4px; }
+  .svc-pipeline-desc { font-size:12px; color:var(--muted); margin-bottom:12px; }
+  .svc-pipeline-triggers { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .svc-pipeline-trigger { font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(88,166,255,0.15); color:#58a6ff; }
+  .svc-pipeline-steps { display:flex; align-items:center; gap:0; overflow-x:auto; padding:8px 0; }
+  .svc-step { display:flex; flex-direction:column; align-items:center; min-width:100px; flex-shrink:0; }
+  .svc-step-box { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 12px; text-align:center; width:100px; cursor:pointer; transition:border-color 0.15s; }
+  .svc-step-box:hover { border-color:var(--accent); }
+  .svc-step-label { font-size:11px; color:var(--text); font-weight:500; }
+  .svc-step-service { font-size:9px; color:var(--muted); margin-top:2px; }
+  .svc-step-arrow { color:var(--muted); font-size:16px; padding:0 4px; flex-shrink:0; }
+
+  .svc-export { padding:16px; }
+  .svc-export-section { margin-bottom:24px; }
+  .svc-export-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:8px; }
+  .svc-export-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .svc-export-table th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); color:var(--muted); font-weight:500; }
+  .svc-export-table td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.05); color:var(--text); }
+  .svc-export-btns { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+  .svc-export-btn { background:var(--surface); border:1px solid var(--border); color:var(--text); padding:8px 16px; border-radius:6px; cursor:pointer; font-size:12px; transition:all 0.15s; }
+  .svc-export-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .svc-alert-badge { display:inline-block; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:500; }
+  .svc-alert-badge.critical { background:rgba(248,81,73,0.2); color:#f85149; }
+  .svc-alert-badge.warning { background:rgba(227,179,65,0.2); color:#e3b341; }
+  .svc-alert-badge.info { background:rgba(88,166,255,0.2); color:#58a6ff; }
+
+  .svc-empty { text-align:center; padding:60px 20px; color:var(--muted); }
+  .svc-empty h3 { color:var(--text); margin-bottom:8px; }
+
+  /* Service detail panel */
+  .svc-detail-section { margin-bottom:16px; }
+  .svc-detail-section h4 { font-size:12px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+  .svc-detail-row { font-size:12px; color:var(--text); padding:3px 0; }
+  .svc-detail-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; }
+
   </style>
 </head>
 <body>
@@ -1501,17 +1567,20 @@ const modeStore = {
   qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/observability')) return 'observability';
   if (pathname.startsWith('/radar/docs')) return 'docs';
+  if (pathname.startsWith('/radar/services')) return 'services';
   return 'qa';
 }
 
 function routePathForMode(mode) {
   if (mode === 'observability') return '/radar/observability';
   if (mode === 'docs') return '/radar/docs';
+  if (mode === 'services') return '/radar/services';
   return '/radar/qa';
 }
 
@@ -1555,7 +1624,7 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability' || contextMode === 'docs') {
+  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services') {
     view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
@@ -2795,6 +2864,25 @@ function renderStats() {
         { v: '—', l: 'Шумных паттернов' },
       ];
     }
+  } else if (contextMode === 'services') {
+    const sm = D.serviceMap;
+    if (sm) {
+      items = [
+        { v: sm.nodes.length, l: 'Сервисов' },
+        { v: sm.edges.length, l: 'Зависимостей' },
+        { v: sm.pipelines.length, l: 'Пайплайнов' },
+        { v: sm.autodiscovery.dockerServices + sm.autodiscovery.envConnections + sm.autodiscovery.npmServices, l: 'Автодискаверинг' },
+        sm.nodes.filter(n => n.alerts && n.alerts.length > 0).length > 0
+          ? { v: sm.nodes.reduce((s, n) => s + (n.alerts?.length || 0), 0), l: 'Алертов' }
+          : null,
+      ].filter(Boolean);
+    } else {
+      items = [
+        { v: 0, l: 'Сервисов' },
+        { v: '—', l: 'Зависимостей' },
+        { v: '—', l: 'Пайплайнов' },
+      ];
+    }
   } else if (D.hasConfig && D.features) {
     const unmapped = src.filter(m => !m.isInfra && (!m.featureKeys || m.featureKeys.length === 0)).length;
     items = [
@@ -2827,6 +2915,7 @@ function renderModeSwitch() {
     { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
     { key: 'observability', label: 'Наблюдаемость', hint: 'Логи, шум, сигналы ошибок' },
     { key: 'docs', label: 'Документация', hint: 'Актуальность, генерация, обновление' },
+    { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -2862,6 +2951,29 @@ function renderSidebar() {
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
         Статус и актуальность документации по фичам.
       </div>`;
+    return;
+  }
+
+  if (contextMode === 'services') {
+    tabs.style.display = 'none';
+    const svcTab = modeStore.services.svcTab || 'graph';
+    extra.innerHTML = `
+      <div class="sidebar-label">Карта сервисов</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45;margin-bottom:12px">
+        Зависимости, пайплайны, экспорт для мониторинга.
+      </div>
+      <div class="svc-sidebar-tabs">
+        <button class="svc-sidebar-tab ${svcTab === 'graph' ? 'active' : ''}" data-svctab="graph">Граф</button>
+        <button class="svc-sidebar-tab ${svcTab === 'pipelines' ? 'active' : ''}" data-svctab="pipelines">Пайплайны</button>
+        <button class="svc-sidebar-tab ${svcTab === 'export' ? 'active' : ''}" data-svctab="export">Экспорт</button>
+      </div>`;
+    extra.querySelectorAll('.svc-sidebar-tab').forEach(btn => {
+      btn.onclick = () => {
+        modeStore.services.svcTab = btn.dataset.svctab;
+        renderSidebar();
+        renderContent();
+      };
+    });
     return;
   }
 
@@ -2914,6 +3026,10 @@ function renderContent() {
     renderDocumentation(c);
     return;
   }
+  if (contextMode === 'services') {
+    renderServiceMap(c);
+    return;
+  }
 
   if (view === 'features') {
     if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
@@ -2924,6 +3040,376 @@ function renderContent() {
   } else {
     renderModuleGrid(c);
   }
+}
+
+// ─── Service Map rendering ──────────────────────────────────────────────────
+
+const SVC_CATEGORY_COLORS = {
+  'database':         { fill: '#1a3a2a', stroke: '#3fb950', text: '#3fb950' },
+  'cache':            { fill: '#3a2a1a', stroke: '#ffa657', text: '#ffa657' },
+  'queue':            { fill: '#2a1a3a', stroke: '#d2a8ff', text: '#d2a8ff' },
+  'storage':          { fill: '#1a2a3a', stroke: '#58a6ff', text: '#58a6ff' },
+  'external-api':     { fill: '#3a1a2a', stroke: '#f85149', text: '#f85149' },
+  'internal-service': { fill: '#1a2a2a', stroke: '#79c0ff', text: '#79c0ff' },
+  'worker':           { fill: '#2a2a1a', stroke: '#e3b341', text: '#e3b341' },
+  'gateway':          { fill: '#2a1a2a', stroke: '#a371f7', text: '#a371f7' },
+};
+
+const SVC_GROUP_ORDER = ['gateway', 'external', 'services', 'workers', 'queues', 'cache', 'storage', 'databases'];
+const SVC_GROUP_LABELS = { gateway: 'Шлюзы', external: 'Внешние API', services: 'Сервисы', workers: 'Воркеры', queues: 'Очереди', cache: 'Кэш', storage: 'Хранилище', databases: 'Базы данных' };
+
+function renderServiceMap(c) {
+  const sm = D.serviceMap;
+  if (!sm || sm.nodes.length === 0) {
+    c.innerHTML = `<div class="svc-empty">
+      <h3>Карта сервисов пуста</h3>
+      <p>Автодискаверинг не нашёл сервисов. Добавь секцию <code>services</code> в <code>viberadar.config.json</code> или убедись что в проекте есть docker-compose.yml / .env файлы.</p>
+    </div>`;
+    return;
+  }
+  const svcTab = modeStore.services.svcTab || 'graph';
+  if (svcTab === 'graph') renderSvcGraph(c, sm);
+  else if (svcTab === 'pipelines') renderSvcPipelines(c, sm);
+  else if (svcTab === 'export') renderSvcExport(c, sm);
+}
+
+function renderSvcGraph(c, sm) {
+  // Group nodes
+  const groups = {};
+  for (const node of sm.nodes) {
+    const g = node.group || 'services';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(node);
+  }
+
+  const NODE_W = 130, NODE_H = 56, PAD_X = 40, PAD_Y = 24, GROUP_PAD = 50;
+  const orderedGroups = SVC_GROUP_ORDER.filter(g => groups[g]?.length > 0);
+
+  // Calculate positions
+  const positions = {};
+  let maxRowW = 0;
+  for (const g of orderedGroups) {
+    const row = groups[g];
+    maxRowW = Math.max(maxRowW, row.length * (NODE_W + PAD_X));
+  }
+
+  const svgW = Math.max(maxRowW + PAD_X * 2, 600);
+  let curY = GROUP_PAD;
+  const groupYPositions = {};
+
+  for (const g of orderedGroups) {
+    const row = groups[g];
+    groupYPositions[g] = curY;
+    const totalW = row.length * NODE_W + (row.length - 1) * PAD_X;
+    const startX = (svgW - totalW) / 2;
+    row.forEach((node, i) => {
+      positions[node.id] = {
+        x: startX + i * (NODE_W + PAD_X) + NODE_W / 2,
+        y: curY + NODE_H / 2 + 20,  // 20px for group label
+      };
+    });
+    curY += NODE_H + PAD_Y + GROUP_PAD;
+  }
+  const svgH = curY + GROUP_PAD;
+
+  // Build SVG
+  let svg = `<svg class="svc-graph-svg" viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<defs>
+    <marker id="svc-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="var(--border)"/>
+    </marker>
+    <marker id="svc-arrow-critical" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#f85149"/>
+    </marker>
+    <marker id="svc-arrow-hl" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="var(--accent)"/>
+    </marker>
+  </defs>`;
+
+  // Group labels
+  for (const g of orderedGroups) {
+    const y = groupYPositions[g];
+    svg += `<text x="16" y="${y + 12}" class="svc-group-label">${SVC_GROUP_LABELS[g] || g}</text>`;
+  }
+
+  // Edges
+  for (const edge of sm.edges) {
+    const from = positions[edge.from];
+    const to = positions[edge.to];
+    if (!from || !to) continue;
+    const cls = edge.critical ? 'svc-edge critical' : 'svc-edge';
+    const marker = edge.critical ? 'url(#svc-arrow-critical)' : 'url(#svc-arrow)';
+    // Bezier curve
+    const dy = to.y - from.y;
+    const dx = to.x - from.x;
+    const cp = Math.abs(dy) * 0.4;
+    const path = `M ${from.x} ${from.y + NODE_H/2} C ${from.x} ${from.y + NODE_H/2 + cp}, ${to.x} ${to.y - NODE_H/2 - cp}, ${to.x} ${to.y - NODE_H/2}`;
+    svg += `<path d="${path}" class="${cls}" marker-end="${marker}" data-from="${edge.from}" data-to="${edge.to}"/>`;
+    if (edge.label) {
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      svg += `<text x="${mx}" y="${my}" class="svc-edge-label" text-anchor="middle">${edge.label}</text>`;
+    }
+  }
+
+  // Nodes
+  for (const node of sm.nodes) {
+    const pos = positions[node.id];
+    if (!pos) continue;
+    const colors = SVC_CATEGORY_COLORS[node.category] || SVC_CATEGORY_COLORS['internal-service'];
+    const x = pos.x - NODE_W / 2;
+    const y = pos.y - NODE_H / 2;
+    svg += `<g class="svc-node-group" data-nodeid="${node.id}" transform="translate(${x},${y})">`;
+    svg += `<rect class="svc-node-rect" width="${NODE_W}" height="${NODE_H}" fill="${colors.fill}" stroke="${colors.stroke}"/>`;
+    svg += `<text class="svc-node-icon" x="${NODE_W/2}" y="22" text-anchor="middle">${node.icon || '📦'}</text>`;
+    svg += `<text class="svc-node-label" x="${NODE_W/2}" y="36" text-anchor="middle">${truncateText(node.label, 16)}</text>`;
+    svg += `<text class="svc-node-category" x="${NODE_W/2}" y="48" text-anchor="middle">${node.category}</text>`;
+    svg += `</g>`;
+  }
+
+  svg += `</svg>`;
+
+  // Legend
+  const legendItems = Object.entries(SVC_CATEGORY_COLORS)
+    .filter(([cat]) => sm.nodes.some(n => n.category === cat))
+    .map(([cat, colors]) => `<div class="svc-legend-item"><div class="svc-legend-dot" style="background:${colors.stroke}"></div>${cat}</div>`)
+    .join('');
+
+  c.innerHTML = `<div class="svc-graph-wrap">${svg}<div class="svc-legend">${legendItems}</div></div>`;
+
+  // Interactivity
+  c.querySelectorAll('.svc-node-group').forEach(g => {
+    g.addEventListener('mouseenter', () => {
+      const id = g.dataset.nodeid;
+      c.querySelectorAll('.svc-edge').forEach(e => {
+        if (e.dataset.from === id || e.dataset.to === id) {
+          e.classList.add('highlighted');
+          e.setAttribute('marker-end', 'url(#svc-arrow-hl)');
+        }
+      });
+    });
+    g.addEventListener('mouseleave', () => {
+      c.querySelectorAll('.svc-edge').forEach(e => {
+        e.classList.remove('highlighted');
+        const isCrit = e.classList.contains('critical');
+        e.setAttribute('marker-end', isCrit ? 'url(#svc-arrow-critical)' : 'url(#svc-arrow)');
+      });
+    });
+    g.addEventListener('click', () => {
+      const id = g.dataset.nodeid;
+      openSvcPanel(id);
+    });
+  });
+}
+
+function truncateText(text, maxLen) {
+  return text.length > maxLen ? text.slice(0, maxLen - 1) + '…' : text;
+}
+
+function renderSvcPipelines(c, sm) {
+  if (!sm.pipelines || sm.pipelines.length === 0) {
+    c.innerHTML = `<div class="svc-empty">
+      <h3>Пайплайны не заданы</h3>
+      <p>Добавь секцию <code>pipelines</code> в <code>services</code> конфиг, чтобы визуализировать потоки данных.</p>
+    </div>`;
+    return;
+  }
+
+  c.innerHTML = `<div class="svc-pipeline-container">${sm.pipelines.map(p => {
+    const triggers = (p.triggers || []).map(t => `<span class="svc-pipeline-trigger">${t}</span>`).join('');
+    const steps = p.steps.map((s, i) => {
+      const arrow = i < p.steps.length - 1 ? '<span class="svc-step-arrow">→</span>' : '';
+      const svcNode = s.serviceId ? sm.nodes.find(n => n.id === s.serviceId) : null;
+      const svcLabel = svcNode ? `${svcNode.icon || ''} ${svcNode.label}` : (s.serviceId || '');
+      return `<div class="svc-step">
+        <div class="svc-step-box" ${s.serviceId ? `data-svcid="${s.serviceId}"` : ''}>
+          <div class="svc-step-label">${s.label}</div>
+          ${svcLabel ? `<div class="svc-step-service">${svcLabel}</div>` : ''}
+        </div>
+      </div>${arrow}`;
+    }).join('');
+    return `<div class="svc-pipeline">
+      <div class="svc-pipeline-title">${p.label}</div>
+      ${p.description ? `<div class="svc-pipeline-desc">${p.description}</div>` : ''}
+      ${triggers ? `<div class="svc-pipeline-triggers">${triggers}</div>` : ''}
+      <div class="svc-pipeline-steps">${steps}</div>
+    </div>`;
+  }).join('')}</div>`;
+
+  // Click on step to open service detail
+  c.querySelectorAll('.svc-step-box[data-svcid]').forEach(box => {
+    box.onclick = () => openSvcPanel(box.dataset.svcid);
+  });
+}
+
+function renderSvcExport(c, sm) {
+  // Services table
+  let servicesTable = `<table class="svc-export-table">
+    <thead><tr><th>Сервис</th><th>Категория</th><th>Host</th><th>Port</th><th>Источник</th><th>Health Check</th></tr></thead>
+    <tbody>${sm.nodes.map(n => `<tr>
+      <td>${n.icon || ''} ${n.label}</td>
+      <td>${n.category}</td>
+      <td>${n.host || '—'}</td>
+      <td>${n.port || '—'}</td>
+      <td>${n.source}</td>
+      <td>${n.healthCheck ? `${n.healthCheck.type}: ${n.healthCheck.target}` : '—'}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+
+  // Dependencies table
+  let depsTable = '';
+  if (sm.edges.length > 0) {
+    depsTable = `<div class="svc-export-section">
+      <div class="svc-export-title">Зависимости</div>
+      <table class="svc-export-table">
+        <thead><tr><th>From</th><th>To</th><th>Тип</th><th>Описание</th><th>Critical</th></tr></thead>
+        <tbody>${sm.edges.map(e => `<tr>
+          <td>${e.from}</td><td>${e.to}</td><td>${e.type}</td><td>${e.label || '—'}</td>
+          <td>${e.critical ? '<span style="color:#f85149">●</span> Да' : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  // Alerts table
+  let alertsTable = '';
+  const allAlerts = sm.nodes.flatMap(n => (n.alerts || []).map(a => ({ ...a, service: n.label, serviceId: n.id })));
+  if (allAlerts.length > 0) {
+    alertsTable = `<div class="svc-export-section">
+      <div class="svc-export-title">Рекомендации по алертам</div>
+      <table class="svc-export-table">
+        <thead><tr><th>Сервис</th><th>Метрика</th><th>Severity</th><th>Описание</th></tr></thead>
+        <tbody>${allAlerts.map(a => `<tr>
+          <td>${a.service}</td><td><code>${a.metric}</code></td>
+          <td><span class="svc-alert-badge ${a.severity}">${a.severity}</span></td>
+          <td>${a.description}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  c.innerHTML = `<div class="svc-export">
+    <div class="svc-export-section">
+      <div class="svc-export-title">Сервисы</div>
+      ${servicesTable}
+    </div>
+    ${depsTable}
+    ${alertsTable}
+    <div class="svc-export-btns">
+      <button class="svc-export-btn" id="svcCopyJson">📋 Copy JSON</button>
+      <button class="svc-export-btn" id="svcCopyMd">📄 Copy Markdown</button>
+      <button class="svc-export-btn" id="svcCopyProm">⚡ Copy Prometheus Rules</button>
+    </div>
+  </div>`;
+
+  document.getElementById('svcCopyJson').onclick = async () => {
+    try {
+      const res = await fetch('/api/service-map?format=json');
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      showToast('JSON скопирован в буфер обмена');
+    } catch (e) { showToast('Ошибка копирования'); }
+  };
+  document.getElementById('svcCopyMd').onclick = async () => {
+    try {
+      const res = await fetch('/api/service-map?format=markdown');
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      showToast('Markdown скопирован в буфер обмена');
+    } catch (e) { showToast('Ошибка копирования'); }
+  };
+  document.getElementById('svcCopyProm').onclick = async () => {
+    try {
+      const res = await fetch('/api/service-map?format=prometheus');
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      showToast('Prometheus rules скопированы в буфер обмена');
+    } catch (e) { showToast('Ошибка копирования'); }
+  };
+}
+
+function showToast(msg) {
+  let toast = document.getElementById('svc-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'svc-toast';
+    toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);color:var(--text);padding:8px 20px;border-radius:6px;border:1px solid var(--border);font-size:12px;z-index:9999;opacity:0;transition:opacity 0.3s;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+}
+
+function openSvcPanel(nodeId) {
+  const sm = D.serviceMap;
+  if (!sm) return;
+  const node = sm.nodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  const panel = document.getElementById('panel');
+  const colors = SVC_CATEGORY_COLORS[node.category] || SVC_CATEGORY_COLORS['internal-service'];
+
+  // Incoming/outgoing edges
+  const incoming = sm.edges.filter(e => e.to === nodeId);
+  const outgoing = sm.edges.filter(e => e.from === nodeId);
+
+  // Pipelines this node participates in
+  const pipelines = sm.pipelines.filter(p => p.steps.some(s => s.serviceId === nodeId));
+
+  let html = `<div style="padding:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span style="font-size:28px">${node.icon || '📦'}</span>
+      <div>
+        <div style="font-size:16px;font-weight:600;color:var(--text)">${node.label}</div>
+        <div style="font-size:11px;color:${colors.text}">${node.category}</div>
+      </div>
+    </div>
+
+    <div class="svc-detail-section">
+      <h4>Информация</h4>
+      <div class="svc-detail-row">ID: <code>${node.id}</code></div>
+      <div class="svc-detail-row">Источник: <span class="svc-detail-badge" style="background:${node.source === 'config' ? 'rgba(88,166,255,0.15)' : 'rgba(63,185,80,0.15)'};color:${node.source === 'config' ? '#58a6ff' : '#3fb950'}">${node.source}</span></div>
+      ${node.host ? `<div class="svc-detail-row">Host: <code>${node.host}</code></div>` : ''}
+      ${node.port ? `<div class="svc-detail-row">Port: <code>${node.port}</code></div>` : ''}
+      ${node.group ? `<div class="svc-detail-row">Группа: ${node.group}</div>` : ''}
+    </div>`;
+
+  if (incoming.length > 0) {
+    html += `<div class="svc-detail-section"><h4>Входящие зависимости (${incoming.length})</h4>
+      ${incoming.map(e => `<div class="svc-detail-row">${e.from} → <strong>${nodeId}</strong> ${e.label ? `(${e.label})` : ''} <span style="color:var(--muted)">${e.type}</span>${e.critical ? ' <span style="color:#f85149">critical</span>' : ''}</div>`).join('')}
+    </div>`;
+  }
+  if (outgoing.length > 0) {
+    html += `<div class="svc-detail-section"><h4>Исходящие зависимости (${outgoing.length})</h4>
+      ${outgoing.map(e => `<div class="svc-detail-row"><strong>${nodeId}</strong> → ${e.to} ${e.label ? `(${e.label})` : ''} <span style="color:var(--muted)">${e.type}</span>${e.critical ? ' <span style="color:#f85149">critical</span>' : ''}</div>`).join('')}
+    </div>`;
+  }
+  if (pipelines.length > 0) {
+    html += `<div class="svc-detail-section"><h4>Участвует в пайплайнах (${pipelines.length})</h4>
+      ${pipelines.map(p => {
+        const stepIdx = p.steps.findIndex(s => s.serviceId === nodeId);
+        return `<div class="svc-detail-row">📊 ${p.label} — шаг ${stepIdx + 1}: ${p.steps[stepIdx].label}</div>`;
+      }).join('')}
+    </div>`;
+  }
+  if (node.healthCheck) {
+    html += `<div class="svc-detail-section"><h4>Health Check</h4>
+      <div class="svc-detail-row">Тип: ${node.healthCheck.type}</div>
+      <div class="svc-detail-row">Target: <code>${node.healthCheck.target}</code></div>
+      ${node.healthCheck.interval ? `<div class="svc-detail-row">Интервал: ${node.healthCheck.interval}</div>` : ''}
+    </div>`;
+  }
+  if (node.alerts && node.alerts.length > 0) {
+    html += `<div class="svc-detail-section"><h4>Алерты (${node.alerts.length})</h4>
+      ${node.alerts.map(a => `<div class="svc-detail-row"><span class="svc-alert-badge ${a.severity}">${a.severity}</span> <code>${a.metric}</code> — ${a.description}</div>`).join('')}
+    </div>`;
+  }
+
+  html += `</div>`;
+
+  document.getElementById('panelContent').innerHTML = html;
+  panel.classList.add('open');
 }
 
 function renderQaOnboarding() {
