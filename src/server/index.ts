@@ -2814,6 +2814,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
         const batch = meta?.batch ?? 0;
         const totalBatches = Math.ceil(orphanCount / CLASSIFY_BATCH_SIZE);
+        // Auto-enqueue remaining batches when triggered from UI (batch=0, no explicit batch)
+        if (batch === 0 && !meta?._batchExplicit && totalBatches > 1) {
+          for (let b = 1; b < totalBatches; b++) {
+            runAgent(task, featureKey, filePath, selectedFilePaths, { ...meta, batch: b, _batchExplicit: true });
+          }
+        }
         title = `${agentLabel} — привязать тесты к фичам (${batch + 1}/${totalBatches})`;
       } else if (task === 'link-orphan-tests') {
         const orphanCount = getOrphanTests(currentData.modules).noSource.length;
@@ -2822,6 +2828,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
         const batch = meta?.batch ?? 0;
         const totalBatches = Math.ceil(orphanCount / LINK_BATCH_SIZE);
+        // Auto-enqueue remaining batches when triggered from UI (batch=0, no explicit batch)
+        if (batch === 0 && !meta?._batchExplicit && totalBatches > 1) {
+          for (let b = 1; b < totalBatches; b++) {
+            runAgent(task, featureKey, filePath, selectedFilePaths, { ...meta, batch: b, _batchExplicit: true });
+          }
+        }
         title = `${agentLabel} — связать тесты с исходниками (${batch + 1}/${totalBatches})`;
       } else {
         title = `${agentLabel} — разобрать unmapped`;
