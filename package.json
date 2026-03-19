@@ -1,6 +1,6 @@
 {
   "name": "viberadar",
-  "version": "0.3.118",
+  "version": "0.3.119",
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
   "bin": {
