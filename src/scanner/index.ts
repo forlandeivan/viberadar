@@ -830,13 +830,18 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
 
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
-  const moduleFailureData = new Map<string, { content: string; failurePoints: FailurePoint[] }>();
+  const moduleFailureData = new Map<string, { failurePoints: FailurePoint[] }>();
   // Per-module stats for efficient per-feature aggregation
   const moduleStats = new Map<string, { totalLogs: number; noiseLogs: number; totalErrors: number; actionableErrors: number; fieldChecks: number; fieldHits: number; hasCritCov: boolean }>();
+
+  // Skip files larger than 500 KB — likely generated/bundled, not hand-written source.
+  const MAX_FILE_BYTES = 500 * 1024;
 
   for (const module of sourceModules) {
     let content = '';
     try {
+      const stat = fs.statSync(module.path);
+      if (stat.size > MAX_FILE_BYTES) continue;
       content = fs.readFileSync(module.path, 'utf-8');
     } catch {
       continue;
@@ -845,7 +850,7 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
     // Detect failure points BEFORE skipping modules with no log calls
     const failurePoints = detectFailurePoints(content);
     if (failurePoints.length > 0) {
-      moduleFailureData.set(module.relativePath, { content, failurePoints });
+      moduleFailureData.set(module.relativePath, { failurePoints });
     }
 
     const calls = parseLogCalls(content);
@@ -996,10 +1001,8 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
 
     // Include if: no warn/error, OR has unlogged failure points
     if (!hasCoverage || failurePoints.length > 0) {
-      let content = fpData?.content || '';
-      if (!content) {
-        try { content = fs.readFileSync(module.path, 'utf-8'); } catch { continue; }
-      }
+      let content = '';
+      try { content = fs.readFileSync(module.path, 'utf-8'); } catch { continue; }
 
       const cls = classifyModuleRole(module.relativePath, content);
 
