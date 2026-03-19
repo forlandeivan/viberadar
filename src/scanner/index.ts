@@ -806,6 +806,28 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
   // trace_id/request_id from their own config. We only penalise console.* calls for these.
   const FRAMEWORK_AUTO_FIELDS = new Set(['service', 'env', 'trace_id', 'request_id']);
 
+  // Detect if the project's client-side structuredLogger auto-injects user_id
+  // (e.g. via resolveClientContext returning { user_id: ... }).
+  // If yes, client-side non-console calls are treated as having user_id auto-provided.
+  let clientLoggerAutoInjectsUserId = false;
+  try {
+    const candidatePaths = [
+      path.join(projectRoot, 'client', 'src', 'lib', 'structuredLogger.ts'),
+      path.join(projectRoot, 'client', 'src', 'lib', 'structuredLogger.js'),
+      path.join(projectRoot, 'src', 'lib', 'structuredLogger.ts'),
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        const slContent = fs.readFileSync(p, 'utf-8');
+        // Check that resolveClientContext (or similar context builder) returns user_id
+        if (/resolveClientContext[\s\S]{0,300}user_id/.test(slContent)) {
+          clientLoggerAutoInjectsUserId = true;
+        }
+        break;
+      }
+    }
+  } catch { /* non-fatal */ }
+
   const noisyMap = new Map<string, number>();
   const criticalCoverage = new Set<string>();
   const moduleFailureData = new Map<string, { content: string; failurePoints: FailurePoint[] }>();
@@ -859,10 +881,20 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
       const hasContextSpread = /\.\.\.\s*(?:get\w*(?:Log|Failure|Error|Request|Trace|Auth)?Context\w*\s*\(|build\w*(?:Log|Context)\w*\s*\(|\w*[Ll]og[Cc]ontext\b|\w*[Cc]tx\b)/
         .test(c.argsSnippet);
 
+      const isClientModule = module.relativePath.replace(/\\/g, '/').startsWith('client/');
+
       for (const field of applicableFields) {
         // Non-console loggers (structuredLogger, pino, winston, etc.) inject service/env/
         // trace_id/request_id from their own config — don't penalise missing them at call site.
-        const autoProvided = !c.isConsoleCall && FRAMEWORK_AUTO_FIELDS.has(field.name);
+        const frameworkAutoProvided = !c.isConsoleCall && FRAMEWORK_AUTO_FIELDS.has(field.name);
+        // If the project's client-side structuredLogger auto-injects user_id via resolveClientContext,
+        // treat user_id as auto-provided for client-side non-console logger calls.
+        const clientUserIdAutoProvided =
+          field.name === 'user_id' &&
+          isClientModule &&
+          !c.isConsoleCall &&
+          clientLoggerAutoInjectsUserId;
+        const autoProvided = frameworkAutoProvided || clientUserIdAutoProvided;
         if (hasContextSpread || autoProvided || field.re.test(c.argsSnippet)) {
           requiredFieldsHits += 1;
           mFieldHits += 1;

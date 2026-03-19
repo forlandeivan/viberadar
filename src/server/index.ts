@@ -1464,10 +1464,19 @@ function buildObsFixSelectedPrompt(selectedItems: ObservabilityCatalogItem[], me
       error_code: 'Код ошибки из словаря. Обязателен для WARN/ERROR.',
       user_id: 'ID пользователя (user_id или user_hash). Из контекста auth.',
     };
+    const userIdContextHint = fieldName === 'user_id' ? [
+      ``,
+      `Как получить user_id зависит от типа файла:`,
+      `- Серверные файлы (server/): из объекта запроса (req.user?.id, session, или через существующий getRequestLogContext/аналог)`,
+      `- Клиентские файлы (client/, .tsx): если в lib/structuredLogger.ts есть resolveStructuredLogUserId() — используй её; иначе достань userId из auth-контекста/хука`,
+    ].join('\n') : '';
     actionBlock = [
       `Задача: добавь поле \`${fieldName}\` во все лог-вызовы, где оно отсутствует.`,
       fieldHints[fieldName] ? `Описание поля: ${fieldHints[fieldName]}` : '',
+      userIdContextHint,
       `Значение поля должно быть взято из контекста (request, config, env) — не хардкодь.`,
+      ``,
+      `⛔ Работай ТОЛЬКО с файлами из списка ниже. Создать/изменить вспомогательную утилиту (lib/structuredLogger, queryClient) допустимо, но итоговые изменения должны быть применены именно в перечисленных модулях.`,
     ].filter(Boolean).join('\n');
   } else if (recommendationType === 'suppress') {
     actionBlock = [
