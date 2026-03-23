@@ -4614,8 +4614,10 @@ async function renderDocFeatureDetail(c) {
   const versionsHtml = f.docVersions && f.docVersions.length > 0
     ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Версии: ${f.docVersions.map((v, i) => `<span style="${i === f.docVersions.length - 1 ? 'color:var(--text)' : ''}">${v.split('/').pop()}</span>`).join(' · ')}</div>`
     : '';
-  const screenshotHintHtml = f.routes && f.routes.length > 0
-    ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">📸 Перед запуском агента будут автоматически захвачены скриншоты (${f.routes.length} маршрут${f.routes.length === 1 ? '' : f.routes.length < 5 ? 'а' : 'ов'}): ${f.routes.join(', ')}</div>`
+  const featResult = D.features?.find(x => x.key === drillFeatureKey);
+  const featRoutes = featResult?.routes;
+  const screenshotHintHtml = featRoutes && featRoutes.length > 0
+    ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">📸 Перед запуском агента будут автоматически захвачены скриншоты (${featRoutes.length} маршрут${featRoutes.length === 1 ? '' : featRoutes.length < 5 ? 'а' : 'ов'}): ${featRoutes.join(', ')}</div>`
     : '';
   const detailActionsHtml = `
     <div class="doc-detail-actions">
