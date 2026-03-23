@@ -38,6 +38,7 @@ export interface FeatureConfig {
   include: string[];
   color: string;
   routes?: string[];  // URL paths for doc screenshots: ["/login", "/profile"]
+  screenshotBaseUrl?: string;  // Base URL for Playwright screenshot capture, e.g. "http://localhost:5000"
 }
 
 export interface VibeRadarConfig {
@@ -61,6 +62,7 @@ export interface FeatureResult {
   integrationTestCount: number;
   e2eTestCount: number;
   routes?: string[];          // URL paths for doc screenshots
+  screenshotBaseUrl?: string; // Base URL for Playwright screenshot capture
 }
 
 export interface ScanResult {
@@ -1514,6 +1516,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
         integrationTestCount: tstFiles.filter(m => m.testType === 'integration').length,
         e2eTestCount:         tstFiles.filter(m => m.testType === 'e2e').length,
         routes: feat.routes,
+        screenshotBaseUrl: feat.screenshotBaseUrl,
       };
     });
   }

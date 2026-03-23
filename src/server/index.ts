@@ -726,6 +726,93 @@ function runPlaywrightTests(files: string[], projectRoot: string): Promise<{ pas
   });
 }
 
+// ─── Doc screenshot capture (Playwright) ─────────────────────────────────────
+
+async function captureDocScreenshots(
+  projectRoot: string,
+  featureKey: string,
+  routes: string[],
+  baseUrl: string,
+  credentials?: { email: string; password: string }
+): Promise<{ captured: string[]; errors: string[] }> {
+  const screenshotDir = path.join(projectRoot, 'docs', 'features', featureKey, 'screenshots');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  // Resolve login route automatically: check if /login route exists among routes or add it implicitly
+  const loginRoute = routes.find(r => /login|signin|auth/i.test(r));
+
+  const routeEntries = routes.map(r => ({
+    route: r,
+    filename: (r === '/' ? 'index' : r.replace(/^\//, '').replace(/\//g, '-')) + '.png',
+  }));
+
+  const credBlock = credentials
+    ? `
+  // Login first
+  await page.goto('${baseUrl}${loginRoute ?? '/login'}');
+  await page.waitForLoadState('networkidle').catch(() => {});
+  const emailInput = page.locator('input[type="email"], input[name="email"], input[placeholder*="mail" i]').first();
+  const passInput = page.locator('input[type="password"]').first();
+  if (await emailInput.isVisible().catch(() => false)) {
+    await emailInput.fill('${credentials.email}');
+    await passInput.fill('${credentials.password}');
+    await page.keyboard.press('Enter');
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(1500);
+  }`
+    : '';
+
+  const screenshotCalls = routeEntries.map(({ route, filename }) => `
+  await page.goto('${baseUrl}${route}');
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: ${JSON.stringify(path.join(screenshotDir, filename).replace(/\\/g, '/'))}, fullPage: true });
+  captured.push(${JSON.stringify(filename)});`).join('\n');
+
+  const script = `
+const { chromium } = require('@playwright/test');
+(async () => {
+  const captured = [];
+  const errors = [];
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  try {
+    ${credBlock}
+    ${screenshotCalls}
+  } catch (e) {
+    errors.push(e.message);
+  }
+  await browser.close();
+  console.log(JSON.stringify({ captured, errors }));
+})();
+`;
+
+  const tmpScript = path.join(projectRoot, '.viberadar', 'tmp-doc-screenshots.js');
+  fs.mkdirSync(path.dirname(tmpScript), { recursive: true });
+  fs.writeFileSync(tmpScript, script, 'utf-8');
+
+  return new Promise((resolve) => {
+    const proc = spawn('node', [tmpScript], { cwd: projectRoot, shell: false, stdio: 'pipe' });
+    let stdout = '';
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.on('close', () => {
+      try { fs.unlinkSync(tmpScript); } catch {}
+      try {
+        const match = stdout.match(/\{[\s\S]*"captured"[\s\S]*\}/);
+        const result = JSON.parse(match ? match[0] : stdout);
+        resolve({ captured: result.captured ?? [], errors: result.errors ?? [] });
+      } catch {
+        resolve({ captured: [], errors: ['Failed to parse screenshot output'] });
+      }
+    });
+    proc.on('error', (e) => {
+      try { fs.unlinkSync(tmpScript); } catch {}
+      resolve({ captured: [], errors: [e.message] });
+    });
+  });
+}
+
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
 function buildWriteTestsPrompt(
@@ -1613,6 +1700,7 @@ function buildActualizeDocsPrompt(
   currentDoc: string | null,
   nextVersion: number,
   changedFiles: string[],
+  screenshotsCaptured = false,
 ): string {
   const sourceFiles = modules
     .filter(m => m.featureKeys.includes(feat.key) && m.type !== 'test' && !m.isInfra)
@@ -1620,9 +1708,9 @@ function buildActualizeDocsPrompt(
 
   const isFirstVersion = nextVersion === 1;
   const outPath = `docs/features/${feat.key}/v${nextVersion}.md`;
-  const screenshotBlock = feat.routes && feat.routes.length > 0
-    ? buildScreenshotInstructions(feat.key, feat.routes)
-    : '';
+  const screenshotBlock = screenshotsCaptured
+    ? `\nСкриншоты уже сохранены в \`docs/features/${feat.key}/screenshots/\`. Вставь их в нужные разделы документа сразу после заголовка раздела: ![Описание экрана](screenshots/{filename}.png)\nПод каждым скриншотом добавь курсивную подпись: *Описание экрана*\n`
+    : (feat.routes && feat.routes.length > 0 ? buildScreenshotInstructions(feat.key, feat.routes) : '');
 
   if (isFirstVersion) {
     return [
@@ -2122,7 +2210,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     }
 
     /** Actually spawn the agent process for a queue item */
-    function executeAgentItem(item: AgentQueueItem) {
+    async function executeAgentItem(item: AgentQueueItem) {
       const {
         runId, task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
         autoFixAttempt = 0, autoFixSourceTask,
@@ -2283,7 +2371,34 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           } catch {}
         }
         const changedFiles = docStatus?.changedFilesSinceDoc || [];
-        prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles);
+
+        // Auto-capture Playwright screenshots before agent runs
+        let screenshotsCaptured = false;
+        if (feat.routes && feat.routes.length > 0 && hasPlaywright(projectRoot)) {
+          const baseUrl = feat.screenshotBaseUrl
+            || process.env['VIBERADAR_BASE_URL']
+            || 'http://localhost:5000';
+          broadcast('agent-output', { runId, line: `📸 Захват скриншотов (${feat.routes.length} маршрутов)...` });
+          let envCredentials: { email: string; password: string } | undefined;
+          try {
+            const dotenvPath = path.join(projectRoot, '.env');
+            const envContent = fs.readFileSync(dotenvPath, 'utf-8');
+            const emailMatch = envContent.match(/^E2E_EMAIL=(.+)$/m);
+            const passMatch = envContent.match(/^E2E_PASSWORD=(.+)$/m);
+            if (emailMatch && passMatch) {
+              envCredentials = { email: emailMatch[1].trim(), password: passMatch[1].trim() };
+            }
+          } catch {}
+          const ssResult = await captureDocScreenshots(projectRoot, featureKey, feat.routes, baseUrl, envCredentials);
+          if (ssResult.captured.length > 0) {
+            screenshotsCaptured = true;
+            broadcast('agent-output', { runId, line: `✅ Скриншоты готовы: ${ssResult.captured.join(', ')}` });
+          } else {
+            broadcast('agent-output', { runId, line: `⚠️ Скриншоты не удалось захватить${ssResult.errors.length ? ': ' + ssResult.errors[0] : ''}` });
+          }
+        }
+
+        prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles, screenshotsCaptured);
       } else if (task === 'generate-pipelines') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);
