@@ -3703,6 +3703,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             if (!token) {
               res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Missing token' })); return;
             }
+            // Validate project name if provided
+            if (projectName && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Project Name может содержать только строчные буквы (a-z), цифры (0-9) и дефис (-)' })); return;
+            }
             // Save token to .env in project root
             const envPath = path.join(projectRoot, '.env');
             let envContent = '';
@@ -3735,6 +3739,51 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } catch {}
         res.writeHead(200, jsonH);
         res.end(JSON.stringify({ configured: !!token, projectName: projName || null }));
+        return;
+      }
+
+      // Verify Vercel token before saving
+      if (url === '/api/docs/deploy/verify-token' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', async () => {
+          try {
+            const { token } = JSON.parse(body);
+            if (!token) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Token is required' })); return;
+            }
+            const https = await import('https');
+            const verifyReq = https.request({
+              hostname: 'api.vercel.com',
+              path: '/v2/user',
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${token}` },
+            }, (vRes) => {
+              let vBody = '';
+              vRes.on('data', (c: Buffer) => { vBody += c.toString(); });
+              vRes.on('end', () => {
+                try {
+                  const vData = JSON.parse(vBody);
+                  if (vRes.statusCode && vRes.statusCode >= 400) {
+                    res.writeHead(401, jsonH);
+                    res.end(JSON.stringify({ error: 'Невалидный токен. Проверьте и попробуйте снова.' }));
+                  } else {
+                    res.writeHead(200, jsonH);
+                    res.end(JSON.stringify({ ok: true, username: vData.user?.username || vData.user?.name || 'verified' }));
+                  }
+                } catch {
+                  res.writeHead(502, jsonH); res.end(JSON.stringify({ error: 'Ошибка проверки токена' }));
+                }
+              });
+            });
+            verifyReq.on('error', (e: any) => {
+              res.writeHead(502, jsonH); res.end(JSON.stringify({ error: `Не удалось связаться с Vercel: ${e.message}` }));
+            });
+            verifyReq.end();
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
         return;
       }
 

@@ -4481,25 +4481,14 @@ function renderDocFeatureCards(c) {
     });
   });
 
-  // Deploy button
+  // Deploy button — always goes through doDocsDeploy() which checks config first
   const deployBtn = document.getElementById('deployDocsBtn');
   if (deployBtn) {
-    deployBtn.addEventListener('click', async () => {
-      // Check if config exists
-      try {
-        const cfgRes = await fetch('/api/docs/deploy/config');
-        const cfg = await cfgRes.json();
-        if (cfg.configured) {
-          await doDocsDeploy();
-        } else {
-          showDeployModal();
-        }
-      } catch { showDeployModal(); }
-    });
+    deployBtn.addEventListener('click', () => doDocsDeploy());
   }
 }
 
-function showDeployModal() {
+function showDeployModal(prefillProject) {
   let overlay = document.getElementById('deployModalOverlay');
   if (overlay) overlay.remove();
   overlay = document.createElement('div');
@@ -4511,8 +4500,9 @@ function showDeployModal() {
       <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px">Vercel Token</label>
       <input id="deployToken" type="password" placeholder="vercel_xxx" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:4px">
       <a href="https://vercel.com/account/tokens" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none">Получить на vercel.com/tokens ↗</a>
-      <label style="font-size:13px;color:var(--muted);display:block;margin:12px 0 4px">Project Name <span style="font-size:11px">(опционально)</span></label>
-      <input id="deployProject" type="text" placeholder="my-project-docs" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      <label style="font-size:13px;color:var(--muted);display:block;margin:12px 0 4px">Project Name</label>
+      <input id="deployProject" type="text" placeholder="my-project-docs" value="${escapeHtml(prefillProject || '')}" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      <div id="deployProjectHint" style="font-size:11px;color:var(--muted);margin-top:2px">Только строчные буквы, цифры и дефис (a-z, 0-9, -)</div>
       <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
         <button id="deployModalCancel" class="doc-agent-btn" style="padding:6px 16px">Отмена</button>
         <button id="deployModalSave" class="doc-agent-btn" style="background:var(--blue);color:#fff;border-color:var(--blue);padding:6px 16px">Сохранить и Deploy</button>
@@ -4522,43 +4512,95 @@ function showDeployModal() {
   document.body.appendChild(overlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('deployModalCancel').addEventListener('click', () => overlay.remove());
+
+  // Auto-sanitize project name on input
+  const projInput = document.getElementById('deployProject');
+  projInput.addEventListener('input', () => {
+    const raw = projInput.value;
+    const sanitized = raw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
+    if (raw !== sanitized) { projInput.value = sanitized; }
+  });
+
   document.getElementById('deployModalSave').addEventListener('click', async () => {
     const token = document.getElementById('deployToken').value.trim();
-    const projectName = document.getElementById('deployProject').value.trim();
+    let projectName = document.getElementById('deployProject').value.trim();
     const errEl = document.getElementById('deployModalError');
+    const saveBtn = document.getElementById('deployModalSave');
+
+    // Validate token
     if (!token) { errEl.style.display = 'block'; errEl.textContent = 'Введите Vercel Token'; return; }
-    // Save config
+
+    // Validate project name
+    if (projectName && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
+      errEl.style.display = 'block'; errEl.textContent = 'Project Name может содержать только строчные буквы, цифры и дефис'; return;
+    }
+
+    // Step 1: Verify token with Vercel API
+    saveBtn.disabled = true; saveBtn.textContent = 'Проверяю токен...';
+    errEl.style.display = 'none';
     try {
+      const verifyRes = await fetch('/api/docs/deploy/verify-token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) throw new Error(verifyData.error || 'Невалидный токен');
+
+      // Step 2: Save config
+      saveBtn.textContent = 'Сохраняю...';
       const saveRes = await fetch('/api/docs/deploy/config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, projectName: projectName || undefined })
       });
-      if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.error || 'Save failed'); }
+      if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.error || 'Не удалось сохранить конфигурацию'); }
+
+      // Step 3: Close modal and deploy
       overlay.remove();
-      await doDocsDeploy(token, projectName);
+      await doDocsDeploy();
     } catch (err) {
       errEl.style.display = 'block'; errEl.textContent = err.message;
+      saveBtn.disabled = false; saveBtn.textContent = 'Сохранить и Deploy';
     }
   });
 }
 
-async function doDocsDeploy(token, projectName) {
+async function doDocsDeploy() {
   const btn = document.getElementById('deployDocsBtn');
   const statusBar = document.getElementById('deployStatusBar');
-  if (btn) { btn.disabled = true; btn.textContent = 'Deploying...'; }
-  if (statusBar) { statusBar.style.display = 'block'; statusBar.innerHTML = '<span style="color:var(--blue)">Генерация и деплой документации на Vercel...</span>'; }
+
+  // Pre-check: make sure config exists before doing anything
   try {
-    const body = {};
-    if (token) body.token = token;
-    if (projectName) body.projectName = projectName;
+    const cfgRes = await fetch('/api/docs/deploy/config');
+    const cfg = await cfgRes.json();
+    if (!cfg.configured) {
+      showDeployModal(cfg.projectName || '');
+      return;
+    }
+  } catch {
+    showDeployModal('');
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = '▲ Deploying...'; }
+  if (statusBar) { statusBar.style.display = 'block'; statusBar.innerHTML = '<span style="color:var(--blue)">⏳ Генерация HTML и деплой на Vercel...</span>'; }
+  try {
     const res = await fetch('/api/docs/deploy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({})
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Deploy failed');
+    if (!res.ok) {
+      // If auth error — reset config and show modal
+      if (res.status === 401 || res.status === 403) {
+        showDeployModal('');
+        throw new Error('Токен недействителен. Введите новый токен.');
+      }
+      throw new Error(data.error || 'Deploy failed');
+    }
+    const siteUrl = data.url.startsWith('http') ? data.url : `https://${data.url}`;
     if (statusBar) {
-      statusBar.innerHTML = `<span style="color:var(--green)">✓ Задеплоено!</span> <a href="${data.url}" target="_blank" style="color:var(--blue);margin-left:8px">${data.url} ↗</a>`;
+      statusBar.innerHTML = `<span style="color:var(--green)">✓ Задеплоено!</span> <a href="${siteUrl}" target="_blank" style="color:var(--blue);margin-left:8px">${siteUrl} ↗</a>` +
+        (data.projectName ? `<span style="color:var(--muted);margin-left:8px;font-size:11px">(${escapeHtml(data.projectName)})</span>` : '');
     }
   } catch (err) {
     if (statusBar) { statusBar.innerHTML = `<span style="color:var(--red)">✗ ${escapeHtml(err.message)}</span>`; }
@@ -4773,17 +4815,10 @@ async function renderDocFeatureDetail(c) {
     btn.addEventListener('click', () => runAgentTask(btn.dataset.task, btn.dataset.key));
   });
 
-  // Deploy button in detail view
+  // Deploy button in detail view — same flow as cards view
   const deployBtn = document.getElementById('deployDocsBtn');
   if (deployBtn) {
-    deployBtn.addEventListener('click', async () => {
-      try {
-        const cfgRes = await fetch('/api/docs/deploy/config');
-        const cfg = await cfgRes.json();
-        if (cfg.configured) await doDocsDeploy();
-        else showDeployModal();
-      } catch { showDeployModal(); }
-    });
+    deployBtn.addEventListener('click', () => doDocsDeploy());
   }
 }
 
