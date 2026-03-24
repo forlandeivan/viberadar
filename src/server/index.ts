@@ -25,6 +25,7 @@ const DASHBOARD_HTML = fs.readFileSync(
 // ─── Agent CLI commands ───────────────────────────────────────────────────────
 
 const WIN = process.platform === 'win32';
+const jsonH = { 'Content-Type': 'application/json' } as const;
 type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 interface RuntimeEnvSettings {
   codexSandboxMode: CodexSandboxMode;
@@ -3689,6 +3690,282 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ content: null, exists: false }));
         }
+        return;
+      }
+
+      // ── Deploy docs to Vercel ─────────────────────────────────────────────────
+      if (url === '/api/docs/deploy/config' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const { token, projectName } = JSON.parse(body);
+            if (!token) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Missing token' })); return;
+            }
+            // Save token to .env in project root
+            const envPath = path.join(projectRoot, '.env');
+            let envContent = '';
+            try { envContent = fs.readFileSync(envPath, 'utf-8'); } catch {}
+            const setEnv = (src: string, key: string, val: string) => {
+              const re = new RegExp(`^${key}=.*$`, 'm');
+              return re.test(src) ? src.replace(re, `${key}=${val}`) : src.trimEnd() + `\n${key}=${val}\n`;
+            };
+            envContent = setEnv(envContent, 'VERCEL_DOCS_TOKEN', token);
+            if (projectName) envContent = setEnv(envContent, 'VERCEL_DOCS_PROJECT', projectName);
+            fs.writeFileSync(envPath, envContent, 'utf-8');
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/docs/deploy/config' && req.method === 'GET') {
+        // Check if Vercel deploy is configured
+        let token = '', projName = '';
+        try {
+          const envPath = path.join(projectRoot, '.env');
+          const envContent = fs.readFileSync(envPath, 'utf-8');
+          const tMatch = envContent.match(/^VERCEL_DOCS_TOKEN=(.+)$/m);
+          const pMatch = envContent.match(/^VERCEL_DOCS_PROJECT=(.+)$/m);
+          if (tMatch) token = tMatch[1].trim();
+          if (pMatch) projName = pMatch[1].trim();
+        } catch {}
+        res.writeHead(200, jsonH);
+        res.end(JSON.stringify({ configured: !!token, projectName: projName || null }));
+        return;
+      }
+
+      if (url === '/api/docs/deploy' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', async () => {
+          try {
+            const payload = body ? JSON.parse(body) : {};
+            // Get token
+            let token = payload.token || '';
+            let projName = payload.projectName || '';
+            if (!token || !projName) {
+              try {
+                const envContent = fs.readFileSync(path.join(projectRoot, '.env'), 'utf-8');
+                if (!token) { const m = envContent.match(/^VERCEL_DOCS_TOKEN=(.+)$/m); if (m) token = m[1].trim(); }
+                if (!projName) { const m = envContent.match(/^VERCEL_DOCS_PROJECT=(.+)$/m); if (m) projName = m[1].trim(); }
+              } catch {}
+            }
+            if (!token) {
+              res.writeHead(401, jsonH); res.end(JSON.stringify({ error: 'Vercel token not configured' })); return;
+            }
+            if (!projName) {
+              const pkgPath = path.join(projectRoot, 'package.json');
+              try { projName = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).name + '-docs'; } catch { projName = 'viberadar-docs'; }
+            }
+
+            // Collect documented features
+            const docReport = currentData.documentation;
+            if (!docReport || !docReport.features.length) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No documentation data available' })); return;
+            }
+            const documented = docReport.features.filter((f: any) => f.docExists);
+            if (!documented.length) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No documented features to deploy' })); return;
+            }
+
+            // ── Server-side markdown helpers ──
+            const escHtml = (text: string) => String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const inlineFmt = (text: string) => {
+              let s = escHtml(text);
+              s = s.replace(/`([^`]+)`/g, '<code class="vd-ic">$1</code>');
+              s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+              s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+              s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+              return s;
+            };
+            const mdToHtml = (md: string, featureKey: string) => {
+              let html = '';
+              const lines = md.split('\n');
+              let inCode = false, codeBuf = '', inList = false, listType = '';
+              for (const line of lines) {
+                if (line.trimStart().startsWith('```')) {
+                  if (inCode) { html += `<pre class="vd-code"><code>${escHtml(codeBuf.trimEnd())}</code></pre>`; codeBuf = ''; inCode = false; }
+                  else { if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; } inCode = true; }
+                  continue;
+                }
+                if (inCode) { codeBuf += line + '\n'; continue; }
+                const hm = line.match(/^(#{1,6})\s+(.+)$/);
+                if (hm) { if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; } html += `<h${hm[1].length} class="vd-h">${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
+                if (/^\s*[-*]\s+/.test(line)) {
+                  if (!inList || listType !== 'ul') { if (inList) html += listType === 'ul' ? '</ul>' : '</ol>'; html += '<ul class="vd-list">'; inList = true; listType = 'ul'; }
+                  html += `<li>${inlineFmt(line.replace(/^\s*[-*]\s+/, ''))}</li>`; continue;
+                }
+                if (/^\s*\d+\.\s+/.test(line)) {
+                  if (!inList || listType !== 'ol') { if (inList) html += listType === 'ul' ? '</ul>' : '</ol>'; html += '<ol class="vd-list">'; inList = true; listType = 'ol'; }
+                  html += `<li>${inlineFmt(line.replace(/^\s*\d+\.\s+/, ''))}</li>`; continue;
+                }
+                if (inList && line.trim() === '') { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; }
+                if (line.trim() === '') continue;
+                const im = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+                if (im) {
+                  if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; }
+                  const alt = escHtml(im[1]);
+                  let src = im[2];
+                  if (src.startsWith('screenshots/')) src = `../screenshots/${featureKey}/${src.slice('screenshots/'.length)}`;
+                  html += `<div class="vd-img-wrap"><img src="${src}" alt="${alt}"><div class="vd-caption">${alt}</div></div>`;
+                  continue;
+                }
+                if (!inList) html += `<p class="vd-p">${inlineFmt(line)}</p>`;
+              }
+              if (inCode) html += `<pre class="vd-code"><code>${escHtml(codeBuf.trimEnd())}</code></pre>`;
+              if (inList) html += listType === 'ul' ? '</ul>' : '</ol>';
+              return html;
+            };
+
+            // ── Generate static site CSS ──
+            const css = `
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--bg-card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--code-bg:#0d1117}
+@media(prefers-color-scheme:light){:root{--bg:#f6f8fa;--bg-card:#fff;--border:#d0d7de;--text:#1f2328;--muted:#656d76;--blue:#0969da;--green:#1a7f37;--yellow:#9a6700;--red:#cf222e;--code-bg:#f6f8fa}}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+.vd-layout{display:flex;min-height:100vh}
+.vd-sidebar{width:260px;background:var(--bg-card);border-right:1px solid var(--border);padding:20px 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto}
+.vd-sidebar-title{padding:0 20px 16px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border);margin-bottom:8px}
+.vd-sidebar a{display:block;padding:8px 20px;color:var(--muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;transition:all .15s}
+.vd-sidebar a:hover{color:var(--text);background:var(--bg)}
+.vd-sidebar a.active{color:var(--blue);border-left-color:var(--blue);background:var(--bg)}
+.vd-main{margin-left:260px;padding:32px 40px;max-width:900px;flex:1}
+.vd-h{margin:24px 0 8px;font-weight:600;color:var(--text)}
+h1.vd-h{font-size:24px;border-bottom:1px solid var(--border);padding-bottom:8px}
+h2.vd-h{font-size:18px;border-bottom:1px solid var(--border);padding-bottom:6px}
+h3.vd-h{font-size:16px}
+.vd-p{margin:8px 0;font-size:14px}
+.vd-list{margin:8px 0;padding-left:24px;font-size:14px}
+.vd-list li{margin:4px 0}
+.vd-code{background:var(--code-bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;overflow-x:auto;font-size:13px;margin:12px 0;font-family:'SF Mono','Fira Code',monospace}
+.vd-ic{background:var(--code-bg);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:12px;font-family:'SF Mono','Fira Code',monospace}
+.vd-img-wrap{margin:16px 0;text-align:center}
+.vd-img-wrap img{max-width:100%;border-radius:8px;border:1px solid var(--border)}
+.vd-caption{font-size:12px;color:var(--muted);margin-top:6px}
+a{color:var(--blue)}
+.vd-hero{text-align:center;padding:60px 20px 40px}
+.vd-hero h1{font-size:32px;margin-bottom:8px}
+.vd-hero p{color:var(--muted);font-size:16px;margin-bottom:32px}
+.vd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;max-width:800px;margin:0 auto}
+.vd-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;text-decoration:none;color:var(--text);transition:border-color .15s}
+.vd-card:hover{border-color:var(--blue)}
+.vd-card h3{font-size:15px;margin-bottom:4px}
+.vd-card p{font-size:13px;color:var(--muted)}
+.vd-footer{text-align:center;padding:32px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);margin-top:40px}
+@media(max-width:768px){.vd-sidebar{display:none}.vd-main{margin-left:0;padding:20px}}
+`;
+
+            // ── Build file list for Vercel ──
+            const vercelFiles: Array<{ file: string; data: string; encoding: string }> = [];
+            const sidebarLinks = documented.map((f: any) => ({ key: f.key, label: f.label }));
+
+            const buildPage = (title: string, content: string, activeKey: string) => {
+              const sidebarHtml = sidebarLinks.map((l: any) =>
+                `<a href="${activeKey === '__index__' ? 'features/' : ''}${l.key}.html" class="${l.key === activeKey ? 'active' : ''}">${escHtml(l.label)}</a>`
+              ).join('\n');
+              return `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(title)}</title><style>${css}</style></head><body>
+<div class="vd-layout">
+<nav class="vd-sidebar"><div class="vd-sidebar-title">${escHtml(projName)}</div>${sidebarHtml}</nav>
+<main class="vd-main">${content}</main>
+</div>
+<div class="vd-footer">Generated by VibeRadar</div>
+</body></html>`;
+            };
+
+            // Landing page
+            const heroContent = `<div class="vd-hero"><h1>${escHtml(projName)}</h1><p>Feature Documentation</p></div>
+<div class="vd-grid">${documented.map((f: any) =>
+              `<a class="vd-card" href="features/${f.key}.html"><h3>${escHtml(f.label)}</h3><p>${f.sourceFileCount} files</p></a>`
+            ).join('')}</div>`;
+            vercelFiles.push({ file: 'index.html', data: buildPage(projName, heroContent, '__index__'), encoding: 'utf-8' });
+            vercelFiles.push({ file: 'features/index.html', data: buildPage(projName, heroContent, '__index__'), encoding: 'utf-8' });
+
+            // Feature pages + screenshots
+            for (const f of documented) {
+              const docDir = path.join(projectRoot, 'docs', 'features', f.key);
+              // Read latest version
+              let mdContent = '';
+              try {
+                const entries = fs.readdirSync(docDir);
+                const versions = entries.map((e: string) => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+                  .filter((x: any): x is { file: string; n: number } => x !== null)
+                  .sort((a: any, b: any) => b.n - a.n);
+                if (versions.length) mdContent = fs.readFileSync(path.join(docDir, versions[0].file), 'utf-8');
+              } catch {}
+              if (!mdContent) continue;
+
+              const htmlContent = mdToHtml(mdContent, f.key);
+              vercelFiles.push({ file: `features/${f.key}.html`, data: buildPage(f.label, htmlContent, f.key), encoding: 'utf-8' });
+
+              // Screenshots
+              const ssDir = path.join(docDir, 'screenshots');
+              try {
+                const ssFiles = fs.readdirSync(ssDir);
+                for (const ssFile of ssFiles) {
+                  const ext = path.extname(ssFile).toLowerCase();
+                  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) continue;
+                  try {
+                    const imgBuf = fs.readFileSync(path.join(ssDir, ssFile));
+                    vercelFiles.push({ file: `screenshots/${f.key}/${ssFile}`, data: imgBuf.toString('base64'), encoding: 'base64' });
+                  } catch {}
+                }
+              } catch {}
+            }
+
+            // ── Call Vercel API ──
+            const https = await import('https');
+            const deployPayload = JSON.stringify({
+              name: projName,
+              files: vercelFiles,
+              target: 'production',
+              projectSettings: { framework: null },
+            });
+
+            const vercelReq = https.request({
+              hostname: 'api.vercel.com',
+              path: '/v13/deployments',
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(deployPayload),
+              },
+            }, (vRes) => {
+              let vBody = '';
+              vRes.on('data', (c: Buffer) => { vBody += c.toString(); });
+              vRes.on('end', () => {
+                try {
+                  const vData = JSON.parse(vBody);
+                  if (vRes.statusCode && vRes.statusCode >= 400) {
+                    res.writeHead(vRes.statusCode, jsonH);
+                    res.end(JSON.stringify({ error: vData.error?.message || vData.message || 'Vercel API error', code: vData.error?.code }));
+                  } else {
+                    res.writeHead(200, jsonH);
+                    res.end(JSON.stringify({
+                      url: `https://${vData.url}`,
+                      deploymentId: vData.id,
+                      readyState: vData.readyState,
+                      projectName: projName,
+                    }));
+                  }
+                } catch (e: any) {
+                  res.writeHead(502, jsonH); res.end(JSON.stringify({ error: 'Invalid Vercel response' }));
+                }
+              });
+            });
+            vercelReq.on('error', (e: any) => {
+              res.writeHead(502, jsonH); res.end(JSON.stringify({ error: `Vercel API request failed: ${e.message}` }));
+            });
+            vercelReq.write(deployPayload);
+            vercelReq.end();
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
         return;
       }
 
