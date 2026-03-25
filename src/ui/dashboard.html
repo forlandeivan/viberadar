@@ -4762,6 +4762,7 @@ async function renderDocFeatureDetail(c) {
   const versionsHtml = f.docVersions && f.docVersions.length > 0
     ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Версии: ${f.docVersions.map((v, i) => `<span style="${i === f.docVersions.length - 1 ? 'color:var(--text)' : ''}">${v.split('/').pop()}</span>`).join(' · ')}</div>`
     : '';
+  const nextVersion = (f.latestVersion || 0) + 1;
   const featResult = D.features?.find(x => x.key === drillFeatureKey);
   const featRoutes = featResult?.routes;
   const hasRoutes = featRoutes && featRoutes.length > 0;
