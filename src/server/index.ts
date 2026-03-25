@@ -2373,49 +2373,41 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
         const changedFiles = docStatus?.changedFilesSinceDoc || [];
 
-        // Auto-capture Playwright screenshots before agent runs
-        // Skip if existing screenshots are newer than all source files (no visual changes)
+        // Playwright screenshots — only if user opted in via meta.captureScreenshots
         let screenshotsCaptured = false;
-        if (feat.routes && feat.routes.length > 0 && hasPlaywright(projectRoot)) {
+        const wantScreenshots = item.meta?.captureScreenshots === true;
+        if (wantScreenshots && feat.routes && feat.routes.length > 0 && hasPlaywright(projectRoot)) {
+          const baseUrl = feat.screenshotBaseUrl
+            || process.env['VIBERADAR_BASE_URL']
+            || 'http://localhost:5000';
+          broadcast('agent-output', { runId, line: `📸 Захват скриншотов (${feat.routes.length} маршрутов)...` });
+          let envCredentials: { email: string; password: string } | undefined;
+          try {
+            const dotenvPath = path.join(projectRoot, '.env');
+            const envContent = fs.readFileSync(dotenvPath, 'utf-8');
+            const emailMatch = envContent.match(/^E2E_EMAIL=(.+)$/m);
+            const passMatch = envContent.match(/^E2E_PASSWORD=(.+)$/m);
+            if (emailMatch && passMatch) {
+              envCredentials = { email: emailMatch[1].trim(), password: passMatch[1].trim() };
+            }
+          } catch {}
+          const ssResult = await captureDocScreenshots(projectRoot, featureKey, feat.routes, baseUrl, envCredentials);
+          if (ssResult.captured.length > 0) {
+            screenshotsCaptured = true;
+            broadcast('agent-output', { runId, line: `✅ Скриншоты готовы: ${ssResult.captured.join(', ')}` });
+          } else {
+            broadcast('agent-output', { runId, line: `⚠️ Скриншоты не удалось захватить${ssResult.errors.length ? ': ' + ssResult.errors[0] : ''}` });
+          }
+        } else if (!wantScreenshots && feat.routes && feat.routes.length > 0) {
+          // Check if existing screenshots are available to reference in docs
           const ssDir = path.join(projectRoot, 'docs', 'features', featureKey, 'screenshots');
-          let canReuseScreenshots = false;
           try {
             const ssFiles = fs.readdirSync(ssDir).filter((f: string) => /\.(png|jpg|jpeg|webp)$/i.test(f));
             if (ssFiles.length > 0) {
-              const oldestScreenshot = Math.min(...ssFiles.map((f: string) => fs.statSync(path.join(ssDir, f)).mtimeMs));
-              const srcMtime = docStatus?.maxSourceMtime || 0;
-              if (oldestScreenshot > srcMtime && srcMtime > 0) {
-                canReuseScreenshots = true;
-              }
+              screenshotsCaptured = true;
+              broadcast('agent-output', { runId, line: `📸 Используем существующие скриншоты (${ssFiles.length} шт.)` });
             }
           } catch {}
-
-          if (canReuseScreenshots) {
-            screenshotsCaptured = true;
-            broadcast('agent-output', { runId, line: `📸 Скриншоты актуальны — переиспользуем существующие` });
-          } else {
-            const baseUrl = feat.screenshotBaseUrl
-              || process.env['VIBERADAR_BASE_URL']
-              || 'http://localhost:5000';
-            broadcast('agent-output', { runId, line: `📸 Захват скриншотов (${feat.routes.length} маршрутов)...` });
-            let envCredentials: { email: string; password: string } | undefined;
-            try {
-              const dotenvPath = path.join(projectRoot, '.env');
-              const envContent = fs.readFileSync(dotenvPath, 'utf-8');
-              const emailMatch = envContent.match(/^E2E_EMAIL=(.+)$/m);
-              const passMatch = envContent.match(/^E2E_PASSWORD=(.+)$/m);
-              if (emailMatch && passMatch) {
-                envCredentials = { email: emailMatch[1].trim(), password: passMatch[1].trim() };
-              }
-            } catch {}
-            const ssResult = await captureDocScreenshots(projectRoot, featureKey, feat.routes, baseUrl, envCredentials);
-            if (ssResult.captured.length > 0) {
-              screenshotsCaptured = true;
-              broadcast('agent-output', { runId, line: `✅ Скриншоты готовы: ${ssResult.captured.join(', ')}` });
-            } else {
-              broadcast('agent-output', { runId, line: `⚠️ Скриншоты не удалось захватить${ssResult.errors.length ? ': ' + ssResult.errors[0] : ''}` });
-            }
-          }
         }
 
         prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles, screenshotsCaptured);
