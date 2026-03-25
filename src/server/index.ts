@@ -3703,9 +3703,17 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             if (!token) {
               res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Missing token' })); return;
             }
-            // Validate project name if provided
-            if (projectName && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
-              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Project Name может содержать только строчные буквы (a-z), цифры (0-9) и дефис (-)' })); return;
+            // Validate project name if provided (Vercel rules: lowercase, a-z 0-9 . _ -, no '---', max 100)
+            if (projectName) {
+              if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
+                res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Project Name: только строчные буквы (a-z), цифры (0-9), дефис (-), точка (.), подчёркивание (_)' })); return;
+              }
+              if (/---/.test(projectName)) {
+                res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Project Name не может содержать "---"' })); return;
+              }
+              if (projectName.length > 100) {
+                res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Project Name не может быть длиннее 100 символов' })); return;
+              }
             }
             // Save token to .env in project root
             const envPath = path.join(projectRoot, '.env');
@@ -3810,6 +3818,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
               const pkgPath = path.join(projectRoot, 'package.json');
               try { projName = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).name + '-docs'; } catch { projName = 'viberadar-docs'; }
             }
+            // Sanitize project name to match Vercel rules: lowercase, a-z 0-9 . _ -, no '---', max 100 chars
+            projName = projName.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-{3,}/g, '--').replace(/^[-._]+|[-._]+$/g, '').slice(0, 100);
+            if (!projName) projName = 'viberadar-docs';
 
             // Collect documented features
             const docReport = currentData.documentation;

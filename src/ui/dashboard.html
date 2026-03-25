@@ -4502,7 +4502,7 @@ function showDeployModal(prefillProject) {
       <a href="https://vercel.com/account/tokens" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none">Получить на vercel.com/tokens ↗</a>
       <label style="font-size:13px;color:var(--muted);display:block;margin:12px 0 4px">Project Name</label>
       <input id="deployProject" type="text" placeholder="my-project-docs" value="${escapeHtml(prefillProject || '')}" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
-      <div id="deployProjectHint" style="font-size:11px;color:var(--muted);margin-top:2px">Только строчные буквы, цифры и дефис (a-z, 0-9, -)</div>
+      <div id="deployProjectHint" style="font-size:11px;color:var(--muted);margin-top:2px">Строчные буквы, цифры, дефис, точка, подчёркивание (a-z, 0-9, -, ., _)</div>
       <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
         <button id="deployModalCancel" class="doc-agent-btn" style="padding:6px 16px">Отмена</button>
         <button id="deployModalSave" class="doc-agent-btn" style="background:var(--blue);color:#fff;border-color:var(--blue);padding:6px 16px">Сохранить и Deploy</button>
@@ -4517,7 +4517,7 @@ function showDeployModal(prefillProject) {
   const projInput = document.getElementById('deployProject');
   projInput.addEventListener('input', () => {
     const raw = projInput.value;
-    const sanitized = raw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
+    const sanitized = raw.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/-{3,}/g, '--').replace(/^[-._]+|[-._]+$/g, '');
     if (raw !== sanitized) { projInput.value = sanitized; }
   });
 
@@ -4531,8 +4531,11 @@ function showDeployModal(prefillProject) {
     if (!token) { errEl.style.display = 'block'; errEl.textContent = 'Введите Vercel Token'; return; }
 
     // Validate project name
-    if (projectName && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
-      errEl.style.display = 'block'; errEl.textContent = 'Project Name может содержать только строчные буквы, цифры и дефис'; return;
+    if (projectName && !/^[a-z0-9][a-z0-9._-]*[a-z0-9]$|^[a-z0-9]$/.test(projectName)) {
+      errEl.style.display = 'block'; errEl.textContent = 'Project Name: только строчные буквы, цифры, дефис, точка, подчёркивание'; return;
+    }
+    if (projectName && /---/.test(projectName)) {
+      errEl.style.display = 'block'; errEl.textContent = 'Project Name не может содержать "---"'; return;
     }
 
     // Step 1: Verify token with Vercel API
@@ -4594,6 +4597,11 @@ async function doDocsDeploy() {
       if (res.status === 401 || res.status === 403) {
         showDeployModal('');
         throw new Error('Токен недействителен. Введите новый токен.');
+      }
+      // If project name error — show modal to fix
+      if (data.error && /[Pp]roject name/.test(data.error)) {
+        showDeployModal('');
+        throw new Error('Некорректное имя проекта. Исправьте в настройках.');
       }
       throw new Error(data.error || 'Deploy failed');
     }
