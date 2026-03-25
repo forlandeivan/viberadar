@@ -4769,14 +4769,20 @@ async function renderDocFeatureDetail(c) {
   const isFirstGen = !f.docExists;
   // First generation + routes → Playwright runs automatically, show info
   // Re-actualization + routes → show checkbox (opt-in)
-  const screenshotUiHtml = hasRoutes
-    ? isFirstGen
-      ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">📸 Playwright автоматически захватит скриншоты (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})</div>`
-      : `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted);cursor:pointer">
+  // No routes → show hint how to configure
+  let screenshotUiHtml = '';
+  if (hasRoutes) {
+    if (isFirstGen) {
+      screenshotUiHtml = `<div style="margin-top:8px;font-size:12px;color:var(--muted)">📸 Playwright автоматически захватит скриншоты (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})</div>`;
+    } else {
+      screenshotUiHtml = `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted);cursor:pointer">
           <input type="checkbox" id="docCaptureScreenshots" style="cursor:pointer">
-          📸 Переснять скриншоты (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})
-        </label>`
-    : '';
+          📸 Переснять скриншоты через Playwright (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})
+        </label>`;
+    }
+  } else {
+    screenshotUiHtml = `<div style="margin-top:8px;font-size:12px;color:var(--muted)">📸 Скриншоты недоступны — добавьте <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">"routes"</code> для фичи <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">${f.key}</code> в <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">viberadar.config.json</code></div>`;
+  }
   const detailActionsHtml = `
     <div class="doc-detail-actions">
       <div class="doc-action-step">
