@@ -3834,12 +3834,17 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
             // ── Server-side markdown helpers ──
             const escHtml = (text: string) => String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const slugify = (text: string) => text.toLowerCase().replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, '').replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
             const inlineFmt = (text: string) => {
               let s = escHtml(text);
               s = s.replace(/`([^`]+)`/g, '<code class="vd-ic">$1</code>');
               s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
               s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-              s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+              // Anchor links (#...) stay on page, external links open in new tab
+              s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m: string, label: string, href: string) => {
+                if (href.startsWith('#')) return `<a href="${href}">${label}</a>`;
+                return `<a href="${href}" target="_blank">${label}</a>`;
+              });
               return s;
             };
             const mdToHtml = (md: string, featureKey: string) => {
@@ -3854,7 +3859,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
                 }
                 if (inCode) { codeBuf += line + '\n'; continue; }
                 const hm = line.match(/^(#{1,6})\s+(.+)$/);
-                if (hm) { if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; } html += `<h${hm[1].length} class="vd-h">${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
+                if (hm) { if (inList) { html += listType === 'ul' ? '</ul>' : '</ol>'; inList = false; } const id = slugify(hm[2]); html += `<h${hm[1].length} class="vd-h" id="${id}">${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
                 if (/^\s*[-*]\s+/.test(line)) {
                   if (!inList || listType !== 'ul') { if (inList) html += listType === 'ul' ? '</ul>' : '</ol>'; html += '<ul class="vd-list">'; inList = true; listType = 'ul'; }
                   html += `<li>${inlineFmt(line.replace(/^\s*[-*]\s+/, ''))}</li>`; continue;
@@ -3884,6 +3889,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             // ── Generate static site CSS ──
             const css = `
 *{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
 :root{--bg:#0d1117;--bg-card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--code-bg:#0d1117}
 @media(prefers-color-scheme:light){:root{--bg:#f6f8fa;--bg-card:#fff;--border:#d0d7de;--text:#1f2328;--muted:#656d76;--blue:#0969da;--green:#1a7f37;--yellow:#9a6700;--red:#cf222e;--code-bg:#f6f8fa}}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
