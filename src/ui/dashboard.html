@@ -4765,11 +4765,16 @@ async function renderDocFeatureDetail(c) {
   const featResult = D.features?.find(x => x.key === drillFeatureKey);
   const featRoutes = featResult?.routes;
   const hasRoutes = featRoutes && featRoutes.length > 0;
-  const screenshotCheckboxHtml = hasRoutes
-    ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted);cursor:pointer">
-        <input type="checkbox" id="docCaptureScreenshots" style="cursor:pointer">
-        📸 Обновить скриншоты (${featRoutes.length} маршрут${featRoutes.length === 1 ? '' : featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})
-      </label>`
+  const isFirstGen = !f.docExists;
+  // First generation + routes → Playwright runs automatically, show info
+  // Re-actualization + routes → show checkbox (opt-in)
+  const screenshotUiHtml = hasRoutes
+    ? isFirstGen
+      ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">📸 Playwright автоматически захватит скриншоты (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})</div>`
+      : `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="docCaptureScreenshots" style="cursor:pointer">
+          📸 Переснять скриншоты (${featRoutes.length} маршрут${featRoutes.length < 5 ? 'а' : 'ов'}: ${featRoutes.join(', ')})
+        </label>`
     : '';
   const detailActionsHtml = `
     <div class="doc-detail-actions">
@@ -4778,9 +4783,9 @@ async function renderDocFeatureDetail(c) {
           <div class="doc-step-label">${detailActualizeLabel}</div>
           <div class="doc-step-hint">${detailActualizeHint}</div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">
-            <button class="agent-card-btn doc-detail-agent-btn" data-task="actualize-docs" data-key="${f.key}">Актуализировать документацию → v${nextVersion}</button>
-            ${screenshotCheckboxHtml}
+            <button class="agent-card-btn doc-detail-agent-btn" data-task="actualize-docs" data-key="${f.key}" data-first-gen="${isFirstGen ? '1' : '0'}">Актуализировать документацию → v${nextVersion}</button>
           </div>
+          ${screenshotUiHtml}
           <div id="docActualizeStatus" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);font-size:12px;color:var(--blue)"></div>
           ${versionsHtml}
         </div>
@@ -4837,8 +4842,11 @@ async function renderDocFeatureDetail(c) {
 
   c.querySelectorAll('.doc-detail-agent-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      const isFirstGen = btn.dataset.firstGen === '1';
       const cb = document.getElementById('docCaptureScreenshots');
-      const captureScreenshots = cb && cb.checked;
+      // First gen → always capture if routes exist (info shown, no checkbox)
+      // Re-actualization → only if checkbox checked
+      const captureScreenshots = isFirstGen || (cb && cb.checked);
       const meta = captureScreenshots ? { captureScreenshots: true } : undefined;
       btn.disabled = true;
       setDocActualizeStatus(btn.dataset.key,
