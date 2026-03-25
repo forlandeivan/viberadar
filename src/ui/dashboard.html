@@ -1798,6 +1798,15 @@ let agentRunning = false;
 const agentRunningPaths = new Set(); // paths of files currently being processed by agent
 const agentQueuedPaths  = new Set(); // paths of files waiting in queue
 let agentQueueState = [];
+let docActualizeRunningKey = null; // featureKey currently being actualized
+
+function setDocActualizeStatus(key, html) {
+  docActualizeRunningKey = key;
+  const el = document.getElementById('docActualizeStatus');
+  if (!el) return;
+  if (html) { el.style.display = 'block'; el.innerHTML = html; }
+  else { el.style.display = 'none'; el.innerHTML = ''; }
+}
 let agentRunsState = [];
 let agentActiveRun = null;
 let currentRunId = null;
@@ -4768,8 +4777,11 @@ async function renderDocFeatureDetail(c) {
         <div>
           <div class="doc-step-label">${detailActualizeLabel}</div>
           <div class="doc-step-hint">${detailActualizeHint}</div>
-          <button class="agent-card-btn doc-detail-agent-btn" data-task="actualize-docs" data-key="${f.key}" style="margin-top:8px">Актуализировать документацию</button>
-          ${screenshotCheckboxHtml}
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">
+            <button class="agent-card-btn doc-detail-agent-btn" data-task="actualize-docs" data-key="${f.key}">Актуализировать документацию → v${nextVersion}</button>
+            ${screenshotCheckboxHtml}
+          </div>
+          <div id="docActualizeStatus" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);font-size:12px;color:var(--blue)"></div>
           ${versionsHtml}
         </div>
       </div>
@@ -4826,7 +4838,12 @@ async function renderDocFeatureDetail(c) {
   c.querySelectorAll('.doc-detail-agent-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const cb = document.getElementById('docCaptureScreenshots');
-      const meta = cb && cb.checked ? { captureScreenshots: true } : undefined;
+      const captureScreenshots = cb && cb.checked;
+      const meta = captureScreenshots ? { captureScreenshots: true } : undefined;
+      btn.disabled = true;
+      setDocActualizeStatus(btn.dataset.key,
+        `⏳ Агент актуализирует документацию…${captureScreenshots ? ' (📸 + скриншоты)' : ''}`
+      );
       runAgentTask(btn.dataset.task, btn.dataset.key, null, null, meta);
     });
   });
@@ -6394,6 +6411,14 @@ function connectSSE() {
     } else {
       appendTerminalLine(line, !!isError, !!isDim);
     }
+    // Update doc actualize status bar with latest line
+    if (docActualizeRunningKey) {
+      const el = document.getElementById('docActualizeStatus');
+      if (el && el.style.display !== 'none' && line && !isDim) {
+        const clean = line.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        el.innerHTML = `⏳ ${clean}`;
+      }
+    }
   });
 
   es.addEventListener('agent-done', () => {
@@ -6406,6 +6431,10 @@ function connectSSE() {
         document.getElementById('agentPanelStatus').textContent = '✅ готово';
       }
       runningSessionId = null;
+    }
+    if (docActualizeRunningKey) {
+      setDocActualizeStatus(null, null);
+      docActualizeRunningKey = null;
     }
     renderContent();
   });
@@ -6460,6 +6489,11 @@ function connectSSE() {
     if (!runId) setAgentRunning(false);
     agentRunningPaths.clear();
     agentQueuedPaths.clear();
+    if (docActualizeRunningKey) {
+      const el = document.getElementById('docActualizeStatus');
+      if (el) { el.style.background = 'rgba(248,81,73,0.08)'; el.style.borderColor = 'rgba(248,81,73,0.2)'; el.style.color = 'var(--red)'; el.innerHTML = `✗ Ошибка: ${escapeHtml(message || 'агент завершился с ошибкой')}`; }
+      docActualizeRunningKey = null;
+    }
     renderContent();
 
     // Build error node (plain text or auth/install box)
