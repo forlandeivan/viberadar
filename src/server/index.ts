@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import * as readline from 'readline';
 import chokidar from 'chokidar';
 import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint, ServiceMapReport } from '../scanner';
+import { buildDocx } from '../docx';
 
 interface ServerOptions {
   data: ScanResult;
@@ -3758,6 +3759,35 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } catch {}
         res.writeHead(200, jsonH);
         res.end(JSON.stringify({ configured: !!token, projectName: projName || null }));
+        return;
+      }
+
+      // ── Export docs as DOCX ──────────────────────────────────────────────────
+      if (url.startsWith('/api/docs/export/docx') && req.method === 'GET') {
+        try {
+          const urlObj = new URL(url, 'http://localhost');
+          const featureKey = urlObj.searchParams.get('feature');
+          const docReport = currentData.documentation;
+          if (!docReport) {
+            res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return;
+          }
+          let features = docReport.features.filter((f: any) => f.docExists);
+          if (featureKey) features = features.filter((f: any) => f.key === featureKey);
+          if (!features.length) {
+            res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No documented features found' })); return;
+          }
+          const docxBuf = buildDocx(features, projectRoot);
+          const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
+          const filename = featureKey ? `${featureKey}.docx` : `${projName}-docs.docx`;
+          res.writeHead(200, {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': docxBuf.length,
+          });
+          res.end(docxBuf);
+        } catch (err: any) {
+          res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+        }
         return;
       }
 
