@@ -1769,6 +1769,52 @@ function buildScenarioPrompt(
   ].filter(Boolean).join('\n');
 }
 
+function buildGenerateScenariosPrompt(
+  features: Array<{ key: string; label: string; description?: string }>,
+  configPath: string,
+  existingConfig: string | null,
+): string {
+  const featureList = features.map(f =>
+    `- ${f.key}: "${f.label}"${f.description ? ` — ${f.description}` : ''}`
+  ).join('\n');
+
+  return [
+    `Проанализируй список фич продукта и сгенерируй 15 реалистичных пользовательских сценариев (user journeys).`,
+    ``,
+    `Фичи продукта:`,
+    featureList,
+    ``,
+    `Требования к сценариям:`,
+    `1. Каждый сценарий описывает реальный путь пользователя — от цели к результату`,
+    `2. Каждый сценарий задействует 2-4 фичи из списка выше`,
+    `3. Ключи сценариев — латиница через дефис, отражают суть: "first-login", "export-report"`,
+    `4. Сценарии охватывают разные типы пользователей и задачи (онбординг, повседневные задачи, edge-cases)`,
+    `5. НЕ повторяй фичи/темы — каждый сценарий уникален`,
+    ``,
+    `Запиши сценарии в файл ${configPath}, добавив секцию "scenarios" к существующему конфигу.`,
+    ``,
+    `Существующий конфиг:`,
+    existingConfig || '{}',
+    ``,
+    `Формат секции "scenarios":`,
+    `{`,
+    `  "scenarios": {`,
+    `    "ключ-сценария": {`,
+    `      "label": "Человеческое название (на русском)",`,
+    `      "description": "Одно предложение — что пользователь хочет достичь",`,
+    `      "features": ["feature-key-1", "feature-key-2"]`,
+    `    }`,
+    `  }`,
+    `}`,
+    ``,
+    `Важно:`,
+    `- Используй ТОЛЬКО ключи фич из списка выше для поля "features"`,
+    `- Не ломай существующий конфиг — добавь/замени только секцию "scenarios"`,
+    `- Ровно 15 сценариев`,
+    `- label на русском языке, description на русском`,
+  ].join('\n');
+}
+
 function buildActualizeDocsPrompt(
   feat: FeatureResult,
   modules: ModuleInfo[],
@@ -2514,6 +2560,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           } catch {}
         }
         prompt = buildScenarioPrompt(scenarioStatus, featureDocs, currentDoc, nextVer);
+      } else if (task === 'generate-scenarios') {
+        const configFilePath = path.join(projectRoot, 'viberadar.config.json');
+        let existingConfig: string | null = null;
+        try { existingConfig = fs.readFileSync(configFilePath, 'utf-8'); } catch {}
+        const feats = (currentData.features || []).map((f: any) => ({ key: f.key, label: f.label, description: f.description }));
+        prompt = buildGenerateScenariosPrompt(feats, 'viberadar.config.json', existingConfig);
       } else if (task === 'generate-pipelines') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);
@@ -3042,6 +3094,14 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
         const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
         title = `${agentLabel} — ${label} (${count} модулей)`;
+      } else if (task === 'actualize-docs') {
+        const feat = currentData.features?.find(f => f.key === featureKey);
+        title = feat ? `${agentLabel} — документация "${feat.label}"` : `${agentLabel} — документация`;
+      } else if (task === 'actualize-scenario') {
+        const sc = currentData.scenarios?.scenarios.find((s: any) => s.key === featureKey);
+        title = sc ? `${agentLabel} — сценарий "${sc.label}"` : `${agentLabel} — сценарий`;
+      } else if (task === 'generate-scenarios') {
+        title = `${agentLabel} — генерация 15 сценариев`;
       } else if (task === 'generate-pipelines') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }

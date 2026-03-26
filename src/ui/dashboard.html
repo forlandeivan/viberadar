@@ -4424,17 +4424,21 @@ let scenarioDrillKey = null;
 
 function renderScenarios(c) {
   const sr = D.scenarios;
-  if (!sr) {
-    c.innerHTML = `<div class="onboarding-block"><h3>Сценарии</h3>
-      <p>Добавьте сценарии в <code>viberadar.config.json</code>:</p>
-      <pre style="margin-top:12px;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;overflow-x:auto">"scenarios": {
-  "create-knowledge-skill": {
-    "label": "Создать навык с базой знаний",
-    "description": "Пользователь создаёт базу знаний и подключает её к навыку",
-    "features": ["knowledge-base", "skills"]
-  }
-}</pre>
+  if (!sr || sr.totalScenarios === 0) {
+    const hasFeatures = D.features && D.features.length > 0;
+    c.innerHTML = `<div class="onboarding-block">
+      <h3>Сценарии</h3>
+      <p style="color:var(--muted);margin-bottom:16px">Пользовательские сценарии — это кросс-фичевые user journeys.<br>Агент проанализирует фичи продукта и придумает реалистичные сценарии.</p>
+      ${hasFeatures ? `
+        <button class="agent-card-btn" id="generateScenariosBtn" style="font-size:14px;padding:10px 20px;background:var(--blue);color:#fff;border:none;border-radius:6px;cursor:pointer">
+          ✨ Сгенерировать 15 сценариев
+        </button>
+        <p style="font-size:11px;color:var(--muted);margin-top:10px">Агент изучит ${D.features.length} фич и предложит 15 user journeys в viberadar.config.json</p>
+      ` : `<p style="color:var(--red)">Сначала добавьте фичи в viberadar.config.json</p>`}
     </div>`;
+    if (hasFeatures) {
+      document.getElementById('generateScenariosBtn').onclick = () => runAgentTask('generate-scenarios');
+    }
     return;
   }
   if (scenarioDrillKey) renderScenarioDetail(c);
@@ -4448,11 +4452,20 @@ function renderScenarioCards(c) {
     return;
   }
 
+  const missingDocs = sr.scenarios.filter(s => !s.docExists);
+
   let html = `
     <div class="doc-kpi-strip">
       <div class="doc-kpi"><span class="doc-kpi-val">${sr.totalScenarios}</span><span class="doc-kpi-lbl">Сценариев</span></div>
       <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--green)">${sr.withDocCount}</span><span class="doc-kpi-lbl">Готово</span></div>
       <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--red)">${sr.missingDocCount}</span><span class="doc-kpi-lbl">Без доки</span></div>
+      <div style="flex:1"></div>
+      ${missingDocs.length > 0 ? `<button class="agent-card-btn" id="scenarioWriteAllBtn" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">
+        ✍ Написать доку для всех (${missingDocs.length})
+      </button>` : ''}
+      <button class="agent-card-btn" id="scenarioRegenBtn" style="background:var(--card-bg);color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;margin-left:8px">
+        ↻ Перегенерировать
+      </button>
     </div>
     <div class="features-grid">`;
 
@@ -4484,6 +4497,26 @@ function renderScenarioCards(c) {
       renderContent();
     });
   });
+
+  const writeAllBtn = document.getElementById('scenarioWriteAllBtn');
+  if (writeAllBtn) {
+    writeAllBtn.onclick = () => {
+      if (agentRunning) { alert('Агент уже запущен, задачи будут поставлены в очередь'); }
+      const missing = sr.scenarios.filter(s => !s.docExists);
+      missing.forEach((s, i) => {
+        setTimeout(() => runAgentTask('actualize-scenario', s.key), i * 300);
+      });
+    };
+  }
+
+  const regenBtn = document.getElementById('scenarioRegenBtn');
+  if (regenBtn) {
+    regenBtn.onclick = () => {
+      if (confirm(`Перегенерировать все ${sr.totalScenarios} сценариев? Агент заново изучит фичи и перепишет viberadar.config.json`)) {
+        runAgentTask('generate-scenarios');
+      }
+    };
+  }
 }
 
 async function renderScenarioDetail(c) {
