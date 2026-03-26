@@ -3765,8 +3765,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       // ── Export docs as Markdown ──────────────────────────────────────────────
       if (url.startsWith('/api/docs/export/md') && req.method === 'GET') {
         try {
-          const urlObj = new URL(url, 'http://localhost');
-          const featureKey = urlObj.searchParams.get('feature');
+          const featureKey = parsedUrl.searchParams.get('feature');
           const docReport = currentData.documentation;
           if (!docReport) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return; }
           let features = docReport.features.filter((f: any) => f.docExists);
@@ -3811,8 +3810,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       // ── Export docs as DOCX ──────────────────────────────────────────────────
       if (url.startsWith('/api/docs/export/docx') && req.method === 'GET') {
         try {
-          const urlObj = new URL(url, 'http://localhost');
-          const featureKey = urlObj.searchParams.get('feature');
+          const featureKey = parsedUrl.searchParams.get('feature');
           const docReport = currentData.documentation;
           if (!docReport) {
             res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return;
