@@ -1174,20 +1174,15 @@ function computeScenariosReport(
   configScenarios?: Record<string, ScenarioConfig>,
   configFeatures?: Record<string, FeatureConfig>,
 ): ScenariosReport | undefined {
-  if (!configScenarios || Object.keys(configScenarios).length === 0) return undefined;
-
   const scenariosDir = path.join(projectRoot, 'docs', 'scenarios');
-  const scenarios: ScenarioDocStatus[] = Object.entries(configScenarios).map(([key, sc]) => {
-    const color = sc.color || '#79c0ff';
-    const featureLabels = (sc.features || []).map(fk => configFeatures?.[fk]?.label || fk);
 
+  function readDocStatus(key: string): { docExists: boolean; latestVersion: number | null; docVersions: string[]; docSizeBytes: number | null; lastUpdated: string | null } {
     const docDir = path.join(scenariosDir, key);
     let docExists = false;
     let latestVersion: number | null = null;
     let docVersions: string[] = [];
     let docSizeBytes: number | null = null;
     let lastUpdated: string | null = null;
-
     try {
       const entries = fs.readdirSync(docDir);
       const versionFiles = entries
@@ -1204,7 +1199,14 @@ function computeScenariosReport(
         lastUpdated = new Date(st.mtimeMs).toISOString();
       }
     } catch { /* dir not found */ }
+    return { docExists, latestVersion, docVersions, docSizeBytes, lastUpdated };
+  }
 
+  // Scenarios from config
+  const configKeys = new Set(Object.keys(configScenarios || {}));
+  const scenarios: ScenarioDocStatus[] = Object.entries(configScenarios || {}).map(([key, sc]) => {
+    const color = sc.color || '#79c0ff';
+    const featureLabels = (sc.features || []).map(fk => configFeatures?.[fk]?.label || fk);
     return {
       key,
       label: sc.label,
@@ -1212,13 +1214,37 @@ function computeScenariosReport(
       description: sc.description || '',
       featureKeys: sc.features || [],
       featureLabels,
-      docExists,
-      latestVersion,
-      docVersions,
-      docSizeBytes,
-      lastUpdated,
+      ...readDocStatus(key),
     };
   });
+
+  // Discover custom scenarios on disk not in config
+  try {
+    const diskDirs = fs.readdirSync(scenariosDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && !configKeys.has(d.name))
+      .map(d => d.name);
+    for (const key of diskDirs) {
+      const status = readDocStatus(key);
+      if (!status.docExists) continue; // skip empty dirs
+      // Derive label: strip leading "custom-", replace dashes, strip timestamp suffix, capitalize
+      const labelRaw = key
+        .replace(/^custom-/, '')
+        .replace(/-[a-z0-9]{6,}$/, '') // strip timestamp suffix like -mn7jgpu7
+        .replace(/-/g, ' ');
+      const label = labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1);
+      scenarios.push({
+        key,
+        label,
+        color: '#f0a840',
+        description: '(произвольный сценарий)',
+        featureKeys: [],
+        featureLabels: [],
+        ...status,
+      });
+    }
+  } catch { /* docs/scenarios dir doesn't exist */ }
+
+  if (scenarios.length === 0) return undefined;
 
   return {
     scenarios,
