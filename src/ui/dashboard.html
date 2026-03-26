@@ -4482,14 +4482,28 @@ function renderScenarioCards(c) {
           <span style="font-size:11px;color:${statusColor};font-weight:600;flex-shrink:0">${statusText}</span>
         </div>
         ${s.description ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4">${escapeHtml(s.description)}</div>` : ''}
-        <div style="font-size:11px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap">
+        <div style="font-size:11px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           ${s.featureLabels.map(l => `<span style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px">${escapeHtml(l)}</span>`).join('')}
         </div>
-        ${hasDoc ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Обновлено: ${lastUpd}</div>` : ''}
+        ${hasDoc ? `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Обновлено: ${lastUpd}</div>` : ''}
+        <button class="scenario-doc-btn agent-card-btn" data-key="${s.key}"
+          style="width:100%;padding:6px 10px;font-size:12px;border-radius:5px;border:none;cursor:pointer;
+          background:${hasDoc ? 'var(--card-bg)' : 'var(--blue)'};
+          color:${hasDoc ? 'var(--muted)' : '#fff'};
+          border:1px solid ${hasDoc ? 'var(--border)' : 'transparent'}">
+          ${hasDoc ? `↻ Актуализировать → v${s.latestVersion + 1}` : '✍ Написать документацию'}
+        </button>
       </div>`;
   }
   html += '</div>';
   c.innerHTML = html;
+
+  c.querySelectorAll('.scenario-doc-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runAgentTask('actualize-scenario', btn.dataset.key);
+    });
+  });
 
   c.querySelectorAll('.doc-feature-card').forEach(card => {
     card.addEventListener('click', () => {
