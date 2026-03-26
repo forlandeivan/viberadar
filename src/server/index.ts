@@ -3791,7 +3791,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
 
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const filename = featureKey ? `${featureKey}.md` : `${projName}-docs.md`;
+          const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёА-ЯЁ]+/gi, '-').replace(/^-|-$/g, '');
+          const filename = featureKey && features.length === 1
+            ? `${slugify(features[0].label)}-v${features[0].latestVersion || 1}.md`
+            : `${projName}-docs.md`;
           const mdContent = Buffer.from(sections.join('\n\n'), 'utf-8');
           res.writeHead(200, {
             'Content-Type': 'text/markdown; charset=utf-8',
@@ -3821,7 +3824,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
           const docxBuf = buildDocx(features, projectRoot);
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const filename = featureKey ? `${featureKey}.docx` : `${projName}-docs.docx`;
+          const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёА-ЯЁ]+/gi, '-').replace(/^-|-$/g, '');
+          const filename = featureKey && features.length === 1
+            ? `${slugify(features[0].label)}-v${features[0].latestVersion || 1}.docx`
+            : `${projName}-docs.docx`;
           res.writeHead(200, {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'Content-Disposition': `attachment; filename="${filename}"`,
