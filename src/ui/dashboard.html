@@ -1585,6 +1585,7 @@ const modeStore = {
   qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  scenarios: { view: 'list', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
 };
 
@@ -2942,6 +2943,7 @@ function renderModeSwitch() {
     { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
     { key: 'observability', label: 'Наблюдаемость', hint: 'Логи, шум, сигналы ошибок' },
     { key: 'docs', label: 'Документация', hint: 'Актуальность, генерация, обновление' },
+    { key: 'scenarios', label: 'Сценарии', hint: 'Пользовательские сценарии, user journeys' },
     { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
   ];
   root.innerHTML = modes.map(m => `
@@ -2978,6 +2980,20 @@ function renderSidebar() {
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
         Статус и актуальность документации по фичам.
       </div>`;
+    return;
+  }
+
+  if (contextMode === 'scenarios') {
+    tabs.style.display = 'none';
+    const sr = D.scenarios;
+    extra.innerHTML = `
+      <div class="sidebar-label">Сценарии</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
+        Пользовательские сценарии и user journeys.
+      </div>
+      ${sr ? `<div style="margin-top:12px;padding:0 6px;font-size:12px;color:var(--muted)">
+        <span style="color:var(--green)">${sr.withDocCount}</span> готово &nbsp;·&nbsp; <span style="color:var(--red)">${sr.missingDocCount}</span> без доки
+      </div>` : ''}`;
     return;
   }
 
@@ -3051,6 +3067,10 @@ function renderContent() {
   }
   if (contextMode === 'docs') {
     renderDocumentation(c);
+    return;
+  }
+  if (contextMode === 'scenarios') {
+    renderScenarios(c);
     return;
   }
   if (contextMode === 'services') {
@@ -4397,6 +4417,169 @@ function renderObservabilityOverview(c) {
 }
 
 // ─── Documentation screen ─────────────────────────────────────────────────────
+
+// ─── Scenarios ───────────────────────────────────────────────────────────────
+
+let scenarioDrillKey = null;
+
+function renderScenarios(c) {
+  const sr = D.scenarios;
+  if (!sr) {
+    c.innerHTML = `<div class="onboarding-block"><h3>Сценарии</h3>
+      <p>Добавьте сценарии в <code>viberadar.config.json</code>:</p>
+      <pre style="margin-top:12px;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;overflow-x:auto">"scenarios": {
+  "create-knowledge-skill": {
+    "label": "Создать навык с базой знаний",
+    "description": "Пользователь создаёт базу знаний и подключает её к навыку",
+    "features": ["knowledge-base", "skills"]
+  }
+}</pre>
+    </div>`;
+    return;
+  }
+  if (scenarioDrillKey) renderScenarioDetail(c);
+  else renderScenarioCards(c);
+}
+
+function renderScenarioCards(c) {
+  const sr = D.scenarios;
+  if (!sr || !sr.scenarios.length) {
+    c.innerHTML = `<div class="onboarding-block"><p>Сценарии не найдены в viberadar.config.json.</p></div>`;
+    return;
+  }
+
+  let html = `
+    <div class="doc-kpi-strip">
+      <div class="doc-kpi"><span class="doc-kpi-val">${sr.totalScenarios}</span><span class="doc-kpi-lbl">Сценариев</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--green)">${sr.withDocCount}</span><span class="doc-kpi-lbl">Готово</span></div>
+      <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--red)">${sr.missingDocCount}</span><span class="doc-kpi-lbl">Без доки</span></div>
+    </div>
+    <div class="features-grid">`;
+
+  for (const s of sr.scenarios) {
+    const hasDoc = s.docExists;
+    const statusColor = hasDoc ? 'var(--green)' : 'var(--red)';
+    const statusText = hasDoc ? `v${s.latestVersion}` : 'Нет доки';
+    const lastUpd = s.lastUpdated ? new Date(s.lastUpdated).toLocaleDateString('ru-RU') : '—';
+    html += `
+      <div class="doc-feature-card" data-key="${s.key}" style="cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color};flex-shrink:0"></span>
+          <span style="font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.label)}</span>
+          <span style="font-size:11px;color:${statusColor};font-weight:600;flex-shrink:0">${statusText}</span>
+        </div>
+        ${s.description ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.4">${escapeHtml(s.description)}</div>` : ''}
+        <div style="font-size:11px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap">
+          ${s.featureLabels.map(l => `<span style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px">${escapeHtml(l)}</span>`).join('')}
+        </div>
+        ${hasDoc ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Обновлено: ${lastUpd}</div>` : ''}
+      </div>`;
+  }
+  html += '</div>';
+  c.innerHTML = html;
+
+  c.querySelectorAll('.doc-feature-card').forEach(card => {
+    card.addEventListener('click', () => {
+      scenarioDrillKey = card.dataset.key;
+      renderContent();
+    });
+  });
+}
+
+async function renderScenarioDetail(c) {
+  const sr = D.scenarios;
+  const s = sr?.scenarios.find(x => x.key === scenarioDrillKey);
+  if (!s) { scenarioDrillKey = null; renderContent(); return; }
+
+  const statusColor = s.docExists ? 'var(--green)' : 'var(--red)';
+  const statusText = s.docExists ? `Готово · v${s.latestVersion}` : 'Нет документации';
+  const lastUpd = s.lastUpdated ? new Date(s.lastUpdated).toLocaleDateString('ru-RU') : '—';
+  const nextVersion = (s.latestVersion || 0) + 1;
+  const btnLabel = s.docExists ? `Актуализировать сценарий → v${nextVersion}` : 'Сгенерировать сценарий → v1';
+  const btnHint = s.docExists
+    ? 'Агент перечитает документацию фич и обновит сценарий.'
+    : 'Агент прочитает документацию связанных фич и напишет пошаговый сценарий.';
+
+  const versionsHtml = s.docVersions && s.docVersions.length > 0
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Версии: ${s.docVersions.map((v, i) => `<span style="${i === s.docVersions.length - 1 ? 'color:var(--text)' : ''}">${v.split('/').pop()}</span>`).join(' · ')}</div>`
+    : '';
+
+  const exportButtons = s.docExists ? `
+    <a href="/api/docs/export/md?scenario=${encodeURIComponent(s.key)}" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .md</a>
+    <a href="/api/docs/export/docx?scenario=${encodeURIComponent(s.key)}" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .docx</a>` : '';
+
+  // Check if referenced feature docs are missing
+  const missingDocs = s.featureKeys.filter((fk, i) => {
+    const featDoc = D.documentation?.features.find(f => f.key === fk);
+    return !featDoc?.docExists;
+  });
+  const warningHtml = missingDocs.length > 0
+    ? `<div style="margin-top:8px;padding:8px 12px;border-radius:6px;background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.3);font-size:12px;color:var(--yellow)">
+        ⚠️ Документация отсутствует для: ${missingDocs.map(k => `<strong>${escapeHtml(D.documentation?.features.find(f => f.key === k)?.label || k)}</strong>`).join(', ')}. Агент сможет сгенерировать сценарий, но качество будет ниже.
+      </div>` : '';
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="back-btn" id="scenarioBackBtn">← Все сценарии</button>
+      <span style="width:12px;height:12px;border-radius:50%;background:${s.color};display:inline-block;flex-shrink:0"></span>
+      <h2 style="font-size:18px;font-weight:700;margin:0;flex:1">${escapeHtml(s.label)}</h2>
+      <div style="display:flex;align-items:center;font-size:13px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor};margin-right:6px"></span><span style="color:${statusColor};font-weight:600">${statusText}</span></div>
+      ${s.docExists ? `<span style="font-size:12px;color:var(--muted)">Обновлено: ${lastUpd}</span>` : ''}
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        ${exportButtons}
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px;font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span>Фичи:</span>
+      ${s.featureLabels.map(l => `<span style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:12px">${escapeHtml(l)}</span>`).join('')}
+    </div>
+
+    <div class="doc-detail-actions">
+      <div class="doc-action-step">
+        <div>
+          <div class="doc-step-label">${btnLabel}</div>
+          <div class="doc-step-hint">${btnHint}</div>
+          <div style="margin-top:8px">
+            <button class="agent-card-btn doc-detail-agent-btn" id="scenarioActualizeBtn" data-task="actualize-scenario" data-key="${s.key}">${btnLabel}</button>
+          </div>
+          ${warningHtml}
+          <div id="scenarioActualizeStatus" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);font-size:12px;color:var(--blue)"></div>
+          ${versionsHtml}
+        </div>
+      </div>
+    </div>
+
+    <div id="scenarioContent" style="margin-top:16px;padding:24px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border)">
+      <div style="color:var(--muted);font-size:13px">Загрузка...</div>
+    </div>`;
+
+  document.getElementById('scenarioBackBtn').onclick = () => { scenarioDrillKey = null; renderContent(); };
+
+  document.getElementById('scenarioActualizeBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    runAgentTask('actualize-scenario', s.key);
+  });
+
+  // Load content
+  if (s.docExists) {
+    try {
+      const res = await fetch(`/api/scenarios/content?scenario=${encodeURIComponent(s.key)}`);
+      const data = await res.json();
+      if (data.content) {
+        document.getElementById('scenarioContent').innerHTML = renderMarkdownToHtml(data.content);
+      } else {
+        document.getElementById('scenarioContent').innerHTML = '<div style="color:var(--muted);font-size:13px">Документация отсутствует.</div>';
+      }
+    } catch {
+      document.getElementById('scenarioContent').innerHTML = '<div style="color:var(--red);font-size:13px">Ошибка загрузки.</div>';
+    }
+  } else {
+    document.getElementById('scenarioContent').innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:32px 0">Нажмите «${escapeHtml(btnLabel)}» чтобы сгенерировать документацию.</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function renderDocumentation(c) {
   const doc = D.documentation;

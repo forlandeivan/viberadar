@@ -1696,6 +1696,79 @@ function buildScreenshotInstructions(featureKey: string, routes: string[]): stri
   ].join('\n');
 }
 
+function buildScenarioPrompt(
+  scenario: { key: string; label: string; description: string; featureKeys: string[] },
+  featureDocs: Array<{ key: string; label: string; content: string }>,
+  currentDoc: string | null,
+  nextVersion: number,
+): string {
+  const outPath = `docs/scenarios/${scenario.key}/v${nextVersion}.md`;
+  const isFirstVersion = nextVersion === 1;
+  const featureDocBlocks = featureDocs.map(fd =>
+    `### Документация фичи "${fd.label}" (${fd.key}):\n${fd.content.slice(0, 3000)}${fd.content.length > 3000 ? '\n...(обрезано)' : ''}`
+  ).join('\n\n');
+
+  if (isFirstVersion) {
+    return [
+      `Напиши пользовательский сценарий "${scenario.label}".`,
+      ``,
+      scenario.description ? `Цель сценария: ${scenario.description}` : '',
+      ``,
+      `Сценарий охватывает следующие фичи (в порядке шагов): ${scenario.featureKeys.join(' → ')}`,
+      ``,
+      `Ниже — документация по каждой задействованной фиче. Используй её как источник информации:`,
+      ``,
+      featureDocBlocks,
+      ``,
+      `Задача:`,
+      `1. Напиши единый пошаговый сценарий от лица пользователя`,
+      `2. Каждый шаг должен быть конкретным действием: что открыть, что нажать, что ввести`,
+      `3. Переходы между фичами должны быть плавными — пользователь не видит "фичей", он видит задачу`,
+      ``,
+      `Структура документа:`,
+      `# ${scenario.label}`,
+      `> одна строка — какую задачу решает пользователь`,
+      ``,
+      `## Что понадобится`,
+      `- список предусловий (что должно быть настроено/готово заранее)`,
+      ``,
+      `## Шаги`,
+      `### Шаг 1. [Название действия]`,
+      `(описание + что пользователь видит в итоге)`,
+      `### Шаг 2. ...`,
+      `(и т.д.)`,
+      ``,
+      `## Результат`,
+      `Что пользователь получил в итоге всего сценария.`,
+      ``,
+      `## Возможные проблемы`,
+      `Таблица | Проблема | Решение |`,
+      ``,
+      `Требования:`,
+      `- Простой язык без технических терминов`,
+      `- Не упоминать компоненты, файлы, API`,
+      `- Описывать только то, что видит пользователь`,
+      `- Запиши результат в: ${outPath}`,
+      `- Создай директорию docs/scenarios/${scenario.key}/ если её нет`,
+    ].filter(Boolean).join('\n');
+  }
+
+  return [
+    `Актуализируй пользовательский сценарий "${scenario.label}".`,
+    ``,
+    `Текущая версия документа (v${nextVersion - 1}):`,
+    `${currentDoc?.slice(0, 2000) || '(пусто)'}`,
+    ``,
+    `Актуальная документация по фичам сценария:`,
+    ``,
+    featureDocBlocks,
+    ``,
+    `Задача: обнови сценарий с учётом изменений в фичах. Сохрани структуру и стиль.`,
+    `Запиши результат в: ${outPath}`,
+    `Создай директорию docs/scenarios/${scenario.key}/ если её нет`,
+  ].filter(Boolean).join('\n');
+}
+
 function buildActualizeDocsPrompt(
   feat: FeatureResult,
   modules: ModuleInfo[],
@@ -2412,6 +2485,35 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
 
         prompt = buildActualizeDocsPrompt(feat, currentData.modules, currentDoc, nextVersion, changedFiles, screenshotsCaptured);
+      } else if (task === 'actualize-scenario') {
+        const scenarioKey = featureKey; // reuse featureKey param as scenarioKey
+        if (!scenarioKey || !currentData.scenarios) { failBeforeStart('Сценарий не найден'); return; }
+        const scenarioStatus = currentData.scenarios.scenarios.find((s: any) => s.key === scenarioKey);
+        if (!scenarioStatus) { failBeforeStart(`Сценарий ${scenarioKey} не найден`); return; }
+        const latestVer = scenarioStatus.latestVersion ?? null;
+        const nextVer = (latestVer ?? 0) + 1;
+        let currentDoc: string | null = null;
+        if (latestVer !== null) {
+          try { currentDoc = fs.readFileSync(path.join(projectRoot, 'docs', 'scenarios', scenarioKey, `v${latestVer}.md`), 'utf-8'); } catch {}
+        }
+        // Read latest docs for each referenced feature
+        const featureDocs: Array<{ key: string; label: string; content: string }> = [];
+        for (const fk of scenarioStatus.featureKeys) {
+          const fLabel = scenarioStatus.featureLabels[scenarioStatus.featureKeys.indexOf(fk)] || fk;
+          const fDocDir = path.join(projectRoot, 'docs', 'features', fk);
+          try {
+            const entries = fs.readdirSync(fDocDir);
+            const versions = entries
+              .map((e: string) => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+              .filter((x: any): x is { file: string; n: number } => x !== null)
+              .sort((a: any, b: any) => b.n - a.n);
+            if (versions.length) {
+              const content = fs.readFileSync(path.join(fDocDir, versions[0].file), 'utf-8');
+              featureDocs.push({ key: fk, label: fLabel, content });
+            }
+          } catch {}
+        }
+        prompt = buildScenarioPrompt(scenarioStatus, featureDocs, currentDoc, nextVer);
       } else if (task === 'generate-pipelines') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);
@@ -3679,6 +3781,25 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       // ── Documentation API ─────────────────────────────────────────────────────
+      if (url === '/api/scenarios/content' && req.method === 'GET') {
+        const scenarioKey = parsedUrl.searchParams.get('scenario');
+        if (!scenarioKey) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Missing scenario param' })); return; }
+        const docDir = path.join(projectRoot, 'docs', 'scenarios', scenarioKey);
+        try {
+          const entries = fs.readdirSync(docDir);
+          const versions = entries
+            .map(e => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+            .filter((x): x is { file: string; n: number } => x !== null)
+            .sort((a, b) => b.n - a.n);
+          if (versions.length === 0) throw new Error('no versions');
+          const content = fs.readFileSync(path.join(docDir, versions[0].file), 'utf-8');
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ content, exists: true, version: versions[0].n }));
+        } catch {
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ content: null, exists: false }));
+        }
+        return;
+      }
+
       if (url === '/api/docs/content' && req.method === 'GET') {
         const featureKey = parsedUrl.searchParams.get('feature');
         if (!featureKey) {
@@ -3766,6 +3887,22 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (url.startsWith('/api/docs/export/md') && req.method === 'GET') {
         try {
           const featureKey = parsedUrl.searchParams.get('feature');
+          const scenarioKey = parsedUrl.searchParams.get('scenario');
+          const translit = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
+
+          // Scenario export
+          if (scenarioKey) {
+            const scenario = currentData.scenarios?.scenarios.find((s: any) => s.key === scenarioKey);
+            if (!scenario?.docExists) { res.writeHead(404, jsonH); res.end(JSON.stringify({ error: 'Scenario doc not found' })); return; }
+            const docDir = path.join(projectRoot, 'docs', 'scenarios', scenarioKey);
+            const entries = fs.readdirSync(docDir);
+            const versions = entries.map((e: string) => { const mv = e.match(/^v(\d+)\.md$/); return mv ? { file: e, n: parseInt(mv[1], 10) } : null; }).filter((x: any) => x !== null).sort((a: any, b: any) => b.n - a.n);
+            const content = fs.readFileSync(path.join(docDir, versions[0]!.file), 'utf-8');
+            const buf = Buffer.from(content, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="${translit(scenario.label)}-scenario-v${scenario.latestVersion}.md"`, 'Content-Length': buf.length });
+            res.end(buf); return;
+          }
+
           const docReport = currentData.documentation;
           if (!docReport) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return; }
           let features = docReport.features.filter((f: any) => f.docExists);
@@ -3790,7 +3927,6 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
 
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const translit = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
           const filename = featureKey && features.length === 1
             ? `${translit(features[0].label)}-v${features[0].latestVersion || 1}.md`
             : `${projName}-docs.md`;
@@ -3811,6 +3947,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (url.startsWith('/api/docs/export/docx') && req.method === 'GET') {
         try {
           const featureKey = parsedUrl.searchParams.get('feature');
+          const scenarioKeyDocx = parsedUrl.searchParams.get('scenario');
+          const translit2 = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
+
+          // Scenario DOCX export
+          if (scenarioKeyDocx) {
+            const scenario = currentData.scenarios?.scenarios.find((s: any) => s.key === scenarioKeyDocx);
+            if (!scenario?.docExists) { res.writeHead(404, jsonH); res.end(JSON.stringify({ error: 'Scenario doc not found' })); return; }
+            const docxBuf = buildDocx([{ key: scenarioKeyDocx, label: scenario.label, latestVersion: scenario.latestVersion, docVersions: scenario.docVersions }], path.join(projectRoot, 'docs', 'scenarios'));
+            const filename2 = `${translit2(scenario.label)}-scenario-v${scenario.latestVersion}.docx`;
+            res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Content-Disposition': `attachment; filename="${filename2}"`, 'Content-Length': docxBuf.length });
+            res.end(docxBuf); return;
+          }
+
           const docReport = currentData.documentation;
           if (!docReport) {
             res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return;
@@ -3822,9 +3971,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
           const docxBuf = buildDocx(features, projectRoot);
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const translit = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
           const filename = featureKey && features.length === 1
-            ? `${translit(features[0].label)}-v${features[0].latestVersion || 1}.docx`
+            ? `${translit2(features[0].label)}-v${features[0].latestVersion || 1}.docx`
             : `${projName}-docs.docx`;
           res.writeHead(200, {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

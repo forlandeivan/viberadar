@@ -41,12 +41,41 @@ export interface FeatureConfig {
   screenshotBaseUrl?: string;  // Base URL for Playwright screenshot capture, e.g. "http://localhost:5000"
 }
 
+export interface ScenarioConfig {
+  label: string;
+  description?: string;
+  features: string[];   // feature keys from config.features
+  color?: string;
+}
+
 export interface VibeRadarConfig {
   version: string;
   agent?: 'claude' | 'codex';  // AI agent CLI to use
   ignore?: string[];   // glob patterns for infra/system files (excluded from unmapped)
   features: Record<string, FeatureConfig>;
+  scenarios?: Record<string, ScenarioConfig>;
   services?: ServiceMapConfig;
+}
+
+export interface ScenarioDocStatus {
+  key: string;
+  label: string;
+  color: string;
+  description: string;
+  featureKeys: string[];           // referenced feature keys
+  featureLabels: string[];         // resolved labels
+  docExists: boolean;
+  latestVersion: number | null;
+  docVersions: string[];
+  docSizeBytes: number | null;
+  lastUpdated: string | null;
+}
+
+export interface ScenariosReport {
+  scenarios: ScenarioDocStatus[];
+  totalScenarios: number;
+  withDocCount: number;
+  missingDocCount: number;
 }
 
 export interface FeatureResult {
@@ -78,6 +107,7 @@ export interface ScanResult {
   testRunner?: string;          // detected test runner (vitest/jest)
   observability?: ObservabilityReport;
   documentation?: DocumentationReport;
+  scenarios?: ScenariosReport;
   serviceMap?: ServiceMapReport;
 }
 
@@ -1137,6 +1167,67 @@ function loadCoverageMap(projectRoot: string): Map<string, CoverageInfo> {
   return coverageMap;
 }
 
+// ─── Scenarios report ────────────────────────────────────────────────────────
+
+function computeScenariosReport(
+  projectRoot: string,
+  configScenarios?: Record<string, ScenarioConfig>,
+  configFeatures?: Record<string, FeatureConfig>,
+): ScenariosReport | undefined {
+  if (!configScenarios || Object.keys(configScenarios).length === 0) return undefined;
+
+  const scenariosDir = path.join(projectRoot, 'docs', 'scenarios');
+  const scenarios: ScenarioDocStatus[] = Object.entries(configScenarios).map(([key, sc]) => {
+    const color = sc.color || '#79c0ff';
+    const featureLabels = (sc.features || []).map(fk => configFeatures?.[fk]?.label || fk);
+
+    const docDir = path.join(scenariosDir, key);
+    let docExists = false;
+    let latestVersion: number | null = null;
+    let docVersions: string[] = [];
+    let docSizeBytes: number | null = null;
+    let lastUpdated: string | null = null;
+
+    try {
+      const entries = fs.readdirSync(docDir);
+      const versionFiles = entries
+        .map(e => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+        .filter((x): x is { file: string; n: number } => x !== null)
+        .sort((a, b) => a.n - b.n);
+      if (versionFiles.length > 0) {
+        docVersions = versionFiles.map(v => `docs/scenarios/${key}/${v.file}`);
+        const latest = versionFiles[versionFiles.length - 1];
+        latestVersion = latest.n;
+        const st = fs.statSync(path.join(docDir, latest.file));
+        docExists = true;
+        docSizeBytes = st.size;
+        lastUpdated = new Date(st.mtimeMs).toISOString();
+      }
+    } catch { /* dir not found */ }
+
+    return {
+      key,
+      label: sc.label,
+      color,
+      description: sc.description || '',
+      featureKeys: sc.features || [],
+      featureLabels,
+      docExists,
+      latestVersion,
+      docVersions,
+      docSizeBytes,
+      lastUpdated,
+    };
+  });
+
+  return {
+    scenarios,
+    totalScenarios: scenarios.length,
+    withDocCount: scenarios.filter(s => s.docExists).length,
+    missingDocCount: scenarios.filter(s => !s.docExists).length,
+  };
+}
+
 // ─── Documentation report ────────────────────────────────────────────────────
 
 function computeDocumentationReport(
@@ -1543,6 +1634,7 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     testRunner,
     observability: computeObservabilityReport(modules, projectRoot, config?.features),
     documentation: computeDocumentationReport(modules, projectRoot, config?.features),
+    scenarios: computeScenariosReport(projectRoot, config?.scenarios, config?.features),
     serviceMap: computeServiceMapReport(projectRoot, config?.services),
   };
 }
