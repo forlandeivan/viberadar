@@ -4484,8 +4484,8 @@ function renderDocFeatureCards(c) {
     });
   });
 
-  // Agent button clicks
-  c.querySelectorAll('.doc-agent-btn').forEach(btn => {
+  // Agent button clicks — only buttons with data-task (not export <a> links)
+  c.querySelectorAll('.doc-agent-btn[data-task]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       runAgentTask(btn.dataset.task, btn.dataset.key);
