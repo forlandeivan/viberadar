@@ -1769,6 +1769,41 @@ function buildScenarioPrompt(
   ].filter(Boolean).join('\n');
 }
 
+function buildCustomScenarioPrompt(key: string, name: string, userPrompt: string): string {
+  const outPath = `docs/scenarios/${key}/v1.md`;
+  return [
+    `Напиши документацию для пользовательского сценария "${name}".`,
+    ``,
+    `Описание сценария (от пользователя):`,
+    userPrompt,
+    ``,
+    `Структура документа:`,
+    `# ${name}`,
+    `> одна строка — какую задачу решает пользователь`,
+    ``,
+    `## Что понадобится`,
+    `- список предусловий (что должно быть настроено/готово заранее)`,
+    ``,
+    `## Шаги`,
+    `### Шаг 1. [Название действия]`,
+    `(описание + что пользователь видит в итоге)`,
+    `### Шаг 2. ...`,
+    `(и т.д., столько шагов, сколько нужно)`,
+    ``,
+    `## Результат`,
+    `Что пользователь получил в итоге всего сценария.`,
+    ``,
+    `## Возможные проблемы`,
+    `Таблица: | Проблема | Решение |`,
+    ``,
+    `Требования:`,
+    `- Простой язык без технических терминов`,
+    `- Не упоминать компоненты, файлы, API — только то, что видит пользователь`,
+    `- Запиши результат в: ${outPath}`,
+    `- Создай директорию docs/scenarios/${key}/ если её нет`,
+  ].join('\n');
+}
+
 function buildGenerateScenariosPrompt(
   features: Array<{ key: string; label: string; description?: string }>,
   configPath: string,
@@ -2560,6 +2595,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           } catch {}
         }
         prompt = buildScenarioPrompt(scenarioStatus, featureDocs, currentDoc, nextVer);
+      } else if (task === 'custom-scenario') {
+        const scenarioName = item.meta?.name as string | undefined;
+        const customPrompt = item.meta?.prompt as string | undefined;
+        if (!featureKey || !scenarioName || !customPrompt) { failBeforeStart('Не указано название или описание сценария'); return; }
+        prompt = buildCustomScenarioPrompt(featureKey, scenarioName, customPrompt);
       } else if (task === 'generate-scenarios') {
         const configFilePath = path.join(projectRoot, 'viberadar.config.json');
         let existingConfig: string | null = null;
@@ -3100,6 +3140,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       } else if (task === 'actualize-scenario') {
         const sc = currentData.scenarios?.scenarios.find((s: any) => s.key === featureKey);
         title = sc ? `${agentLabel} — сценарий "${sc.label}"` : `${agentLabel} — сценарий`;
+      } else if (task === 'custom-scenario') {
+        title = `${agentLabel} — произвольный сценарий "${(meta as any)?.name || featureKey}"`;
       } else if (task === 'generate-scenarios') {
         title = `${agentLabel} — генерация 15 сценариев`;
       } else if (task === 'generate-pipelines') {

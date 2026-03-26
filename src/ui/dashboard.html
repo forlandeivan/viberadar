@@ -4466,6 +4466,30 @@ function renderScenarioCards(c) {
       <button class="agent-card-btn" id="scenarioRegenBtn" style="background:var(--card-bg);color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;margin-left:8px">
         ↻ Перегенерировать
       </button>
+      <button id="scenarioCustomBtn" style="background:var(--card-bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;margin-left:8px">
+        ✏ Свой сценарий
+      </button>
+    </div>
+    <div id="customScenarioForm" style="display:none;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:12px">Написать сценарий по своему промпту</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Название сценария</label>
+        <input id="customScenarioName" type="text" placeholder="Например: Онбординг нового пользователя"
+          style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;outline:none"/>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Опишите сценарий (что делает пользователь, какую цель достигает)</label>
+        <textarea id="customScenarioPrompt" rows="4" placeholder="Пользователь регистрируется, создаёт первый навык, тестирует его в чате и публикует..."
+          style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;outline:none;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="customScenarioRunBtn" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">
+          ✍ Сгенерировать документацию
+        </button>
+        <button id="customScenarioCancelBtn" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 14px;cursor:pointer;font-size:13px">
+          Отмена
+        </button>
+      </div>
     </div>
     <div class="features-grid">`;
 
@@ -4529,6 +4553,41 @@ function renderScenarioCards(c) {
       if (confirm(`Перегенерировать все ${sr.totalScenarios} сценариев? Агент заново изучит фичи и перепишет viberadar.config.json`)) {
         runAgentTask('generate-scenarios');
       }
+    };
+  }
+
+  const customBtn = document.getElementById('scenarioCustomBtn');
+  const customForm = document.getElementById('customScenarioForm');
+  const customCancelBtn = document.getElementById('customScenarioCancelBtn');
+  const customRunBtn = document.getElementById('customScenarioRunBtn');
+
+  if (customBtn && customForm) {
+    customBtn.onclick = () => {
+      const isOpen = customForm.style.display !== 'none';
+      customForm.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) document.getElementById('customScenarioName').focus();
+    };
+  }
+  if (customCancelBtn && customForm) {
+    customCancelBtn.onclick = () => { customForm.style.display = 'none'; };
+  }
+  if (customRunBtn) {
+    customRunBtn.onclick = () => {
+      const nameEl = document.getElementById('customScenarioName');
+      const promptEl = document.getElementById('customScenarioPrompt');
+      const name = nameEl.value.trim();
+      const prompt = promptEl.value.trim();
+      if (!name) { nameEl.focus(); alert('Введите название сценария'); return; }
+      if (!prompt) { promptEl.focus(); alert('Опишите сценарий'); return; }
+      // Generate slug key from name
+      const key = 'custom-' + name.toLowerCase()
+        .replace(/[а-яёА-ЯЁ]/g, c => ({ а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',А:'a',Б:'b',В:'v',Г:'g',Д:'d',Е:'e',Ё:'yo',Ж:'zh',З:'z',И:'i',Й:'y',К:'k',Л:'l',М:'m',Н:'n',О:'o',П:'p',Р:'r',С:'s',Т:'t',У:'u',Ф:'f',Х:'h',Ц:'ts',Ч:'ch',Ш:'sh',Щ:'sch',Ъ:'',Ы:'y',Ь:'',Э:'e',Ю:'yu',Я:'ya' }[c] || c))
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+        + '-' + Date.now().toString(36);
+      customForm.style.display = 'none';
+      nameEl.value = '';
+      promptEl.value = '';
+      runAgentTask('custom-scenario', key, null, null, { name, prompt });
     };
   }
 }
