@@ -4428,7 +4428,8 @@ function renderDocFeatureCards(c) {
       <div class="doc-kpi"><span class="doc-kpi-val" style="color:var(--red)">${doc.missingCount}</span><span class="doc-kpi-lbl">Без доки</span></div>
       <div class="doc-kpi"><span class="doc-kpi-val">${docPct}%</span><span class="doc-kpi-lbl">Задокументировано</span></div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-        <a href="/api/docs/export/docx" download class="doc-agent-btn" style="font-size:13px;padding:6px 16px;text-decoration:none">⬇ .docx</a>
+        <a href="/api/docs/export/md" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .md</a>
+        <a href="/api/docs/export/docx" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .docx</a>
         <button class="doc-agent-btn" id="deployDocsBtn" style="background:var(--blue);color:#fff;border-color:var(--blue);font-size:13px;padding:6px 16px">▲ Deploy</button>
       </div>
     </div>
@@ -4840,6 +4841,7 @@ async function renderDocFeatureDetail(c) {
       <div style="display:flex;align-items:center;font-size:13px">${statusDot}<span style="color:${statusColor};font-weight:600">${statusText}</span></div>
       <span style="font-size:12px;color:var(--muted)">Обновлено: ${lastUpd}</span>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        ${f.docExists ? `<a href="/api/docs/export/md?feature=${encodeURIComponent(f.key)}" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .md</a>` : ''}
         ${f.docExists ? `<a href="/api/docs/export/docx?feature=${encodeURIComponent(f.key)}" download class="doc-agent-btn" style="font-size:13px;padding:6px 14px;text-decoration:none">⬇ .docx</a>` : ''}
         <button class="doc-agent-btn" id="deployDocsBtn" style="background:var(--blue);color:#fff;border-color:var(--blue);font-size:13px;padding:6px 16px">▲ Deploy</button>
       </div>

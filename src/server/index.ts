@@ -3762,6 +3762,49 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return;
       }
 
+      // ── Export docs as Markdown ──────────────────────────────────────────────
+      if (url.startsWith('/api/docs/export/md') && req.method === 'GET') {
+        try {
+          const urlObj = new URL(url, 'http://localhost');
+          const featureKey = urlObj.searchParams.get('feature');
+          const docReport = currentData.documentation;
+          if (!docReport) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Documentation not available' })); return; }
+          let features = docReport.features.filter((f: any) => f.docExists);
+          if (featureKey) features = features.filter((f: any) => f.key === featureKey);
+          if (!features.length) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No documented features found' })); return; }
+
+          const sections: string[] = [];
+          for (const f of features) {
+            const docDir = path.join(projectRoot, 'docs', 'features', f.key);
+            try {
+              const entries = fs.readdirSync(docDir);
+              const versions = entries
+                .map((e: string) => { const m = e.match(/^v(\d+)\.md$/); return m ? { file: e, n: parseInt(m[1], 10) } : null; })
+                .filter((x: any): x is { file: string; n: number } => x !== null)
+                .sort((a: any, b: any) => b.n - a.n);
+              if (versions.length) {
+                const content = fs.readFileSync(path.join(docDir, versions[0].file), 'utf-8');
+                if (features.length > 1) sections.push(`---\n\n# ${f.label}\n\n${content.trim()}`);
+                else sections.push(content.trim());
+              }
+            } catch { /* skip */ }
+          }
+
+          const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
+          const filename = featureKey ? `${featureKey}.md` : `${projName}-docs.md`;
+          const mdContent = Buffer.from(sections.join('\n\n'), 'utf-8');
+          res.writeHead(200, {
+            'Content-Type': 'text/markdown; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': mdContent.length,
+          });
+          res.end(mdContent);
+        } catch (err: any) {
+          res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
       // ── Export docs as DOCX ──────────────────────────────────────────────────
       if (url.startsWith('/api/docs/export/docx') && req.method === 'GET') {
         try {
