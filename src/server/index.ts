@@ -3790,9 +3790,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
 
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёА-ЯЁ]+/gi, '-').replace(/^-|-$/g, '');
+          const translit = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
           const filename = featureKey && features.length === 1
-            ? `${slugify(features[0].label)}-v${features[0].latestVersion || 1}.md`
+            ? `${translit(features[0].label)}-v${features[0].latestVersion || 1}.md`
             : `${projName}-docs.md`;
           const mdContent = Buffer.from(sections.join('\n\n'), 'utf-8');
           res.writeHead(200, {
@@ -3822,9 +3822,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           }
           const docxBuf = buildDocx(features, projectRoot);
           const projName = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')).name || 'docs'; } catch { return 'docs'; } })();
-          const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёА-ЯЁ]+/gi, '-').replace(/^-|-$/g, '');
+          const translit = (s: string) => {const m: Record<string,string>={а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'j',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'};return s.toLowerCase().split('').map(c=>m[c]??c).join('').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');};
           const filename = featureKey && features.length === 1
-            ? `${slugify(features[0].label)}-v${features[0].latestVersion || 1}.docx`
+            ? `${translit(features[0].label)}-v${features[0].latestVersion || 1}.docx`
             : `${projName}-docs.docx`;
           res.writeHead(200, {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
