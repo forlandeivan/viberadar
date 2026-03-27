@@ -151,17 +151,31 @@ function newRunId(): string {
 
 function detectQueueBlockSignal(line: string): 403 | 429 | null {
   const s = line.toLowerCase();
+
+  // Skip informational rate_limit_event with status=allowed — not a real block
+  if (s.includes('rate_limit_event') && s.includes('"status":"allowed"')) return null;
+
   const is403 = (
-    (s.includes('403') && (s.includes('forbidden') || s.includes('unexpected status') || s.includes('status'))) ||
+    // Precise HTTP 403 signals only
+    s.includes('"status":403') ||
+    s.includes('status code 403') ||
+    s.includes('error 403') ||
+    s.includes('http 403') ||
+    (s.includes('403') && s.includes('forbidden')) ||
+    (s.includes('403') && s.includes('unexpected status')) ||
     s.includes('unable to load site') ||
     s.includes('ray id:')
   );
   if (is403) return 403;
+
   const is429 = (
-    s.includes('429') ||
+    s.includes('"status":429') ||
+    s.includes('status code 429') ||
     s.includes('too many requests') ||
-    s.includes('rate limit') ||
-    s.includes('rate-limit')
+    // rate_limit only if explicitly over limit, not informational
+    (s.includes('rate_limit_event') && s.includes('overlimit') && s.includes('true')) ||
+    (s.includes('rate limit exceeded')) ||
+    s.includes('rate-limit exceeded')
   );
   if (is429) return 429;
   return null;
