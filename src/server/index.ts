@@ -236,17 +236,17 @@ function buildAgentShellCmd(agent: string, taskFile: string, codexSandboxMode: C
   const escaped = taskFile.replace(/\\/g, '\\\\');
   const modelFlag = (agent === 'claude' && model) ? ` --model ${model}` : '';
   if (WIN) {
-    if (agent === 'claude') return `type "${escaped}" | claude.cmd --print --verbose --output-format stream-json${modelFlag}`;
+    if (agent === 'claude') return `type "${escaped}" | claude.cmd --dangerously-skip-permissions --print --verbose --output-format stream-json${modelFlag}`;
     if (agent === 'codex') {
       return `codex.cmd -a never exec --color never --sandbox ${codexSandboxMode} < "${escaped}"`;
     }
   } else {
-    if (agent === 'claude') return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
+    if (agent === 'claude') return `claude --dangerously-skip-permissions --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
     if (agent === 'codex') {
       return `codex -a never exec --color never --sandbox ${codexSandboxMode} < "${escaped}"`;
     }
   }
-  return `claude --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
+  return `claude --dangerously-skip-permissions --print --verbose --output-format stream-json${modelFlag} < "${escaped}"`;
 }
 
 function buildAgentSpawnEnv(agent: string): NodeJS.ProcessEnv {
