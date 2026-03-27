@@ -6693,10 +6693,10 @@ function connectSSE() {
     const startedPaths = getTaskFilePaths(task, featureKey, filePath, selectedFilePaths);
     startedPaths.forEach(p => { agentQueuedPaths.delete(p); agentRunningPaths.add(p); });
     renderContent();
-    // Close previous session (queue case: agent-done not fired between tasks)
+    // Close PREVIOUS session only if it belongs to a different run (queue case: agent-done not fired between tasks)
     if (runningSessionId) {
       const prev = consoleSessions.find(s => s.id === runningSessionId);
-      if (prev && prev.status === 'running') updateSessionStatus(runningSessionId, 'ok');
+      if (prev && prev.status === 'running' && prev.runId !== runId) updateSessionStatus(runningSessionId, 'ok');
     }
     const id = runId ? ensureSessionForRun({ runId, title, phase: 'running' }, true) : createSession(title);
     runningSessionId = id;
