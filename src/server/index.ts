@@ -152,8 +152,9 @@ function newRunId(): string {
 function detectQueueBlockSignal(line: string): 403 | 429 | null {
   const s = line.toLowerCase();
 
-  // Skip informational rate_limit_event with status=allowed — not a real block
-  if (s.includes('rate_limit_event') && s.includes('"status":"allowed"')) return null;
+  // Skip ALL rate_limit_event lines — they are always informational from Claude Code stream
+  // Real blocking errors come as different event types (error/system), not rate_limit_event
+  if (s.includes('rate_limit_event')) return null;
 
   const is403 = (
     // Precise HTTP 403 signals only

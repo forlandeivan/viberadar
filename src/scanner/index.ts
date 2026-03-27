@@ -745,7 +745,10 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 7. if (err) / if (error) without logging — window 25 lines, covers nested handlers
-    if (/\bif\s*\(\s*!?(err|error|e)\b/.test(trimmed) && !/\.test\s*\(/.test(trimmed)) {
+    // Skip: instanceof checks (helper/utility functions that classify errors, not catch handlers)
+    if (/\bif\s*\(\s*!?(err|error|e)\b/.test(trimmed) &&
+        !/\.test\s*\(/.test(trimmed) &&
+        !/instanceof\b/.test(trimmed)) {
       if (!hasLogInRange(i, Math.min(i + 25, lines.length))) {
         points.push({ type: 'error-check-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
