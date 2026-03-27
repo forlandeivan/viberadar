@@ -701,14 +701,14 @@ function detectFailurePoints(content: string): FailurePoint[] {
 
     // 2. catch without logging
     if (/\bcatch\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 20, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 40, lines.length))) {
         points.push({ type: 'catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
 
     // 3. .catch() without logging
     if (/\.catch\s*\(/.test(trimmed) && !/(?:console|logger|log)\.\w+\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 15, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 25, lines.length))) {
         points.push({ type: 'promise-catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
@@ -737,16 +737,16 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 6. throw without preceding logger.error
-    // 25-line lookback: structured logger.error({ ...context }, "msg") can span 16–20 lines.
+    // 35-line lookback: structured logger.error({ ...context }, "msg") can span 20–30 lines.
     if (/\bthrow\s+new\s+\w*Error/.test(trimmed)) {
-      if (!hasLogInRange(Math.max(0, i - 25), i + 1)) {
+      if (!hasLogInRange(Math.max(0, i - 35), i + 1)) {
         points.push({ type: 'throw-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
 
-    // 7. if (err) / if (error) without logging
+    // 7. if (err) / if (error) without logging — window 25 lines, covers nested handlers
     if (/\bif\s*\(\s*!?(err|error|e)\b/.test(trimmed) && !/\.test\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 12, lines.length))) {
+      if (!hasLogInRange(i, Math.min(i + 25, lines.length))) {
         points.push({ type: 'error-check-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
