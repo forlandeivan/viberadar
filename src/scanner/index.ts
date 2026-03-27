@@ -849,13 +849,18 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
     const candidatePaths = [
       path.join(projectRoot, 'client', 'src', 'lib', 'structuredLogger.ts'),
       path.join(projectRoot, 'client', 'src', 'lib', 'structuredLogger.js'),
+      path.join(projectRoot, 'client', 'src', 'lib', 'clientLogger.ts'),
+      path.join(projectRoot, 'client', 'src', 'lib', 'clientLogger.js'),
       path.join(projectRoot, 'src', 'lib', 'structuredLogger.ts'),
+      path.join(projectRoot, 'src', 'lib', 'clientLogger.ts'),
     ];
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         const slContent = fs.readFileSync(p, 'utf-8');
         // Check that resolveClientContext (or similar context builder) returns user_id
-        if (/resolveClientContext[\s\S]{0,300}user_id/.test(slContent)) {
+        if (/resolveClientContext[\s\S]{0,300}user_id/.test(slContent) ||
+            /user_?[Ii]d[\s\S]{0,100}resolveClientContext/.test(slContent) ||
+            /user_?[Hh]ash[\s\S]{0,300}user_?[Ii]d/.test(slContent)) {
           clientLoggerAutoInjectsUserId = true;
         }
         break;
