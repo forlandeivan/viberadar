@@ -857,10 +857,10 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         const slContent = fs.readFileSync(p, 'utf-8');
-        // Check that resolveClientContext (or similar context builder) returns user_id
-        if (/resolveClientContext[\s\S]{0,300}user_id/.test(slContent) ||
-            /user_?[Ii]d[\s\S]{0,100}resolveClientContext/.test(slContent) ||
-            /user_?[Hh]ash[\s\S]{0,300}user_?[Ii]d/.test(slContent)) {
+        // Check that the logger has a context-building function that includes user_id anywhere in the file
+        const hasContextFn = /resolveClientContext|buildClientContext|getClientContext/.test(slContent);
+        const hasUserId = /user_?[Ii]d|user_?[Hh]ash/.test(slContent);
+        if (hasContextFn && hasUserId) {
           clientLoggerAutoInjectsUserId = true;
         }
         break;
