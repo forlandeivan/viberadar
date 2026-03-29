@@ -4471,6 +4471,61 @@ a{color:var(--blue)}
 
       // ── Load testing (k6) ─────────────────────────────────────────────────────
 
+      // ── Saved k6 scripts library ──────────────────────────────────────────────
+      const scriptsDir = path.join(projectRoot, '.viberadar', 'load-scripts');
+
+      if (url === '/api/load/scripts' && req.method === 'GET') {
+        try {
+          fs.mkdirSync(scriptsDir, { recursive: true });
+          const files = fs.readdirSync(scriptsDir).filter(f => f.endsWith('.json')).sort().reverse();
+          const list = files.map(f => {
+            try { return JSON.parse(fs.readFileSync(path.join(scriptsDir, f), 'utf-8')); } catch { return null; }
+          }).filter(Boolean);
+          res.writeHead(200, jsonH); res.end(JSON.stringify(list));
+        } catch (e: any) { res.writeHead(500, jsonH); res.end(JSON.stringify({ error: e.message })); }
+        return;
+      }
+
+      if (url === '/api/load/scripts' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          try {
+            const { name, script } = JSON.parse(body);
+            if (!name || !script) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'name and script required' })); return; }
+            fs.mkdirSync(scriptsDir, { recursive: true });
+            const safeName = name.replace(/[^a-zA-Zа-яА-ЯёЁ0-9_\- ]/g, '_').slice(0, 80);
+            const date = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            const fileName = `${Date.now()}-${safeName.replace(/\s+/g, '_')}.json`;
+            const entry = { name: safeName, date, script, fileName };
+            // overwrite if same name exists
+            const existing = fs.readdirSync(scriptsDir).find(f => {
+              try { return JSON.parse(fs.readFileSync(path.join(scriptsDir, f), 'utf-8')).name === safeName; } catch { return false; }
+            });
+            if (existing) fs.unlinkSync(path.join(scriptsDir, existing));
+            fs.writeFileSync(path.join(scriptsDir, fileName), JSON.stringify(entry, null, 2), 'utf-8');
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+          } catch (e: any) { res.writeHead(500, jsonH); res.end(JSON.stringify({ error: e.message })); }
+        });
+        return;
+      }
+
+      const scriptDeleteMatch = url.match(/^\/api\/load\/scripts\/(.+)$/) && req.method === 'DELETE' ? url.match(/^\/api\/load\/scripts\/(.+)$/) : null;
+      if (scriptDeleteMatch) {
+        try {
+          const name = decodeURIComponent(scriptDeleteMatch[1]);
+          fs.mkdirSync(scriptsDir, { recursive: true });
+          const file = fs.readdirSync(scriptsDir).find(f => {
+            try { return JSON.parse(fs.readFileSync(path.join(scriptsDir, f), 'utf-8')).name === name; } catch { return false; }
+          });
+          if (!file) { res.writeHead(404, jsonH); res.end(JSON.stringify({ error: 'Not found' })); return; }
+          fs.unlinkSync(path.join(scriptsDir, file));
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+        } catch (e: any) { res.writeHead(500, jsonH); res.end(JSON.stringify({ error: e.message })); }
+        return;
+      }
+      // ── end saved scripts ──────────────────────────────────────────────────────
+
       if (url === '/api/load/ai-script' && req.method === 'GET') {
         const scriptPath = path.join(projectRoot, '.viberadar', 'load-script-generated.js');
         try {

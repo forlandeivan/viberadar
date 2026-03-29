@@ -1479,6 +1479,32 @@
   .load-btn-ai:hover:not(:disabled) { background: #2a2050; }
   .load-btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
   .load-ai-status { font-size: 11px; color: #a78bfa; margin-top: 5px; min-height: 16px; }
+  .load-save-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .load-save-input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); font-size: 12px; padding: 5px 9px; outline: none;
+  }
+  .load-save-input:focus { border-color: var(--blue); }
+  .load-scripts-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .load-script-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    transition: border-color 0.15s;
+  }
+  .load-script-item:hover { border-color: var(--dim); }
+  .load-script-item-name { flex: 1; font-size: 13px; color: var(--text); font-weight: 500; }
+  .load-script-item-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .load-script-item-actions { display: flex; gap: 5px; }
+  .load-script-load-btn {
+    padding: 3px 10px; border-radius: 4px; border: 1px solid var(--blue);
+    background: #1a2a3a; color: var(--blue); font-size: 11px; cursor: pointer;
+  }
+  .load-script-load-btn:hover { background: #253a4a; }
+  .load-script-del-btn {
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
+  }
+  .load-script-del-btn:hover { border-color: var(--red); color: var(--red); }
   .load-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .load-chart-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
   .load-chart-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
@@ -1634,8 +1660,10 @@ let loadLogLines    = [];     // log buffer for display
 let loadK6Available = null;   // null = unchecked, true/false
 let loadK6Version   = '';
 let loadScriptDraft = '';     // editable k6 script
-let loadAiPromptDraft = '';  // AI prompt textarea draft
-let loadAiGenerating = false; // waiting for agent to produce script
+let loadAiPromptDraft = '';    // AI prompt textarea draft
+let loadAiGenerating  = false; // waiting for agent to produce script
+let loadSavedScripts  = [];    // [{ name, date, script }]
+let loadScriptNameDraft = '';  // save name input draft
 
 function toggleObsHint(id) {
   document.getElementById(id).classList.toggle('open');
@@ -1723,6 +1751,7 @@ function switchMode(nextMode) {
     clearFeatureHash();
   }
   if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
+  if (contextMode === 'load') { loadRefreshScripts(); }
   setModeRoute(contextMode);
   document.getElementById('searchInput').value = searchQuery;
   document.getElementById('panel').classList.remove('open');
@@ -6943,6 +6972,32 @@ function renderLoad(c) {
     <div class="load-section">
       <div class="load-section-title">k6 скрипт <span style="font-weight:400;color:var(--dim)">(редактируемый)</span></div>
       <textarea class="load-script-editor" id="loadScriptEditor" spellcheck="false">${escapeHtml(loadScriptDraft)}</textarea>
+      <div class="load-save-row">
+        <input class="load-save-input" id="loadScriptName" placeholder="Название скрипта, например: transcribe-audio-20vu" value="${escapeHtml(loadScriptNameDraft)}" />
+        <button class="load-btn" style="white-space:nowrap" onclick="loadSaveScript()">💾 Сохранить скрипт</button>
+      </div>
+    </div>
+
+    <div class="load-section">
+      <div class="load-section-title" style="display:flex;align-items:center;gap:8px">
+        📁 Сохранённые скрипты
+        <span style="font-size:11px;font-weight:400;color:var(--muted)">${loadSavedScripts.length} шт.</span>
+        <button class="load-btn" style="margin-left:auto;padding:2px 8px;font-size:11px" onclick="loadRefreshScripts()">↻ обновить</button>
+      </div>
+      ${loadSavedScripts.length === 0
+        ? `<div style="font-size:12px;color:var(--muted);padding:8px 0">Нет сохранённых скриптов — напиши скрипт выше и нажми «💾 Сохранить»</div>`
+        : `<div class="load-scripts-list">
+          ${loadSavedScripts.map(s => `
+            <div class="load-script-item">
+              <div class="load-script-item-name">${escapeHtml(s.name)}</div>
+              <div class="load-script-item-meta">${escapeHtml(s.date)}</div>
+              <div class="load-script-item-actions">
+                <button class="load-script-load-btn" onclick="loadLoadScript(${JSON.stringify(s.name)})">▶ Загрузить</button>
+                <button class="load-script-del-btn" onclick="loadDeleteScript(${JSON.stringify(s.name)})">✕</button>
+              </div>
+            </div>`).join('')}
+          </div>`
+      }
     </div>
 
     ${(isRunning || isDone || hasErr) ? `<div class="load-section">
@@ -7164,6 +7219,57 @@ async function loadFetchAiScript() {
     }
   } catch {}
   return false;
+}
+
+async function loadRefreshScripts() {
+  try {
+    const r = await fetch('/api/load/scripts');
+    if (!r.ok) return;
+    loadSavedScripts = await r.json();
+    renderContent();
+  } catch {}
+}
+
+async function loadSaveScript() {
+  const nameEl = document.getElementById('loadScriptName');
+  const name = (nameEl ? nameEl.value : loadScriptNameDraft).trim();
+  if (!name) { alert('Введи название скрипта'); nameEl && nameEl.focus(); return; }
+  const taEl = document.getElementById('loadScriptEditor');
+  const script = taEl ? taEl.value : loadScriptDraft;
+  if (!script.trim()) { alert('Скрипт пустой'); return; }
+  loadScriptNameDraft = name;
+  try {
+    const r = await fetch('/api/load/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, script }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert('Ошибка: ' + (d.error || r.status)); return; }
+    await loadRefreshScripts();
+    // flash save button
+    const btn = document.querySelector('.load-save-row .load-btn');
+    if (btn) { const orig = btn.textContent; btn.textContent = '✅ Сохранено'; btn.style.color = 'var(--green)'; setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500); }
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function loadLoadScript(name) {
+  const s = loadSavedScripts.find(x => x.name === name);
+  if (!s) return;
+  loadScriptDraft = s.script;
+  loadScriptNameDraft = s.name;
+  const ta = document.getElementById('loadScriptEditor');
+  if (ta) { ta.value = s.script; ta.style.borderColor = 'var(--blue)'; setTimeout(() => { ta.style.borderColor = ''; }, 1500); }
+  const nameEl = document.getElementById('loadScriptName');
+  if (nameEl) nameEl.value = s.name;
+}
+
+async function loadDeleteScript(name) {
+  if (!confirm(`Удалить скрипт «${name}»?`)) return;
+  try {
+    const r = await fetch('/api/load/scripts/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert('Ошибка: ' + (d.error || r.status)); return; }
+    await loadRefreshScripts();
+  } catch (e) { alert('Ошибка: ' + e.message); }
 }
 
 function connectSSE() {
