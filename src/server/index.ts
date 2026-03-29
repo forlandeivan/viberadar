@@ -2700,6 +2700,10 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const built = buildLinkOrphanTestsPrompt(currentData.modules, batch);
         if (!built) { failBeforeStart('Нет тестов без исходника для этого пакета'); return; }
         prompt = built;
+      } else if (task === 'custom-prompt') {
+        const customPrompt = item.meta?.prompt as string | undefined;
+        if (!customPrompt) { failBeforeStart('Промпт не передан'); return; }
+        prompt = customPrompt;
       } else {
         prompt = buildMapUnmappedPrompt(currentData.modules, currentData.features || []);
       }
@@ -3676,9 +3680,11 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         req.on('data', d => body += d);
         req.on('end', () => {
           try {
-            const { task, featureKey, filePath, selectedFilePaths, meta } = JSON.parse(body);
-            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0} meta=${meta ? 'yes' : 'no'}\n`);
-            const runId = runAgent(task, featureKey, filePath, selectedFilePaths, meta);
+            const { task, featureKey, filePath, selectedFilePaths, meta, prompt: bodyPrompt } = JSON.parse(body);
+            // merge top-level `prompt` field into meta so custom-prompt tasks work
+            const mergedMeta = bodyPrompt ? { ...(meta || {}), prompt: bodyPrompt } : (meta || undefined);
+            process.stdout.write(`   📥 run-agent: task=${task} featureKey=${featureKey} filePath=${filePath} selected=${Array.isArray(selectedFilePaths) ? selectedFilePaths.length : 0} meta=${mergedMeta ? 'yes' : 'no'}\n`);
+            const runId = runAgent(task, featureKey, filePath, selectedFilePaths, mergedMeta);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, runId }));
           } catch (err: any) {

@@ -7150,30 +7150,40 @@ async function loadAiGenerateScript() {
 
   const featureList = (D && D.features || []).map(f => `- ${f.label} (key: ${f.key})`).join('\n');
 
-  const task = `Сгенерируй k6 скрипт нагрузочного тестирования.
+  const task = `Твоя задача — сгенерировать k6 скрипт нагрузочного тестирования по описанию пользователя.
 
-Сценарий от пользователя:
+## Запрос пользователя
 ${userPrompt}
 
-Параметры:
+## Параметры теста
 - Base URL: ${baseUrl}
 - VUs: ${vus}
 - Duration: ${duration}
 
-Доступные фичи проекта:
+## Фичи проекта
 ${featureList || '(нет данных)'}
 
-Требования к скрипту:
-1. Валидный JavaScript для k6 (import from 'k6/http', 'k6', 'k6/data' и т.д.)
-2. export const options = { vus, duration, thresholds }
-3. export default function() { ... } с проверками check()
-4. Если нужна загрузка файла — использовать http.file() и open()
-5. Если нужна авторизация — добавить заголовок Authorization
-6. Добавить sleep() между запросами
-7. ТОЛЬКО код скрипта, никаких пояснений снаружи
+## Инструкция
 
-Сохрани скрипт СТРОГО в файл: .viberadar/load-script-generated.js
-Это важно — без этого файла кнопка "Загрузить скрипт" не сработает.`;
+**Шаг 1 — разберись в запросе.**
+Пойми, какой API-эндпоинт нужен. Если эндпоинт не указан явно — найди его в коде проекта:
+- поищи в server/routes/ файлы, связанные с описанием (rg, grep или cat)
+- посмотри на метод, путь, body, заголовки
+- найди нужные ID, ключи, форматы данных из реального кода или конфигов
+
+**Шаг 2 — составь k6 скрипт.**
+Требования:
+1. Валидный JavaScript для k6 (import from 'k6/http', 'k6', 'k6/data')
+2. \`export const options = { vus: ${vus}, duration: '${duration}', thresholds: {...} }\`
+3. \`export default function() { ... }\` с проверками \`check()\`
+4. Если нужна авторизация — добавь заголовок Authorization (Bearer-токен как переменную __ENV.TOKEN)
+5. Если нужна загрузка файла — используй \`http.file()\` и \`open()\`
+6. Добавь \`sleep(1)\` между запросами
+7. Добавь комментарий в начале: что тестируется и какой эндпоинт
+
+**Шаг 3 — сохрани ТОЛЬКО скрипт в файл.**
+Запиши итоговый JavaScript-код в файл: \`.viberadar/load-script-generated.js\`
+Никаких объяснений снаружи кода — только чистый JS.`;
 
   loadAiGenerating = true;
   loadAiPromptDraft = userPrompt;
