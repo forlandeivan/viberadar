@@ -1751,7 +1751,14 @@ function switchMode(nextMode) {
     clearFeatureHash();
   }
   if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
-  if (contextMode === 'load') { loadRefreshScripts(); }
+  if (contextMode === 'load') {
+    loadRefreshScripts();
+    // restore saved token after render
+    requestAnimationFrame(() => {
+      const saved = localStorage.getItem('vr_load_token');
+      if (saved) { const el = document.getElementById('loadToken'); if (el) el.value = saved; }
+    });
+  }
   setModeRoute(contextMode);
   document.getElementById('searchInput').value = searchQuery;
   document.getElementById('panel').classList.remove('open');
@@ -6750,7 +6757,12 @@ async function checkK6() {
     loadK6Available = d.available;
     loadK6Version = d.version || '';
   } catch { loadK6Available = false; }
-  if (contextMode === 'load') { renderSidebar(); renderContent(); }
+  if (contextMode === 'load') {
+    renderSidebar(); renderContent();
+    // restore saved token from localStorage
+    const saved = localStorage.getItem('vr_load_token');
+    if (saved) { const el = document.getElementById('loadToken'); if (el) el.value = saved; }
+  }
 }
 
 function buildDefaultScript(cfg) {
@@ -6944,6 +6956,12 @@ function renderLoad(c) {
           <label>Duration</label>
           <input id="loadDuration" type="text" value="30s" style="width:70px" placeholder="30s" />
         </div>
+      </div>
+      <div class="load-config-row" style="margin-top:8px">
+        <div class="load-config-field" style="flex:1;min-width:300px">
+          <label>Bearer Token <span style="color:var(--dim);font-weight:400;font-size:11px">(→ переменная <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">__ENV.TOKEN</code>)</span></label>
+          <input id="loadToken" type="password" placeholder="Вставь Bearer-токен (необязательно)" style="font-family:monospace;font-size:12px" oninput="localStorage.setItem('vr_load_token', this.value)" />
+        </div>
         ${featureOptions ? `<div class="load-config-field">
           <label>Фича (шаблон)</label>
           <select id="loadFeature" style="width:150px">
@@ -7090,10 +7108,13 @@ async function runLoadTest() {
   loadBuckets  = [];
 
   try {
+    const tokenVal = (document.getElementById('loadToken')?.value || localStorage.getItem('vr_load_token') || '').trim();
+    const envVars = tokenVal ? { TOKEN: tokenVal } : {};
+
     const r = await fetch('/api/load/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script }),
+      body: JSON.stringify({ script, envVars }),
     });
     const d = await r.json();
     if (!r.ok) { alert('Ошибка запуска: ' + (d.error || r.status)); return; }

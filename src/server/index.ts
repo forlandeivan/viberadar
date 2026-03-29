@@ -4600,7 +4600,16 @@ a{color:var(--blue)}
           broadcast('load-started', { config: cfg } as Record<string, unknown>);
           res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
 
-          loadProc = spawn('k6', ['run', '--out', `json=${jsonOutPath}`, scriptPath], {
+          // Build --env flags from cfg.envVars (e.g. { TOKEN: 'abc', BASE_URL: '...' })
+          const envVars: Record<string, string> = (typeof cfg.envVars === 'object' && cfg.envVars !== null)
+            ? cfg.envVars as Record<string, string>
+            : {};
+          const envFlags: string[] = [];
+          for (const [k, v] of Object.entries(envVars)) {
+            if (k && v !== undefined && v !== '') envFlags.push('--env', `${k}=${v}`);
+          }
+
+          loadProc = spawn('k6', ['run', ...envFlags, '--out', `json=${jsonOutPath}`, scriptPath], {
             cwd: projectRoot, env: { ...process.env }, shell: WIN, stdio: 'pipe',
           });
 
