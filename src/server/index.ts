@@ -4471,6 +4471,19 @@ a{color:var(--blue)}
 
       // ── Load testing (k6) ─────────────────────────────────────────────────────
 
+      if (url === '/api/load/ai-script' && req.method === 'GET') {
+        const scriptPath = path.join(projectRoot, '.viberadar', 'load-script-generated.js');
+        try {
+          const script = fs.readFileSync(scriptPath, 'utf-8');
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify({ script }));
+        } catch {
+          res.writeHead(404, jsonH);
+          res.end(JSON.stringify({ error: 'Script not found' }));
+        }
+        return;
+      }
+
       if (url === '/api/load/check' && req.method === 'GET') {
         const k6 = spawn('k6', ['version'], { shell: WIN, stdio: 'pipe' });
         let ver = '';
