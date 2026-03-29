@@ -1438,6 +1438,55 @@
   .svc-gen-all-btn:hover { opacity:0.85; }
   .svc-gen-all-btn:disabled { opacity:0.5; cursor:default; }
 
+  /* ─── Load Test UI ─────────────────────────────────────────────────────────── */
+  .load-screen { padding: 20px; max-width: 900px; }
+  .load-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .load-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; font-weight: 600; }
+  .load-config-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: flex-end; }
+  .load-config-field { display: flex; flex-direction: column; gap: 4px; }
+  .load-config-field label { font-size: 11px; color: var(--muted); }
+  .load-config-field input, .load-config-field select {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); font-size: 13px; padding: 5px 9px; outline: none;
+  }
+  .load-config-field input:focus, .load-config-field select:focus { border-color: var(--blue); }
+  .load-script-editor {
+    width: 100%; min-height: 180px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-family: 'Cascadia Code', Consolas, monospace;
+    font-size: 12px; padding: 10px; resize: vertical; outline: none; line-height: 1.5;
+  }
+  .load-script-editor:focus { border-color: var(--blue); }
+  .load-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .load-btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 12px; cursor: pointer; background: var(--bg); color: var(--muted);
+    transition: all 0.15s;
+  }
+  .load-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--dim); }
+  .load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .load-btn-run { background: #1a3a1a; border-color: var(--green); color: var(--green); }
+  .load-btn-run:hover:not(:disabled) { background: #2a4a2a; }
+  .load-btn-stop { background: #3a1a1a; border-color: var(--red); color: var(--red); }
+  .load-btn-stop:hover:not(:disabled) { background: #4a2a2a; }
+  .load-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .load-chart-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+  .load-chart-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .load-chart-box canvas { display: block; width: 100%; height: 100px; }
+  .load-summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  .load-kpi { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; text-align: center; }
+  .load-kpi-val { font-size: 20px; font-weight: 700; }
+  .load-kpi-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .load-log { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; height: 200px; overflow-y: auto; padding: 8px; font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
+  .load-log-line { padding: 1px 0; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .load-status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .load-status-running { background: rgba(227,179,65,0.12); color: var(--yellow); border: 1px solid rgba(227,179,65,0.3); }
+  .load-status-done    { background: rgba(63,185,80,0.1);  color: var(--green);  border: 1px solid rgba(63,185,80,0.25); }
+  .load-status-error   { background: rgba(248,81,73,0.1);  color: var(--red);    border: 1px solid rgba(248,81,73,0.25); }
+  .load-status-stopped { background: rgba(125,133,144,0.1); color: var(--muted); border: 1px solid var(--border); }
+  .load-no-k6 { padding: 24px; text-align: center; color: var(--muted); }
+  .load-no-k6 h3 { color: var(--text); margin-bottom: 8px; }
+  .load-no-k6 code { background: var(--bg); border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; font-size: 13px; color: var(--blue); }
+
   </style>
 </head>
 <body>
@@ -1567,6 +1616,13 @@ let testNavProblem   = null;   // null|'no-feature'|'no-source'|'duplicate'|'sta
 let e2ePlan         = null;   // current E2E plan object
 let e2ePlanLoading  = false;
 let obsActiveTab    = 'overview'; // active observability tab
+// ── Load test state ──────────────────────────────────────────────────────────
+let loadState       = null;   // server LoadState snapshot
+let loadBuckets     = [];     // live chart data
+let loadLogLines    = [];     // log buffer for display
+let loadK6Available = null;   // null = unchecked, true/false
+let loadK6Version   = '';
+let loadScriptDraft = '';     // editable k6 script
 
 function toggleObsHint(id) {
   document.getElementById(id).classList.toggle('open');
@@ -1587,12 +1643,14 @@ const modeStore = {
   docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   scenarios: { view: 'list', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
+  load:     { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/observability')) return 'observability';
   if (pathname.startsWith('/radar/docs')) return 'docs';
   if (pathname.startsWith('/radar/services')) return 'services';
+  if (pathname.startsWith('/radar/load')) return 'load';
   return 'qa';
 }
 
@@ -1600,6 +1658,7 @@ function routePathForMode(mode) {
   if (mode === 'observability') return '/radar/observability';
   if (mode === 'docs') return '/radar/docs';
   if (mode === 'services') return '/radar/services';
+  if (mode === 'load') return '/radar/load';
   return '/radar/qa';
 }
 
@@ -1643,13 +1702,14 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services') {
+  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load') {
     view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
     activePanelKey = null;
     clearFeatureHash();
   }
+  if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
   setModeRoute(contextMode);
   document.getElementById('searchInput').value = searchQuery;
   document.getElementById('panel').classList.remove('open');
@@ -2945,6 +3005,7 @@ function renderModeSwitch() {
     { key: 'docs', label: 'Документация', hint: 'Актуальность, генерация, обновление' },
     { key: 'scenarios', label: 'Сценарии', hint: 'Пользовательские сценарии, user journeys' },
     { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
+    { key: 'load', label: 'Нагрузка', hint: 'k6: метрики, сценарии, AI-анализ' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -2994,6 +3055,32 @@ function renderSidebar() {
       ${sr ? `<div style="margin-top:12px;padding:0 6px;font-size:12px;color:var(--muted)">
         <span style="color:var(--green)">${sr.withDocCount}</span> готово &nbsp;·&nbsp; <span style="color:var(--red)">${sr.missingDocCount}</span> без доки
       </div>` : ''}`;
+    return;
+  }
+
+  if (contextMode === 'load') {
+    tabs.style.display = 'none';
+    const ls = loadState;
+    const statusColor = !ls ? 'var(--dim)' : ls.status === 'running' ? 'var(--yellow)' : ls.status === 'done' ? 'var(--green)' : 'var(--muted)';
+    const statusLabel = !ls ? '—' : ls.status === 'running' ? 'Запущено' : ls.status === 'done' ? 'Завершено' : ls.status === 'stopped' ? 'Остановлено' : ls.status === 'error' ? 'Ошибка' : '—';
+    extra.innerHTML = `
+      <div class="sidebar-label">Нагрузочное тестирование</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45;margin-bottom:12px">
+        k6-сценарии для API и фич. Живые графики, AI-анализ результатов.
+      </div>
+      <div style="padding:0 6px;font-size:12px">
+        <div style="color:var(--dim);margin-bottom:4px">Статус</div>
+        <div style="color:${statusColor};font-weight:600">${statusLabel}</div>
+      </div>
+      ${ls && ls.status !== 'idle' ? `
+        <div style="padding:8px 6px 0;font-size:12px;color:var(--muted)">
+          <div>Запросов: <span style="color:var(--text)">${ls.totalRequests || 0}</span></div>
+          <div>Ошибок: <span style="color:${(ls.totalErrors||0)>0?'var(--red)':'var(--text)'}">${ls.totalErrors || 0}</span></div>
+          ${ls.summary ? `<div>RPS: <span style="color:var(--text)">${(ls.summary.rps||0).toFixed(1)}</span></div>
+          <div>avg: <span style="color:var(--text)">${Math.round(ls.summary.avgDuration||0)}ms</span></div>
+          <div>p90: <span style="color:var(--text)">${Math.round(ls.summary.p90Duration||0)}ms</span></div>` : ''}
+        </div>` : ''}
+      ${loadK6Available === false ? `<div style="padding:8px 6px;font-size:11px;color:var(--red)">⚠ k6 не найден.<br>Установите: <code>choco install k6</code></div>` : ''}`;
     return;
   }
 
@@ -3075,6 +3162,10 @@ function renderContent() {
   }
   if (contextMode === 'services') {
     renderServiceMap(c);
+    return;
+  }
+  if (contextMode === 'load') {
+    renderLoad(c);
     return;
   }
 
@@ -6608,6 +6699,368 @@ async function refreshData() {
   }
 }
 
+// ─── Load Testing ─────────────────────────────────────────────────────────────
+
+async function checkK6() {
+  try {
+    const r = await fetch('/api/load/check');
+    const d = await r.json();
+    loadK6Available = d.available;
+    loadK6Version = d.version || '';
+  } catch { loadK6Available = false; }
+  if (contextMode === 'load') { renderSidebar(); renderContent(); }
+}
+
+function buildDefaultScript(cfg) {
+  const baseUrl = cfg.baseUrl || 'http://localhost:3000';
+  const endpoints = (cfg.endpoints || ['/']).filter(Boolean);
+  const endpointLines = endpoints.map(ep =>
+    `  const r = http.get(\`\${BASE_URL}${ep}\`);\n  check(r, { 'status 2xx': (res) => res.status >= 200 && res.status < 300 });`
+  ).join('\n');
+  return `import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+const BASE_URL = '${baseUrl}';
+
+export const options = {
+  vus: ${cfg.vus || 10},
+  duration: '${cfg.duration || '30s'}',
+  thresholds: {
+    http_req_duration: ['p(95)<2000'],
+    http_req_failed:   ['rate<0.05'],
+  },
+};
+
+export default function () {
+${endpointLines}
+  sleep(1);
+}
+`;
+}
+
+function generateScriptFromFeature(featureKey) {
+  const feat = D && D.features && D.features.find(f => f.key === featureKey);
+  if (!feat) return null;
+  // Try to extract API endpoints from modules in this feature
+  const mods = (D.modules || []).filter(m => m.featureKeys && m.featureKeys.includes(featureKey));
+  const apiMods = mods.filter(m => m.type === 'service' || (m.name && /api|service|controller|handler/i.test(m.name)));
+  const endpoints = apiMods.slice(0, 5).map(m => '/' + m.name.replace(/\.(ts|js)$/, '').replace(/\\/g, '/'));
+  return buildDefaultScript({
+    baseUrl: 'http://localhost:3000',
+    vus: 10,
+    duration: '30s',
+    endpoints: endpoints.length ? endpoints : ['/'],
+  });
+}
+
+function drawLoadCharts() {
+  if (!loadBuckets || loadBuckets.length === 0) return;
+  drawLoadChart('loadChartRps',     loadBuckets, b => b.count / 2,                 'var(--blue)',   'RPS');
+  drawLoadChart('loadChartLatency', loadBuckets, b => b.count > 0 ? b.durSum / b.count : 0, 'var(--green)',  'Latency avg (ms)');
+  drawLoadChart('loadChartErrors',  loadBuckets, b => b.count > 0 ? (b.errors / b.count) * 100 : 0, 'var(--red)', 'Error %');
+  drawLoadChart('loadChartVus',     loadBuckets, b => b.vus,                        'var(--yellow)', 'VUs');
+}
+
+function drawLoadChart(id, buckets, valFn, color, label) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 380;
+  const H = 100;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const vals = buckets.map(valFn);
+  const maxVal = Math.max(...vals, 1);
+  const pad = { l: 36, r: 8, t: 8, b: 20 };
+  const cW = W - pad.l - pad.r;
+  const cH = H - pad.t - pad.b;
+  const step = cW / Math.max(vals.length - 1, 1);
+
+  // Grid line
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = pad.t + cH * (1 - f);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+  });
+
+  // Y axis labels
+  ctx.fillStyle = 'rgba(125,133,144,0.8)';
+  ctx.font = `9px system-ui`;
+  ctx.textAlign = 'right';
+  [0, 0.5, 1].forEach(f => {
+    const y = pad.t + cH * (1 - f);
+    const v = maxVal * f;
+    const txt = v >= 1000 ? (v/1000).toFixed(1)+'k' : v >= 10 ? Math.round(v).toString() : v.toFixed(1);
+    ctx.fillText(txt, pad.l - 3, y + 3);
+  });
+
+  if (vals.length === 0) return;
+
+  // Area fill
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH);
+  grad.addColorStop(0, color.replace(')', ', 0.3)').replace('var(', 'var('));
+  // Simple approach: just use semi-transparent fill
+  ctx.fillStyle = 'rgba(88,166,255,0.08)';
+  if (color.includes('green')) ctx.fillStyle = 'rgba(63,185,80,0.08)';
+  if (color.includes('red'))   ctx.fillStyle = 'rgba(248,81,73,0.08)';
+  if (color.includes('yellow')) ctx.fillStyle = 'rgba(227,179,65,0.08)';
+
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t + cH);
+  vals.forEach((v, i) => {
+    const x = pad.l + i * step;
+    const y = pad.t + cH * (1 - v / maxVal);
+    if (i === 0) ctx.lineTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(pad.l + (vals.length - 1) * step, pad.t + cH);
+  ctx.closePath();
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.lineWidth = 1.5;
+  // Resolve CSS variable colors to actual colors
+  const colorMap = { 'var(--blue)': '#58a6ff', 'var(--green)': '#3fb950', 'var(--red)': '#f85149', 'var(--yellow)': '#e3b341' };
+  ctx.strokeStyle = colorMap[color] || color;
+  vals.forEach((v, i) => {
+    const x = pad.l + i * step;
+    const y = pad.t + cH * (1 - v / maxVal);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = 'rgba(125,133,144,0.9)';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText(label, pad.l + 2, H - 4);
+}
+
+function renderLoad(c) {
+  const isRunning = loadState && loadState.status === 'running';
+  const isDone    = loadState && (loadState.status === 'done' || loadState.status === 'stopped');
+  const hasErr    = loadState && loadState.status === 'error';
+
+  // k6 install check message
+  if (loadK6Available === false) {
+    c.innerHTML = `<div class="load-screen"><div class="load-no-k6">
+      <h3>⚠ k6 не найден</h3>
+      <p style="margin-bottom:12px">Установите k6 для запуска нагрузочного тестирования:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
+        <div><code>choco install k6</code> <span style="color:var(--muted)">— Windows (Chocolatey)</span></div>
+        <div><code>winget install k6</code> <span style="color:var(--muted)">— Windows (winget)</span></div>
+        <div><code>brew install k6</code> <span style="color:var(--muted)">— macOS (Homebrew)</span></div>
+      </div>
+      <button class="load-btn" style="margin-top:16px" onclick="checkK6()">🔄 Проверить снова</button>
+    </div></div>`;
+    return;
+  }
+
+  if (loadK6Available === null) {
+    c.innerHTML = `<div class="load-screen" style="padding:40px;text-align:center;color:var(--muted)">Проверяю k6…</div>`;
+    return;
+  }
+
+  const features = (D && D.features) || [];
+  const featureOptions = features.map(f =>
+    `<option value="${f.key}">${f.label || f.key}</option>`
+  ).join('');
+
+  // Build script draft if empty
+  if (!loadScriptDraft) {
+    loadScriptDraft = buildDefaultScript({ baseUrl: 'http://localhost:3000', vus: 10, duration: '30s', endpoints: ['/'] });
+  }
+
+  const statusBadge = !loadState || loadState.status === 'idle' ? '' :
+    loadState.status === 'running' ? '<span class="load-status-badge load-status-running">● Запущено</span>' :
+    loadState.status === 'done'    ? '<span class="load-status-badge load-status-done">✓ Завершено</span>' :
+    loadState.status === 'stopped' ? '<span class="load-status-badge load-status-stopped">■ Остановлено</span>' :
+    '<span class="load-status-badge load-status-error">✗ Ошибка</span>';
+
+  const summary = (loadState && loadState.summary) || {};
+  const hasSummary = isDone && summary && Object.keys(summary).length > 0;
+
+  c.innerHTML = `<div class="load-screen">
+
+    <div class="load-section">
+      <div class="load-section-title">Конфигурация ${loadK6Version ? `<span style="color:var(--dim);font-weight:400">${escapeHtml(loadK6Version)}</span>` : ''} ${statusBadge}</div>
+      <div class="load-config-row">
+        <div class="load-config-field" style="flex:1;min-width:200px">
+          <label>Base URL</label>
+          <input id="loadBaseUrl" type="text" value="http://localhost:3000" placeholder="http://localhost:3000" />
+        </div>
+        <div class="load-config-field">
+          <label>VUs</label>
+          <input id="loadVus" type="number" value="10" min="1" max="500" style="width:70px" />
+        </div>
+        <div class="load-config-field">
+          <label>Duration</label>
+          <input id="loadDuration" type="text" value="30s" style="width:70px" placeholder="30s" />
+        </div>
+        ${featureOptions ? `<div class="load-config-field">
+          <label>Фича (шаблон)</label>
+          <select id="loadFeature" style="width:150px">
+            <option value="">— выбрать —</option>
+            ${featureOptions}
+          </select>
+        </div>` : ''}
+      </div>
+      <div class="load-btns">
+        <button class="load-btn" onclick="loadGenerateScript()">⚙ Сгенерировать скрипт</button>
+        <button class="load-btn load-btn-run" id="loadRunBtn" onclick="runLoadTest()" ${isRunning ? 'disabled' : ''}>▶ Запустить</button>
+        <button class="load-btn load-btn-stop" id="loadStopBtn" onclick="stopLoadTest()" ${!isRunning ? 'disabled' : ''}>■ Стоп</button>
+      </div>
+    </div>
+
+    <div class="load-section">
+      <div class="load-section-title">k6 скрипт <span style="font-weight:400;color:var(--dim)">(редактируемый)</span></div>
+      <textarea class="load-script-editor" id="loadScriptEditor" spellcheck="false">${escapeHtml(loadScriptDraft)}</textarea>
+    </div>
+
+    ${(isRunning || isDone || hasErr) ? `<div class="load-section">
+      <div class="load-section-title">Живые метрики</div>
+      <div class="load-charts">
+        <div class="load-chart-box"><div class="load-chart-label">Запросов/сек (RPS)</div><canvas id="loadChartRps"></canvas></div>
+        <div class="load-chart-box"><div class="load-chart-label">Среднее время ответа (мс)</div><canvas id="loadChartLatency"></canvas></div>
+        <div class="load-chart-box"><div class="load-chart-label">Процент ошибок (%)</div><canvas id="loadChartErrors"></canvas></div>
+        <div class="load-chart-box"><div class="load-chart-label">Активных VUs</div><canvas id="loadChartVus"></canvas></div>
+      </div>
+    </div>` : ''}
+
+    ${hasSummary ? `<div class="load-section">
+      <div class="load-section-title">Итоги</div>
+      <div class="load-summary-grid">
+        ${summary.rps != null ? `<div class="load-kpi"><div class="load-kpi-val" style="color:var(--blue)">${(summary.rps||0).toFixed(1)}</div><div class="load-kpi-lbl">RPS</div></div>` : ''}
+        ${summary.avgDuration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.avgDuration||0)}</div><div class="load-kpi-lbl">avg ms</div></div>` : ''}
+        ${summary.p90Duration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.p90Duration||0)}</div><div class="load-kpi-lbl">p90 ms</div></div>` : ''}
+        ${summary.p95Duration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.p95Duration||0)}</div><div class="load-kpi-lbl">p95 ms</div></div>` : ''}
+        ${summary.totalRequests != null ? `<div class="load-kpi"><div class="load-kpi-val">${summary.totalRequests||0}</div><div class="load-kpi-lbl">Запросов</div></div>` : ''}
+        ${summary.errorPct != null ? `<div class="load-kpi"><div class="load-kpi-val" style="color:${(summary.errorPct||0)>5?'var(--red)':'var(--green)'}">${(summary.errorPct||0).toFixed(2)}%</div><div class="load-kpi-lbl">Ошибок</div></div>` : ''}
+      </div>
+      <div class="load-btns" style="margin-top:12px">
+        <button class="load-btn" style="background:#1a2a3a;border-color:var(--blue);color:var(--blue)" onclick="loadAiAnalysis()">🤖 AI-анализ результатов</button>
+      </div>
+    </div>` : ''}
+
+    <div class="load-section">
+      <div class="load-section-title">Лог k6</div>
+      <div class="load-log" id="loadLogContent">
+        ${loadLogLines.map(l => `<div class="load-log-line">${escapeHtml(l)}</div>`).join('')}
+      </div>
+    </div>
+
+  </div>`;
+
+  // Scroll log to bottom
+  const logEl = document.getElementById('loadLogContent');
+  if (logEl) logEl.scrollTop = logEl.scrollHeight;
+
+  // Sync textarea with draft
+  const ta = document.getElementById('loadScriptEditor');
+  if (ta) {
+    ta.addEventListener('input', () => { loadScriptDraft = ta.value; });
+  }
+
+  // Feature selector auto-generates script
+  const featSel = document.getElementById('loadFeature');
+  if (featSel) {
+    featSel.addEventListener('change', () => {
+      const fk = featSel.value;
+      if (!fk) return;
+      const script = generateScriptFromFeature(fk);
+      if (script) {
+        loadScriptDraft = script;
+        const ta2 = document.getElementById('loadScriptEditor');
+        if (ta2) ta2.value = script;
+      }
+    });
+  }
+
+  // Draw charts if we have data
+  if (loadBuckets && loadBuckets.length > 0) {
+    requestAnimationFrame(drawLoadCharts);
+  }
+}
+
+function loadGenerateScript() {
+  const baseUrl  = document.getElementById('loadBaseUrl')?.value || 'http://localhost:3000';
+  const vus      = parseInt(document.getElementById('loadVus')?.value || '10');
+  const duration = document.getElementById('loadDuration')?.value || '30s';
+  const featKey  = document.getElementById('loadFeature')?.value || '';
+  let script;
+  if (featKey) {
+    script = generateScriptFromFeature(featKey) || buildDefaultScript({ baseUrl, vus, duration, endpoints: ['/'] });
+  } else {
+    script = buildDefaultScript({ baseUrl, vus, duration, endpoints: ['/api/health', '/api/data'] });
+  }
+  loadScriptDraft = script;
+  const ta = document.getElementById('loadScriptEditor');
+  if (ta) ta.value = script;
+}
+
+async function runLoadTest() {
+  const ta = document.getElementById('loadScriptEditor');
+  const script = ta ? ta.value : loadScriptDraft;
+  if (!script.trim()) { alert('Скрипт пустой — сначала сгенерируйте или напишите k6-скрипт'); return; }
+
+  loadLogLines = [];
+  loadBuckets  = [];
+
+  try {
+    const r = await fetch('/api/load/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script }),
+    });
+    const d = await r.json();
+    if (!r.ok) { alert('Ошибка запуска: ' + (d.error || r.status)); return; }
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  }
+}
+
+async function stopLoadTest() {
+  try { await fetch('/api/load/stop', { method: 'POST' }); } catch {}
+}
+
+async function loadAiAnalysis() {
+  if (!loadState || !loadState.summary) return;
+  const summary = loadState.summary;
+  const logs = loadState.logs || [];
+  const prompt = `Проанализируй результаты нагрузочного тестирования k6:
+
+RPS: ${(summary.rps||0).toFixed(2)}
+avg latency: ${Math.round(summary.avgDuration||0)}ms
+p90 latency: ${Math.round(summary.p90Duration||0)}ms
+p95 latency: ${Math.round(summary.p95Duration||0)}ms
+Total requests: ${summary.totalRequests||0}
+Error rate: ${(summary.errorPct||0).toFixed(2)}%
+
+Лог k6:
+${logs.slice(-50).join('\n')}
+
+Оцени: производительность, узкие места, рекомендации по оптимизации.`;
+
+  // Open agent terminal and send task
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
+
+  try {
+    const r = await fetch('/api/run-agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'custom-prompt', prompt }),
+    });
+    const d = await r.json();
+    if (!r.ok) alert('Ошибка запуска агента: ' + (d.error || r.status));
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
 function connectSSE() {
   const es = new EventSource('/api/events');
 
@@ -6903,6 +7356,44 @@ function connectSSE() {
       e2ePlan = plan;
       if (drillTestType === 'e2e') renderContent();
     }
+  });
+
+  // ── Load test SSE events ────────────────────────────────────────────────────
+  es.addEventListener('load-started', (e) => {
+    const { config } = JSON.parse(e.data);
+    loadState = { status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0, totalErrors: 0, logs: [], script: config?.script || '', config, summary: null };
+    loadBuckets = [];
+    loadLogLines = [];
+    if (contextMode === 'load') { renderSidebar(); renderContent(); }
+  });
+
+  es.addEventListener('load-log', (e) => {
+    const { line } = JSON.parse(e.data);
+    loadLogLines.push(line);
+    if (loadLogLines.length > 500) loadLogLines.shift();
+    if (contextMode === 'load') {
+      const logEl = document.getElementById('loadLogContent');
+      if (logEl) {
+        const div = document.createElement('div');
+        div.className = 'load-log-line';
+        div.textContent = line;
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  });
+
+  es.addEventListener('load-progress', (e) => {
+    const { buckets, total, errors } = JSON.parse(e.data);
+    loadBuckets = buckets || [];
+    if (loadState) { loadState.totalRequests = total || 0; loadState.totalErrors = errors || 0; }
+    if (contextMode === 'load') { drawLoadCharts(); renderSidebar(); }
+  });
+
+  es.addEventListener('load-done', (e) => {
+    const { status, summary } = JSON.parse(e.data);
+    if (loadState) { loadState.status = status; loadState.summary = summary || null; loadState.endTime = Date.now(); }
+    if (contextMode === 'load') { renderSidebar(); renderContent(); }
   });
 
   es.onerror = () => {

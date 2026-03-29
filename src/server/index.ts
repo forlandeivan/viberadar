@@ -2111,6 +2111,47 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     // Keyed by absolute file path → per-file failure details from last test run
     const lastTestResults = new Map<string, { failed: number; errors: TestFileError[] }>();
 
+    // ── Load test state ─────────────────────────────────────────────────────────
+    interface LoadBucket { ts: number; count: number; errors: number; durSum: number; vus: number; }
+    interface LoadState {
+      status: 'idle' | 'running' | 'done' | 'stopped' | 'error';
+      startTime: number;
+      endTime?: number;
+      buckets: LoadBucket[];
+      totalRequests: number;
+      totalErrors: number;
+      logs: string[];
+      script: string;
+      config: Record<string, unknown> | null;
+      summary: Record<string, number> | null;
+    }
+    let loadRunning = false;
+    let loadProc: ReturnType<typeof spawn> | null = null;
+    let loadState: LoadState = {
+      status: 'idle', startTime: 0, buckets: [], totalRequests: 0,
+      totalErrors: 0, logs: [], script: '', config: null, summary: null,
+    };
+
+    function parseK6Dur(s: string): number {
+      let m: RegExpMatchArray | null;
+      if ((m = s.match(/^([\d.]+)µs$/))) return parseFloat(m[1]) / 1000;
+      if ((m = s.match(/^([\d.]+)ms$/))) return parseFloat(m[1]);
+      if ((m = s.match(/^([\d.]+)s$/)))  return parseFloat(m[1]) * 1000;
+      if ((m = s.match(/^(\d+)m([\d.]+)s$/))) return parseInt(m[1]) * 60000 + parseFloat(m[2]) * 1000;
+      return 0;
+    }
+
+    function parseK6Summary(text: string): Record<string, number> {
+      const s: Record<string, number> = {};
+      const dur = text.match(/http_req_duration[^:]*:\s+avg=([\w.µ]+)[^\n]*p\(90\)=([\w.µ]+)[^\n]*p\(95\)=([\w.µ]+)/);
+      if (dur) { s.avgDuration = parseK6Dur(dur[1]); s.p90Duration = parseK6Dur(dur[2]); s.p95Duration = parseK6Dur(dur[3]); }
+      const reqs = text.match(/\bhttp_reqs[^:]*:\s+(\d+)\s+([\d.]+)\/s/);
+      if (reqs) { s.totalRequests = parseInt(reqs[1]); s.rps = parseFloat(reqs[2]); }
+      const fail = text.match(/http_req_failed[^:]*:\s+([\d.]+)%/);
+      if (fail) s.errorPct = parseFloat(fail[1]);
+      return s;
+    }
+
     // ── SSE clients ────────────────────────────────────────────────────────────
     const sseClients = new Set<http.ServerResponse>();
 
@@ -4424,6 +4465,146 @@ a{color:var(--blue)}
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
           }
+        });
+        return;
+      }
+
+      // ── Load testing (k6) ─────────────────────────────────────────────────────
+
+      if (url === '/api/load/check' && req.method === 'GET') {
+        const k6 = spawn(WIN ? 'k6.cmd' : 'k6', ['version'], { shell: false });
+        let ver = '';
+        k6.stdout?.on('data', (d: Buffer) => { ver += d.toString(); });
+        k6.on('close', (code: number) => {
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify({ available: code === 0, version: ver.trim().split('\n')[0] || '' }));
+        });
+        k6.on('error', () => {
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify({ available: false, version: '' }));
+        });
+        return;
+      }
+
+      if (url === '/api/load/results' && req.method === 'GET') {
+        res.writeHead(200, jsonH);
+        res.end(JSON.stringify(loadState));
+        return;
+      }
+
+      if (url === '/api/load/stop' && req.method === 'POST') {
+        if (loadProc) { try { loadProc.kill('SIGTERM'); } catch {} loadProc = null; }
+        if (loadRunning) { loadRunning = false; loadState.status = 'stopped'; loadState.endTime = Date.now(); }
+        broadcast('load-done', { status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
+        res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (url === '/api/load/run' && req.method === 'POST') {
+        if (loadRunning) { res.writeHead(409, jsonH); res.end(JSON.stringify({ error: 'Already running' })); return; }
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          let cfg: Record<string, unknown>;
+          try { cfg = JSON.parse(body); } catch (e: any) {
+            res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Bad JSON' })); return;
+          }
+          const script = (cfg.script as string) || '';
+          if (!script.trim()) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No script provided' })); return; }
+
+          const scriptPath  = path.join(os.tmpdir(), `viberadar-k6-${Date.now()}.js`);
+          const jsonOutPath = path.join(os.tmpdir(), `viberadar-k6-out-${Date.now()}.ndjson`);
+          try { fs.writeFileSync(scriptPath, script, 'utf-8'); } catch (e: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: e.message })); return;
+          }
+
+          loadRunning = true;
+          loadState = {
+            status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0,
+            totalErrors: 0, logs: [], script, config: cfg, summary: null,
+          };
+          broadcast('load-started', { config: cfg } as Record<string, unknown>);
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+
+          loadProc = spawn(WIN ? 'k6.cmd' : 'k6', ['run', '--out', `json=${jsonOutPath}`, scriptPath], {
+            cwd: projectRoot, env: { ...process.env },
+          });
+
+          const addLog = (line: string) => {
+            loadState.logs.push(line);
+            if (loadState.logs.length > 500) loadState.logs.shift();
+            broadcast('load-log', { line } as Record<string, unknown>);
+          };
+
+          loadProc.stdout?.on('data', (chunk: Buffer) => {
+            for (const ln of chunk.toString().split(/\r?\n/)) { if (ln.trim()) addLog(ln); }
+          });
+          loadProc.stderr?.on('data', (chunk: Buffer) => {
+            for (const ln of chunk.toString().split(/\r?\n/)) { if (ln.trim()) addLog(ln); }
+          });
+
+          let jsonPos = 0;
+          const watchInterval = setInterval(() => {
+            if (!loadRunning) { clearInterval(watchInterval); return; }
+            try {
+              if (!fs.existsSync(jsonOutPath)) return;
+              const stat = fs.statSync(jsonOutPath);
+              if (stat.size <= jsonPos) return;
+              const buf = Buffer.alloc(stat.size - jsonPos);
+              const fd = fs.openSync(jsonOutPath, 'r');
+              fs.readSync(fd, buf, 0, buf.length, jsonPos);
+              fs.closeSync(fd);
+              jsonPos = stat.size;
+              let changed = false;
+              for (const ln of buf.toString().split(/\r?\n/)) {
+                if (!ln.trim()) continue;
+                try {
+                  const obj = JSON.parse(ln);
+                  if (obj.type !== 'Point') continue;
+                  const bucketTs = Math.floor((new Date(obj.data.time).getTime() - loadState.startTime) / 2000) * 2000;
+                  let bkt = loadState.buckets.find(b => b.ts === bucketTs);
+                  if (!bkt) {
+                    bkt = { ts: bucketTs, count: 0, errors: 0, durSum: 0, vus: 0 };
+                    loadState.buckets.push(bkt);
+                    loadState.buckets.sort((a, b) => a.ts - b.ts);
+                  }
+                  if (obj.metric === 'http_reqs')       { bkt.count   += obj.data.value; loadState.totalRequests++; changed = true; }
+                  if (obj.metric === 'http_req_failed' && obj.data.value > 0) { bkt.errors += obj.data.value; loadState.totalErrors++; changed = true; }
+                  if (obj.metric === 'http_req_duration') { bkt.durSum += obj.data.value; changed = true; }
+                  if (obj.metric === 'vus')               { bkt.vus = obj.data.value; changed = true; }
+                } catch {}
+              }
+              if (changed) {
+                const slice = loadState.buckets.slice(-30);
+                broadcast('load-progress', { buckets: slice, total: loadState.totalRequests, errors: loadState.totalErrors } as Record<string, unknown>);
+              }
+            } catch {}
+          }, 2000);
+
+          loadProc.on('close', (code: number | null) => {
+            clearInterval(watchInterval);
+            loadRunning = false;
+            loadProc = null;
+            if (loadState.status === 'running') {
+              loadState.status = (code === 0 || code === null) ? 'done' : 'done';
+            }
+            loadState.endTime = Date.now();
+            loadState.summary = parseK6Summary(loadState.logs.join('\n'));
+            broadcast('load-done', { status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
+            try { fs.unlinkSync(scriptPath); } catch {}
+            try { fs.unlinkSync(jsonOutPath); } catch {}
+          });
+
+          loadProc.on('error', (err: Error) => {
+            clearInterval(watchInterval);
+            loadRunning = false;
+            loadProc = null;
+            loadState.status = 'error';
+            loadState.endTime = Date.now();
+            addLog(`❌ k6 не запустился: ${err.message}`);
+            broadcast('load-done', { status: 'error', summary: null } as Record<string, unknown>);
+            try { fs.unlinkSync(scriptPath); } catch {}
+          });
         });
         return;
       }
