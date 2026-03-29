@@ -1431,7 +1431,10 @@ function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCata
   };
 
   return [
-    `Добавь обязательное поле \`${fieldName}\` во все лог-вызовы, где оно отсутствует.`,
+    `⚠️ КРИТИЧНО: НЕ рефакторь код, НЕ переименовывай переменные, НЕ меняй архитектуру, НЕ удаляй существующий код.`,
+    `ТОЛЬКО добавь поле \`${fieldName}\` в существующие вызовы логгера там, где оно отсутствует.`,
+    ``,
+    `⚠️ Обработай ВСЕ ${affectedModules.length} модулей из списка поочерёдно — не останавливайся после первого файла.`,
     ``,
     fieldHints[fieldName] ? `Описание поля: ${fieldHints[fieldName]}` : '',
     ``,
@@ -1439,14 +1442,15 @@ function buildObsEnrichFieldPrompt(fieldName: string, catalog: ObservabilityCata
       ? `Модули с пропущенным полем "${fieldName}" (${affectedModules.length}):\n${affectedModules.join('\n')}`
       : '',
     ``,
-    `Что сделать:`,
-    `- Открой каждый модуль из списка`,
+    `Что сделать (для каждого модуля из списка):`,
+    `- Открой файл`,
     `- Найди все вызовы логгера (logger.info, logger.warn, logger.error и т.д.)`,
     `- Добавь поле "${fieldName}" в каждый вызов, где оно отсутствует`,
     `- Значение поля должно быть взято из контекста (request, config, env) — не хардкодь`,
     `- В .tsx файлах НЕ добавляй utility-exports — React Fast Refresh сделает full reload всего модуля`,
+    `- Перейди к следующему модулю из списка`,
     ``,
-    `После всех правок запусти: npm run check -- --pretty false`,
+    `После обработки ВСЕХ модулей запусти: npm run check -- --pretty false`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
   ].filter(Boolean).join('\n');
@@ -2526,9 +2530,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             .filter(Boolean);
           if (selectedV2.length === 0) { failBeforeStart('Выбранные модули не найдены'); return; }
           prompt = buildObsBatchAddCriticalLogsPrompt(selectedV2, obs.catalog);
-        } else if (indices.length > 0 && obs) {
-          // Existing catalog-based flow
-          const selectedItems = indices.map(i => obs.catalog[i]).filter(Boolean);
+        } else if (obs) {
+          // Catalog-based flow: prefer paths, fall back to legacy indices
+          const paths: string[] = Array.isArray(item.meta?.catalogPaths) ? item.meta.catalogPaths : [];
+          const selectedItems = paths.length > 0
+            ? paths.map(p => obs.catalog.find(c => c.modulePath === p)).filter(Boolean) as ObservabilityCatalogItem[]
+            : indices.map(i => obs.catalog[i]).filter(Boolean);
           if (selectedItems.length === 0) { failBeforeStart('Выбранные модули не найдены в каталоге'); return; }
           const builtPrompt = buildObsFixSelectedPrompt(selectedItems, item.meta || {});
           if (builtPrompt === null) { failBeforeStart('Все выбранные модули уже соответствуют стандарту — нечего исправлять'); return; }

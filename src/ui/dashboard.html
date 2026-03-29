@@ -2705,12 +2705,12 @@ function obsToggleAll(groupId) {
 function obsRunSelected(groupId, task, baseMeta) {
   const container = document.getElementById('obs-detail-' + groupId);
   if (!container) return;
-  const indices = [];
+  const paths = [];
   container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
-    indices.push(parseInt(cb.dataset.idx, 10));
+    if (cb.dataset.path) paths.push(cb.dataset.path);
   });
-  if (indices.length === 0) return;
-  runAgentTask('obs-fix-selected', null, null, null, { ...baseMeta, catalogIndices: indices });
+  if (paths.length === 0) return;
+  runAgentTask('obs-fix-selected', null, null, null, { ...baseMeta, catalogPaths: paths });
 }
 
 function obsMissingRunSelected(groupId) {
@@ -3810,7 +3810,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
       const catIdx = catalog.indexOf(ci);
       const otherMissing = (ci.missingFields||[]).filter(f => f !== name);
       const otherHint = otherMissing.length > 0 ? `<span style="color:var(--dim);font-size:0.8em;flex-shrink:0" title="также отсутствуют: ${escapeHtml(otherMissing.join(', '))}">+${escapeHtml(otherMissing.join(', '))}</span>` : '';
-      return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span>${otherHint}</label>`;
+      return `<label class="obs-detail-item"><input type="checkbox" data-path="${escapeHtml(ci.modulePath)}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span>${otherHint}</label>`;
     }).join('');
     const detail = hasAgent ? `
       <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="field" data-obs-meta='{"fieldName":"${escapeHtml(name)}"}' data-obs-label="поле ${escapeHtml(name)}">
@@ -3997,7 +3997,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
               const detailItems = items.map((ci, i) => {
                 const catIdx = catalog.indexOf(ci);
                 const mf = (ci.missingFields||[]).join(', ') || '—';
-                return `<label class="obs-detail-item"><input type="checkbox" data-idx="${catIdx}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
+                return `<label class="obs-detail-item"><input type="checkbox" data-path="${escapeHtml(ci.modulePath)}" onchange="obsUpdateSelectedCount('${groupId}')"><span title="${escapeHtml(ci.modulePath)}">${escapeHtml(ci.modulePath.split('/').slice(-2).join('/'))}</span><span style="color:var(--dim);flex-shrink:0">${ci.format}</span></label>`;
               }).join('');
               const detail = hasAgent ? `
                 <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="rec" data-obs-meta='{"recommendationType":"${rec}"}' data-obs-label="${recLabels[rec] || rec}">
