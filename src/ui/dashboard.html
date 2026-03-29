@@ -3836,7 +3836,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     const missing = (i.missingFields || []);
     const missingStr = missing.length ? missing.join(', ') : '—';
     const btn = hasAgent
-      ? `<button class="obs-action-btn" onclick="event.stopPropagation();runAgentTask('obs-fix-module',null,null,null,{catalogIndex:${idx}})">исправить</button>`
+      ? `<button class="obs-action-btn" onclick="event.stopPropagation();runAgentTask('obs-fix-module',null,null,null,{modulePath:${JSON.stringify(i.modulePath)}})">исправить</button>`
       : '';
     return `
     <div class="obs-cat-row">

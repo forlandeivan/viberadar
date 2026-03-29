@@ -2510,8 +2510,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         prompt = buildObsBatchRecommendationPrompt(item.meta.recommendationType, obs.catalog);
       } else if (task === 'obs-fix-module') {
         const obs = currentData.observability;
-        const idx = item.meta?.catalogIndex;
-        const catalogItem = typeof idx === 'number' ? obs?.catalog[idx] : null;
+        const modulePath = item.meta?.modulePath;
+        const catalogItem = modulePath ? obs?.catalog.find(c => c.modulePath === modulePath) : null;
         if (!obs || !catalogItem) { failBeforeStart('Нет данных observability или модуль не найден в каталоге'); return; }
         prompt = buildObsFixModulePrompt(catalogItem.modulePath, catalogItem);
       } else if (task === 'obs-fix-selected') {
@@ -3152,9 +3152,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const recType = meta?.recommendationType || 'unknown';
         title = `${agentLabel} — исправить все (${recType})`;
       } else if (task === 'obs-fix-module') {
-        const idx = meta?.catalogIndex;
-        const catItem = typeof idx === 'number' ? currentData.observability?.catalog[idx] : null;
-        const modName = catItem?.modulePath || 'unknown';
+        const modName = meta?.modulePath || 'unknown';
         title = `${agentLabel} — исправить логи в "${modName}"`;
       } else if (task === 'obs-fix-selected') {
         const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
