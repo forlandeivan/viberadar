@@ -3318,7 +3318,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       const parsedUrl = new URL(rawUrl, 'http://127.0.0.1');
       const url = parsedUrl.pathname;
 
-      if (url === '/' || url === '/radar/qa' || url === '/radar/observability' || url === '/radar/docs' || url === '/radar/services') {
+      if (url === '/' || url.startsWith('/radar/')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(DASHBOARD_HTML);
         return;
@@ -4472,7 +4472,7 @@ a{color:var(--blue)}
       // ── Load testing (k6) ─────────────────────────────────────────────────────
 
       if (url === '/api/load/check' && req.method === 'GET') {
-        const k6 = spawn(WIN ? 'k6.cmd' : 'k6', ['version'], { shell: true, stdio: 'pipe' });
+        const k6 = spawn('k6', ['version'], { shell: WIN, stdio: 'pipe' });
         let ver = '';
         k6.stdout?.on('data', (d: Buffer) => { ver += d.toString(); });
         k6.on('close', (code: number) => {
@@ -4526,8 +4526,8 @@ a{color:var(--blue)}
           broadcast('load-started', { config: cfg } as Record<string, unknown>);
           res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
 
-          loadProc = spawn(WIN ? 'k6.cmd' : 'k6', ['run', '--out', `json=${jsonOutPath}`, scriptPath], {
-            cwd: projectRoot, env: { ...process.env }, shell: true, stdio: 'pipe',
+          loadProc = spawn('k6', ['run', '--out', `json=${jsonOutPath}`, scriptPath], {
+            cwd: projectRoot, env: { ...process.env }, shell: WIN, stdio: 'pipe',
           });
 
           const addLog = (line: string) => {
