@@ -4472,7 +4472,7 @@ a{color:var(--blue)}
       // ── Load testing (k6) ─────────────────────────────────────────────────────
 
       if (url === '/api/load/check' && req.method === 'GET') {
-        const k6 = spawn(WIN ? 'k6.cmd' : 'k6', ['version'], { shell: false });
+        const k6 = spawn(WIN ? 'k6.cmd' : 'k6', ['version'], { shell: true, stdio: 'pipe' });
         let ver = '';
         k6.stdout?.on('data', (d: Buffer) => { ver += d.toString(); });
         k6.on('close', (code: number) => {
@@ -4527,7 +4527,7 @@ a{color:var(--blue)}
           res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
 
           loadProc = spawn(WIN ? 'k6.cmd' : 'k6', ['run', '--out', `json=${jsonOutPath}`, scriptPath], {
-            cwd: projectRoot, env: { ...process.env },
+            cwd: projectRoot, env: { ...process.env }, shell: true, stdio: 'pipe',
           });
 
           const addLog = (line: string) => {
