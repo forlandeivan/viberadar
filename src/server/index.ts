@@ -3162,7 +3162,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const modName = meta?.modulePath || 'unknown';
         title = `${agentLabel} — исправить логи в "${modName}"`;
       } else if (task === 'obs-fix-selected') {
-        const count = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
+        const count = Array.isArray(meta?.catalogPaths) ? meta.catalogPaths.length : Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
         const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
         title = `${agentLabel} — ${label} (${count} модулей)`;
       } else if (task === 'actualize-docs') {
