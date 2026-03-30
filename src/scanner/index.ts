@@ -690,6 +690,30 @@ function detectFailurePoints(content: string): FailurePoint[] {
     return raw.length > 80 ? raw.slice(0, 77) + '...' : raw;
   }
 
+  // Build a per-line "inside try-block" map by tracking brace depth at try-open positions.
+  // This lets rule 4/5 correctly detect fetch/axios that are wrapped in a distant try {}.
+  const tryOpenDepths: number[] = []; // brace depths where a try-block opened
+  const insideTryAtLine: boolean[] = new Array(lines.length).fill(false);
+  {
+    let depth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      // track try opens
+      if (/\btry\s*\{/.test(l)) tryOpenDepths.push(depth + 1); // +1 because { on this line
+      for (const ch of l) {
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          // close any try blocks at this depth
+          for (let k = tryOpenDepths.length - 1; k >= 0; k--) {
+            if (tryOpenDepths[k] > depth) { tryOpenDepths.splice(k, 1); break; }
+          }
+          depth--;
+        }
+      }
+      insideTryAtLine[i] = tryOpenDepths.length > 0;
+    }
+  }
+
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
 
@@ -714,10 +738,13 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 4. fetch/axios without nearby try/catch
+    // Use insideTryAtLine (whole-file analysis) + small window for .catch() fallback
     if (/\b(fetch|axios)\s*[.(]/.test(trimmed) || /\baxios\.\w+\s*\(/.test(trimmed)) {
-      let hasTryCatch = false;
-      for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
-        if (/\btry\s*\{/.test(lines[j]) || /\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+      let hasTryCatch = insideTryAtLine[i];
+      if (!hasTryCatch) {
+        for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
+          if (/\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+        }
       }
       if (!hasTryCatch) {
         points.push({ type: 'http-no-error-handling', lineApprox: i + 1, snippet: snip(i) });
@@ -727,9 +754,11 @@ function detectFailurePoints(content: string): FailurePoint[] {
     // 5. DB operations without nearby try/catch
     if (/\b(prisma|mongoose|sequelize|typeorm|knex|drizzle)\b.*\.\w+\s*\(/i.test(trimmed) ||
         /\.query\s*\(\s*['"`](?:SELECT|INSERT|UPDATE|DELETE)/i.test(trimmed)) {
-      let hasTryCatch = false;
-      for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
-        if (/\btry\s*\{/.test(lines[j]) || /\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+      let hasTryCatch = insideTryAtLine[i];
+      if (!hasTryCatch) {
+        for (let j = Math.max(0, i - 3); j < Math.min(i + 8, lines.length); j++) {
+          if (/\.catch\s*\(/.test(lines[j])) { hasTryCatch = true; break; }
+        }
       }
       if (!hasTryCatch) {
         points.push({ type: 'db-no-error-handling', lineApprox: i + 1, snippet: snip(i) });
