@@ -1485,6 +1485,39 @@
     color: var(--text); font-size: 12px; padding: 5px 9px; outline: none;
   }
   .load-save-input:focus { border-color: var(--blue); }
+  /* Library view */
+  .load-library-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .load-library-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px; padding: 0 20px 20px;
+  }
+  .load-library-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  }
+  .load-library-card:hover { border-color: var(--blue); background: #1a2a3a22; }
+  .load-library-card-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .load-library-card-meta { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .load-library-card-actions { display: flex; gap: 6px; }
+  .load-library-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 60px 20px; text-align: center; color: var(--dim);
+  }
+  /* Editor topbar */
+  .load-editor-topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  }
+  .load-back-btn {
+    background: none; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 5px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .load-back-btn:hover { border-color: var(--fg); color: var(--text); }
+  /* Legacy list (kept for compatibility) */
   .load-scripts-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
   .load-script-item {
     display: flex; align-items: center; gap: 8px; padding: 8px 10px;
@@ -1664,6 +1697,7 @@ let loadAiPromptDraft = '';    // AI prompt textarea draft
 let loadAiGenerating  = false; // waiting for agent to produce script
 let loadSavedScripts  = [];    // [{ name, date, script }]
 let loadScriptNameDraft = '';  // save name input draft
+let loadView = 'library';     // 'library' | 'editor'
 
 function toggleObsHint(id) {
   document.getElementById(id).classList.toggle('open');
@@ -1753,11 +1787,9 @@ function switchMode(nextMode) {
   if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
   if (contextMode === 'load') {
     loadRefreshScripts();
-    // restore saved token after render
-    requestAnimationFrame(() => {
-      const saved = localStorage.getItem('vr_load_token');
-      if (saved) { const el = document.getElementById('loadToken'); if (el) el.value = saved; }
-    });
+    // reset to library view when switching to load tab (unless test is running)
+    const isRunning = loadState && loadState.status === 'running';
+    if (!isRunning) loadView = 'library';
   }
   setModeRoute(contextMode);
   document.getElementById('searchInput').value = searchQuery;
@@ -6766,7 +6798,7 @@ async function checkK6() {
 }
 
 function buildDefaultScript(cfg) {
-  const baseUrl = cfg.baseUrl || 'http://localhost:3000';
+  const baseUrl = cfg.baseUrl || 'http://localhost:5000';
   const endpoints = (cfg.endpoints || ['/']).filter(Boolean);
   const endpointLines = endpoints.map(ep =>
     `  const r = http.get(\`\${BASE_URL}${ep}\`);\n  check(r, { 'status 2xx': (res) => res.status >= 200 && res.status < 300 });`
@@ -6800,7 +6832,7 @@ function generateScriptFromFeature(featureKey) {
   const apiMods = mods.filter(m => m.type === 'service' || (m.name && /api|service|controller|handler/i.test(m.name)));
   const endpoints = apiMods.slice(0, 5).map(m => '/' + m.name.replace(/\.(ts|js)$/, '').replace(/\\/g, '/'));
   return buildDefaultScript({
-    baseUrl: 'http://localhost:3000',
+    baseUrl: 'http://localhost:5000',
     vus: 10,
     duration: '30s',
     endpoints: endpoints.length ? endpoints : ['/'],
@@ -6900,7 +6932,7 @@ function renderLoad(c) {
   const isDone    = loadState && (loadState.status === 'done' || loadState.status === 'stopped');
   const hasErr    = loadState && loadState.status === 'error';
 
-  // k6 install check message
+  // k6 not installed
   if (loadK6Available === false) {
     c.innerHTML = `<div class="load-screen"><div class="load-no-k6">
       <h3>⚠ k6 не найден</h3>
@@ -6914,20 +6946,56 @@ function renderLoad(c) {
     </div></div>`;
     return;
   }
-
   if (loadK6Available === null) {
     c.innerHTML = `<div class="load-screen" style="padding:40px;text-align:center;color:var(--muted)">Проверяю k6…</div>`;
     return;
   }
 
+  // If test is running — force editor view
+  const view = isRunning ? 'editor' : loadView;
+
+  // ─── LIBRARY VIEW ─────────────────────────────────────────────────────────
+  if (view === 'library') {
+    const cards = loadSavedScripts.map(s => `
+      <div class="load-library-card" onclick="loadOpenScript(${JSON.stringify(s.name)})">
+        <div class="load-library-card-name">${escapeHtml(s.name)}</div>
+        <div class="load-library-card-meta">${escapeHtml(s.date)}</div>
+        <div class="load-library-card-actions">
+          <button class="load-script-load-btn" onclick="event.stopPropagation();loadOpenScript(${JSON.stringify(s.name)})">▶ Открыть</button>
+          <button class="load-script-del-btn" onclick="event.stopPropagation();loadDeleteScript(${JSON.stringify(s.name)})">✕</button>
+        </div>
+      </div>`).join('');
+
+    c.innerHTML = `<div class="load-screen">
+      <div class="load-library-header">
+        <div>
+          <div style="font-size:16px;font-weight:600;color:var(--fg)">Нагрузочные тесты</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${loadK6Version ? escapeHtml(loadK6Version) : ''} · ${loadSavedScripts.length} сохранённых</div>
+        </div>
+        <button class="load-btn load-btn-run" style="font-size:13px;padding:8px 20px" onclick="loadNewTest()">＋ Новый тест</button>
+      </div>
+
+      ${loadSavedScripts.length === 0
+        ? `<div class="load-library-empty">
+            <div style="font-size:32px;margin-bottom:12px">📋</div>
+            <div style="font-size:14px;font-weight:500;margin-bottom:6px">Нет сохранённых тестов</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Создай первый тест — напиши k6 скрипт или сгенерируй через AI</div>
+            <button class="load-btn load-btn-run" onclick="loadNewTest()">＋ Создать первый тест</button>
+          </div>`
+        : `<div class="load-library-grid">${cards}</div>`
+      }
+    </div>`;
+    return;
+  }
+
+  // ─── EDITOR VIEW ──────────────────────────────────────────────────────────
   const features = (D && D.features) || [];
   const featureOptions = features.map(f =>
     `<option value="${f.key}">${f.label || f.key}</option>`
   ).join('');
 
-  // Build script draft if empty
   if (!loadScriptDraft) {
-    loadScriptDraft = buildDefaultScript({ baseUrl: 'http://localhost:3000', vus: 10, duration: '30s', endpoints: ['/'] });
+    loadScriptDraft = buildDefaultScript({ baseUrl: 'http://localhost:5000', vus: 10, duration: '30s', endpoints: ['/'] });
   }
 
   const statusBadge = !loadState || loadState.status === 'idle' ? '' :
@@ -6941,12 +7009,17 @@ function renderLoad(c) {
 
   c.innerHTML = `<div class="load-screen">
 
+    <div class="load-editor-topbar">
+      ${!isRunning ? `<button class="load-back-btn" onclick="loadView='library';renderContent()">← Все тесты</button>` : ''}
+      <span style="font-size:12px;color:var(--muted);margin-left:4px">${statusBadge}</span>
+    </div>
+
     <div class="load-section">
-      <div class="load-section-title">Конфигурация ${loadK6Version ? `<span style="color:var(--dim);font-weight:400">${escapeHtml(loadK6Version)}</span>` : ''} ${statusBadge}</div>
+      <div class="load-section-title">Конфигурация ${loadK6Version ? `<span style="color:var(--dim);font-weight:400">${escapeHtml(loadK6Version)}</span>` : ''}</div>
       <div class="load-config-row">
         <div class="load-config-field" style="flex:1;min-width:200px">
           <label>Base URL</label>
-          <input id="loadBaseUrl" type="text" value="http://localhost:3000" placeholder="http://localhost:3000" />
+          <input id="loadBaseUrl" type="text" value="http://localhost:5000" placeholder="http://localhost:5000" />
         </div>
         <div class="load-config-field">
           <label>VUs</label>
@@ -6959,7 +7032,7 @@ function renderLoad(c) {
       </div>
       <div class="load-config-row" style="margin-top:8px">
         <div class="load-config-field" style="flex:1;min-width:300px">
-          <label>Bearer Token <span style="color:var(--dim);font-weight:400;font-size:11px">(→ переменная <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">__ENV.TOKEN</code>)</span></label>
+          <label>Bearer Token <span style="color:var(--dim);font-weight:400;font-size:11px">(→ <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">__ENV.TOKEN</code>)</span></label>
           <input id="loadToken" type="password" placeholder="Вставь Bearer-токен (необязательно)" style="font-family:monospace;font-size:12px" oninput="localStorage.setItem('vr_load_token', this.value)" />
         </div>
         ${featureOptions ? `<div class="load-config-field">
@@ -6979,9 +7052,9 @@ function renderLoad(c) {
 
     <div class="load-section">
       <div class="load-section-title">🤖 AI генерация скрипта</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Опиши сценарий — агент сгенерирует k6-скрипт и вставит его в редактор</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Опиши сценарий — агент найдёт эндпоинты в коде и сгенерирует k6-скрипт</div>
       <div class="load-ai-prompt-wrap">
-        <textarea class="load-ai-prompt" id="loadAiPrompt" placeholder="Например: загрузка аудио .mp3 на /api/transcribe с полем language=ru, нужна авторизация Bearer-токеном, тестировать 20 VU 1 минуту&#10;&#10;Или: чат с RAG — POST /api/chat с body {message, knowledge_base_id, workspace_id}, stream:false, проверить что ответ содержит поле answer">${escapeHtml(loadAiPromptDraft)}</textarea>
+        <textarea class="load-ai-prompt" id="loadAiPrompt" placeholder="Например: загрузка аудио .mp3 на /api/transcribe с полем language=ru, нужна авторизация Bearer-токеном, тестировать 20 VU 1 минуту&#10;&#10;Или: чат с RAG — POST /api/chat с body {message, knowledge_base_id, workspace_id}, stream:false">${escapeHtml(loadAiPromptDraft)}</textarea>
         <button class="load-btn load-btn-ai" id="loadAiGenBtn" onclick="loadAiGenerateScript()" ${agentRunning ? 'disabled' : ''}>🤖 Сгенерировать<br>через AI</button>
       </div>
       <div class="load-ai-status" id="loadAiStatus">${loadAiGenerating ? '⏳ Агент генерирует скрипт… следи в терминале ↓' : ''}</div>
@@ -6991,31 +7064,9 @@ function renderLoad(c) {
       <div class="load-section-title">k6 скрипт <span style="font-weight:400;color:var(--dim)">(редактируемый)</span></div>
       <textarea class="load-script-editor" id="loadScriptEditor" spellcheck="false">${escapeHtml(loadScriptDraft)}</textarea>
       <div class="load-save-row">
-        <input class="load-save-input" id="loadScriptName" placeholder="Название скрипта, например: transcribe-audio-20vu" value="${escapeHtml(loadScriptNameDraft)}" />
-        <button class="load-btn" style="white-space:nowrap" onclick="loadSaveScript()">💾 Сохранить скрипт</button>
+        <input class="load-save-input" id="loadScriptName" placeholder="Название, например: transcribe-audio-20vu" value="${escapeHtml(loadScriptNameDraft)}" />
+        <button class="load-btn" style="white-space:nowrap" onclick="loadSaveScript()">💾 Сохранить</button>
       </div>
-    </div>
-
-    <div class="load-section">
-      <div class="load-section-title" style="display:flex;align-items:center;gap:8px">
-        📁 Сохранённые скрипты
-        <span style="font-size:11px;font-weight:400;color:var(--muted)">${loadSavedScripts.length} шт.</span>
-        <button class="load-btn" style="margin-left:auto;padding:2px 8px;font-size:11px" onclick="loadRefreshScripts()">↻ обновить</button>
-      </div>
-      ${loadSavedScripts.length === 0
-        ? `<div style="font-size:12px;color:var(--muted);padding:8px 0">Нет сохранённых скриптов — напиши скрипт выше и нажми «💾 Сохранить»</div>`
-        : `<div class="load-scripts-list">
-          ${loadSavedScripts.map(s => `
-            <div class="load-script-item">
-              <div class="load-script-item-name">${escapeHtml(s.name)}</div>
-              <div class="load-script-item-meta">${escapeHtml(s.date)}</div>
-              <div class="load-script-item-actions">
-                <button class="load-script-load-btn" onclick="loadLoadScript(${JSON.stringify(s.name)})">▶ Загрузить</button>
-                <button class="load-script-del-btn" onclick="loadDeleteScript(${JSON.stringify(s.name)})">✕</button>
-              </div>
-            </div>`).join('')}
-          </div>`
-      }
     </div>
 
     ${(isRunning || isDone || hasErr) ? `<div class="load-section">
@@ -7056,11 +7107,13 @@ function renderLoad(c) {
   const logEl = document.getElementById('loadLogContent');
   if (logEl) logEl.scrollTop = logEl.scrollHeight;
 
+  // Restore token
+  const savedToken = localStorage.getItem('vr_load_token');
+  if (savedToken) { const el = document.getElementById('loadToken'); if (el) el.value = savedToken; }
+
   // Sync textarea with draft
   const ta = document.getElementById('loadScriptEditor');
-  if (ta) {
-    ta.addEventListener('input', () => { loadScriptDraft = ta.value; });
-  }
+  if (ta) { ta.addEventListener('input', () => { loadScriptDraft = ta.value; }); }
 
   // Feature selector auto-generates script
   const featSel = document.getElementById('loadFeature');
@@ -7083,8 +7136,24 @@ function renderLoad(c) {
   }
 }
 
+function loadNewTest() {
+  loadScriptDraft = '';
+  loadScriptNameDraft = '';
+  loadView = 'editor';
+  renderContent();
+}
+
+function loadOpenScript(name) {
+  const s = loadSavedScripts.find(x => x.name === name);
+  if (!s) return;
+  loadScriptDraft = s.script;
+  loadScriptNameDraft = s.name;
+  loadView = 'editor';
+  renderContent();
+}
+
 function loadGenerateScript() {
-  const baseUrl  = document.getElementById('loadBaseUrl')?.value || 'http://localhost:3000';
+  const baseUrl  = document.getElementById('loadBaseUrl')?.value || 'http://localhost:5000';
   const vus      = parseInt(document.getElementById('loadVus')?.value || '10');
   const duration = document.getElementById('loadDuration')?.value || '30s';
   const featKey  = document.getElementById('loadFeature')?.value || '';
@@ -7165,7 +7234,7 @@ async function loadAiGenerateScript() {
   const userPrompt = promptEl ? promptEl.value.trim() : loadAiPromptDraft.trim();
   if (!userPrompt) { alert('Опиши сценарий нагрузочного теста в поле выше'); return; }
 
-  const baseUrl  = document.getElementById('loadBaseUrl')?.value  || 'http://localhost:3000';
+  const baseUrl  = document.getElementById('loadBaseUrl')?.value  || 'http://localhost:5000';
   const vus      = document.getElementById('loadVus')?.value      || '10';
   const duration = document.getElementById('loadDuration')?.value || '30s';
 
