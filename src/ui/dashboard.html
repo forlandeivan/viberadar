@@ -810,6 +810,9 @@
     .obs-run-selected { padding:8px 16px; font-size:13px; font-weight:600; background:var(--accent); color:var(--bg); border:none; border-radius:4px; cursor:pointer; min-height:36px; }
     .obs-run-selected:hover { opacity:0.85; }
     .obs-run-selected:disabled { opacity:0.4; cursor:not-allowed; }
+    .obs-copy-btn { padding:8px 10px; font-size:13px; background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:4px; cursor:pointer; min-height:36px; title-attr:attr(title); }
+    .obs-copy-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(88,166,255,0.08); }
+    .obs-copy-btn:disabled { opacity:0.35; cursor:not-allowed; }
     .obs-select-all { font-size:12px; color:var(--dim); cursor:pointer; background:none; border:none; padding:4px 8px; }
     .obs-select-all:hover { color:var(--accent); }
     .obs-tier-badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
@@ -2776,6 +2779,7 @@ function obsUpdateSelectedCount(groupId) {
     }
     btn.disabled = checked === 0;
   }
+  container.querySelectorAll('.obs-copy-btn.obs-copy-selected').forEach(b => { b.disabled = checked === 0; });
   // Update floating action bar
   const bar = document.getElementById('obsFloatingBar');
   if (!bar) return;
@@ -2874,6 +2878,60 @@ function obsMissingRunSelected(groupId) {
   });
   if (indices.length === 0) return;
   runAgentTask('obs-fix-selected', null, null, null, { missingLogIndices: indices, recommendationType: 'add event' });
+}
+
+// ─── Obs: Copy prompt to clipboard ────────────────────────────────────────────
+async function obsCopyPrompt(task, meta) {
+  try {
+    const r = await fetch('/api/obs-build-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, meta }),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.prompt) { alert('Не удалось собрать промпт: ' + (d.error || r.status)); return; }
+    await navigator.clipboard.writeText(d.prompt);
+    showObsCopyToast();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+// Copy for multi-select groups (missing logs)
+async function obsCopyMissingSelected(groupId) {
+  const container = document.getElementById('obs-detail-' + groupId);
+  if (!container) return;
+  const indices = [];
+  container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.missingIdx, 10);
+    if (!isNaN(idx)) indices.push(idx);
+  });
+  if (indices.length === 0) { alert('Выбери хотя бы один модуль'); return; }
+  await obsCopyPrompt('obs-fix-selected', { missingLogIndices: indices, recommendationType: 'add event' });
+}
+
+// Copy for multi-select groups (catalog paths)
+async function obsCopySelected(groupId, baseMeta) {
+  const container = document.getElementById('obs-detail-' + groupId);
+  if (!container) return;
+  const paths = [];
+  container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+    if (cb.dataset.path) paths.push(cb.dataset.path);
+  });
+  if (paths.length === 0) { alert('Выбери хотя бы один модуль'); return; }
+  await obsCopyPrompt('obs-fix-selected', { ...baseMeta, catalogPaths: paths });
+}
+
+function showObsCopyToast() {
+  let t = document.getElementById('obsCopyToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'obsCopyToast';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:8px 20px;border-radius:8px;font-size:13px;z-index:9999;pointer-events:none;transition:opacity 0.3s';
+    document.body.appendChild(t);
+  }
+  t.textContent = '📋 Промпт скопирован — вставь в IDE';
+  t.style.opacity = '1';
+  clearTimeout(t._to);
+  t._to = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
 async function runTests(featureKey, testType) {
@@ -3882,6 +3940,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     const btn = hasAgent
       ? `<button class="obs-action-btn" onclick="event.stopPropagation();showNoisySuppressConfirm(${idx})">${actionLabel}</button>`
       : '';
+    const copyBtn = `<button class="obs-copy-btn" title="Скопировать промпт" onclick="event.stopPropagation();obsCopyPrompt('obs-suppress-pattern',window.__noisyPatterns[${idx}])">📋</button>`;
 
     // Module list for detail section
     const moduleRows = relatedModules.map(c => {
@@ -3914,6 +3973,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
         <strong style="flex-shrink:0;color:var(--red)">×${i.count} → ${recLabels[i.recommendation] || i.recommendation}</strong>
         ${moduleLabel}
         ${btn}
+        ${copyBtn}
         ${expandBtn}
       </div>
       <div id="obs-noisy-detail-${idx}" class="obs-noisy-detail">
@@ -3958,7 +4018,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
           ${fpPreview || moreCount ? `<div class="obs-fp-list" style="width:100%">${fpPreview}${moreCount}</div>` : ''}
         </label>`;
       }).join('');
-      const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">добавить логи выбранным</button>` : '';
+      const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">добавить логи выбранным</button><button class="obs-copy-btn obs-copy-selected" disabled title="Скопировать промпт" onclick="obsCopyMissingSelected('${groupId}')">📋</button>` : '';
       const detail = hasAgent ? `
         <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="missing" data-obs-label="${tierLabels[tier]}">
           <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
@@ -4001,7 +4061,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
         </div>
         <div class="obs-detail-list">${detailItems}</div>
         <div class="obs-detail-bar">
-          <button class="obs-run-selected" disabled data-obs-field-name="${escapeHtml(name)}" onclick="obsRunSelected('${groupId}','obs-fix-selected',{fieldName:'${escapeHtml(name)}'})">Добавить \`${escapeHtml(name)}\`</button>
+          <button class="obs-run-selected" disabled data-obs-field-name="${escapeHtml(name)}" onclick="obsRunSelected('${groupId}','obs-fix-selected',{fieldName:'${escapeHtml(name)}'})">Добавить \`${escapeHtml(name)}\`</button><button class="obs-copy-btn obs-copy-selected" disabled title="Скопировать промпт" onclick="obsCopySelected('${groupId}',{fieldName:'${escapeHtml(name)}'})">📋</button>
         </div>
       </div>` : '';
     return `<div>
@@ -4018,7 +4078,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     const missing = (i.missingFields || []);
     const missingStr = missing.length ? missing.join(', ') : '—';
     const btn = hasAgent
-      ? `<button class="obs-action-btn" data-module-path="${escapeHtml(i.modulePath)}" onclick="event.stopPropagation();runAgentTask('obs-fix-module',null,null,null,{modulePath:this.dataset.modulePath})">исправить</button>`
+      ? `<button class="obs-action-btn" data-module-path="${escapeHtml(i.modulePath)}" onclick="event.stopPropagation();runAgentTask('obs-fix-module',null,null,null,{modulePath:this.dataset.modulePath})">исправить</button><button class="obs-copy-btn" title="Скопировать промпт" data-module-path="${escapeHtml(i.modulePath)}" onclick="event.stopPropagation();obsCopyPrompt('obs-fix-module',{modulePath:this.dataset.modulePath})">📋</button>`
       : '';
     return `
     <div class="obs-cat-row">
@@ -4188,7 +4248,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
                   </div>
                   <div class="obs-detail-list">${detailItems}</div>
                   <div class="obs-detail-bar">
-                    <button class="obs-run-selected" disabled onclick="obsRunSelected('${groupId}','obs-fix-selected',{recommendationType:'${rec}'})">исправить выбранные</button>
+                    <button class="obs-run-selected" disabled onclick="obsRunSelected('${groupId}','obs-fix-selected',{recommendationType:'${rec}'})">исправить выбранные</button><button class="obs-copy-btn obs-copy-selected" disabled title="Скопировать промпт" onclick="obsCopySelected('${groupId}',{recommendationType:'${rec}'})">📋</button>
                   </div>
                 </div>` : '';
               return `<div>
