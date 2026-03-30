@@ -3696,6 +3696,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         return;
       }
 
+      if (url === '/api/agent-whoami' && req.method === 'GET') {
+        const cmd = WIN ? 'claude.cmd auth status' : 'claude auth status';
+        let out = '';
+        const proc = spawn(cmd, [], { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+        proc.stderr?.on('data', (d: Buffer) => { out += d.toString(); });
+        proc.on('close', () => {
+          // Parse email from output like "Logged in as: user@example.com" or "Account: user@example.com"
+          const match = out.match(/logged in as[:\s]+([^\s\n]+)/i)
+            || out.match(/account[:\s]+([^\s\n]+@[^\s\n]+)/i)
+            || out.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+          const email = match ? match[1] : null;
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify({ email, raw: out.trim().slice(0, 300) }));
+        });
+        return;
+      }
+
       if (url === '/api/agent-reauth' && req.method === 'POST') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
@@ -3703,26 +3721,18 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const emit = (line: string, isError = false) => broadcast('agent-output', { runId: null, line, isError });
         const done = () => broadcast('agent-done', { queueLength: 0 });
         emit(`🔑 Перелогинивание ${agent === 'claude' ? 'Claude Code' : 'Codex'}…`);
-        const logoutCmd = WIN
-          ? (agent === 'claude' ? 'claude.cmd logout' : 'codex.cmd logout')
-          : (agent === 'claude' ? 'claude logout' : 'codex logout');
-        const loginManualCmd = WIN
-          ? (agent === 'claude' ? 'claude login' : 'codex login')
-          : (agent === 'claude' ? 'claude login' : 'codex login');
-        const loginCmd = WIN
-          ? (agent === 'claude' ? 'claude.cmd login' : 'codex.cmd login')
-          : (agent === 'claude' ? 'claude login' : 'codex login');
+        // Use `auth` subcommand — plain `claude logout` starts REPL and treats arg as chat
+        const logoutCmd = WIN ? 'claude.cmd auth logout' : 'claude auth logout';
+        const loginCmd  = WIN ? 'claude.cmd auth login'  : 'claude auth login';
 
         emit(`   → ${logoutCmd}`);
-        // Pass null stdin so claude doesn't think command was typed in chat
-        const nullIn = WIN ? 'NUL' : '/dev/null';
-        const logout = spawn(`${logoutCmd} < ${nullIn}`, [], { shell: true, cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+        const logout = spawn(logoutCmd, [], { shell: true, cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] });
         logout.stdout?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
         logout.stderr?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
         logout.on('close', () => {
           emit('✅ Выход выполнен. Запускаю вход…');
           emit(`   → ${loginCmd}`);
-          emit('   🌐 Откроется браузер — авторизуйся там.');
+          emit('   🌐 Должен открыться браузер — авторизуйся там.');
           const login = spawn(loginCmd, [], { shell: true, cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] });
           login.stdout?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
           login.stderr?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
@@ -3730,7 +3740,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             if (code === 0) {
               emit('✅ Вход выполнен! viberadar подхватит сессию.');
             } else {
-              emit('⚠️  Вход не завершён. Выполни в терминале:');
+              emit('⚠️  Браузер не открылся автоматически. Выполни в терминале:');
               emit(`   ${loginCmd}`);
             }
             done();

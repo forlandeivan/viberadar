@@ -2625,8 +2625,15 @@ function updateAgentRightsInfo() {
     return;
   }
   if (D.agent === 'claude') {
-    el.textContent = '🔐 Claude: managed by Claude CLI';
-    el.title = 'Права определяются Claude CLI';
+    const cached = window._claudeAccount;
+    el.textContent = cached ? `🔐 ${cached}` : '🔐 Claude';
+    el.title = cached ? `Claude аккаунт: ${cached}` : 'Загружаю аккаунт…';
+    if (!cached) {
+      fetch('/api/agent-whoami').then(r => r.json()).then(d => {
+        window._claudeAccount = d.email || d.raw?.split('\n')[0] || 'неизвестно';
+        updateAgentRightsInfo();
+      }).catch(() => {});
+    }
     return;
   }
   el.textContent = '🔐 Агент не выбран';
@@ -2688,6 +2695,9 @@ async function reauthAgent() {
     document.getElementById('termBtn').classList.add('term-active');
     return;
   }
+  // Reset cached account so it reloads after login
+  window._claudeAccount = null;
+  updateAgentRightsInfo();
   const id = createSession('🔑 Перелогинивание');
   runningSessionId = id;
   document.getElementById('agentPanelTitle').textContent = '🔑 Перелогинивание';
