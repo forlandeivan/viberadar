@@ -6957,13 +6957,9 @@ function renderLoad(c) {
   // ─── LIBRARY VIEW ─────────────────────────────────────────────────────────
   if (view === 'library') {
     const cards = loadSavedScripts.map(s => `
-      <div class="load-library-card" onclick="loadOpenScript(${JSON.stringify(s.name)})">
+      <div class="load-library-card" data-sname="${escapeHtml(s.name)}">
         <div class="load-library-card-name">${escapeHtml(s.name)}</div>
         <div class="load-library-card-meta">${escapeHtml(s.date)}</div>
-        <div class="load-library-card-actions">
-          <button class="load-script-load-btn" onclick="event.stopPropagation();loadOpenScript(${JSON.stringify(s.name)})">▶ Открыть</button>
-          <button class="load-script-del-btn" onclick="event.stopPropagation();loadDeleteScript(${JSON.stringify(s.name)})">✕</button>
-        </div>
       </div>`).join('');
 
     c.innerHTML = `<div class="load-screen">
@@ -6985,6 +6981,11 @@ function renderLoad(c) {
         : `<div class="load-library-grid">${cards}</div>`
       }
     </div>`;
+
+    // Attach click handlers via data attribute — avoids quoting issues
+    c.querySelectorAll('.load-library-card[data-sname]').forEach(el => {
+      el.addEventListener('click', () => loadOpenScript(el.dataset.sname));
+    });
     return;
   }
 
@@ -7326,7 +7327,8 @@ async function loadRefreshScripts() {
     const r = await fetch('/api/load/scripts');
     if (!r.ok) return;
     loadSavedScripts = await r.json();
-    renderContent();
+    // Only re-render if we're on load tab in library view (don't disrupt editor)
+    if (contextMode === 'load' && loadView === 'library') renderContent();
   } catch {}
 }
 
