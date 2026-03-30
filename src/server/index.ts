@@ -3706,24 +3706,23 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const logoutCmd = WIN
           ? (agent === 'claude' ? 'claude.cmd logout' : 'codex.cmd logout')
           : (agent === 'claude' ? 'claude logout' : 'codex logout');
-        const loginCmd = WIN
-          ? (agent === 'claude' ? 'claude.cmd' : 'codex.cmd login')
-          : (agent === 'claude' ? 'claude' : 'codex login');
+        const loginManualCmd = WIN
+          ? (agent === 'claude' ? 'claude login' : 'codex login')
+          : (agent === 'claude' ? 'claude login' : 'codex login');
         emit(`   → ${logoutCmd}`);
         const logout = spawn(logoutCmd, [], { shell: true, cwd: projectRoot });
         logout.stdout.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
         logout.stderr.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l, true)));
         logout.on('close', () => {
-          emit(`   → ${loginCmd}`);
-          emit('   Сейчас откроется браузер для авторизации…');
-          const login = spawn(loginCmd, [], { shell: true, cwd: projectRoot, detached: false });
-          login.stdout.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
-          login.stderr.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l, true)));
-          login.on('close', (code: number | null) => {
-            if (code === 0) emit('✅ Авторизация успешна!');
-            else emit(`⚠️ Завершено с кодом ${code}`, true);
-            done();
-          });
+          emit('');
+          emit('✅ Выход выполнен.');
+          emit('');
+          emit('📋 Для входа выполни в терминале:');
+          emit(`   ${loginManualCmd}`);
+          emit('');
+          emit('   Откроется браузер — авторизуйся там.');
+          emit('   После успешного входа viberadar подхватит сессию автоматически.');
+          done();
         });
         return;
       }
