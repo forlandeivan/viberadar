@@ -3709,20 +3709,32 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const loginManualCmd = WIN
           ? (agent === 'claude' ? 'claude login' : 'codex login')
           : (agent === 'claude' ? 'claude login' : 'codex login');
+        const loginCmd = WIN
+          ? (agent === 'claude' ? 'claude.cmd login' : 'codex.cmd login')
+          : (agent === 'claude' ? 'claude login' : 'codex login');
+
         emit(`   → ${logoutCmd}`);
-        const logout = spawn(logoutCmd, [], { shell: true, cwd: projectRoot });
-        logout.stdout.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
-        logout.stderr.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l, true)));
+        // Pass null stdin so claude doesn't think command was typed in chat
+        const nullIn = WIN ? 'NUL' : '/dev/null';
+        const logout = spawn(`${logoutCmd} < ${nullIn}`, [], { shell: true, cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+        logout.stdout?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
+        logout.stderr?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
         logout.on('close', () => {
-          emit('');
-          emit('✅ Выход выполнен.');
-          emit('');
-          emit('📋 Для входа выполни в терминале:');
-          emit(`   ${loginManualCmd}`);
-          emit('');
-          emit('   Откроется браузер — авторизуйся там.');
-          emit('   После успешного входа viberadar подхватит сессию автоматически.');
-          done();
+          emit('✅ Выход выполнен. Запускаю вход…');
+          emit(`   → ${loginCmd}`);
+          emit('   🌐 Откроется браузер — авторизуйся там.');
+          const login = spawn(loginCmd, [], { shell: true, cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+          login.stdout?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
+          login.stderr?.on('data', (d: Buffer) => d.toString().split('\n').filter(Boolean).forEach((l: string) => emit('  ' + l)));
+          login.on('close', (code: number) => {
+            if (code === 0) {
+              emit('✅ Вход выполнен! viberadar подхватит сессию.');
+            } else {
+              emit('⚠️  Вход не завершён. Выполни в терминале:');
+              emit(`   ${loginCmd}`);
+            }
+            done();
+          });
         });
         return;
       }
