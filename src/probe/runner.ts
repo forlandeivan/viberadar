@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { ProbeConfig, ProbeCheck, ProbeStep, ProbeResult, ProbeRunReport } from './types';
 
 const SCREENSHOTS_DIR = path.join(process.cwd(), '.viberadar', 'probe-screenshots');
@@ -100,14 +101,19 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
 }
 
 function loadPlaywright(): any {
+  // Try from cwd first — playwright installed in the monitoring project
+  try {
+    const cwdRequire = createRequire(path.join(process.cwd(), 'package.json'));
+    return cwdRequire('playwright');
+  } catch {}
+  // Fallback: playwright installed alongside viberadar
   try {
     return require('playwright');
-  } catch {
-    console.error('❌ Playwright not installed. Run:');
-    console.error('   npm install playwright');
-    console.error('   npx playwright install chromium');
-    process.exit(1);
-  }
+  } catch {}
+  console.error('❌ Playwright not installed. Run:');
+  console.error('   npm install playwright');
+  console.error('   npx playwright install chromium');
+  process.exit(1);
 }
 
 export async function runProbeChecks(config: ProbeConfig): Promise<ProbeRunReport> {
