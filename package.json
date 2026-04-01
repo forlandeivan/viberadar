@@ -20,7 +20,10 @@
     "coverage",
     "modules",
     "cli",
-    "dashboard"
+    "dashboard",
+    "monitoring",
+    "synthetic",
+    "probe"
   ],
   "author": "",
   "license": "MIT",
@@ -34,6 +37,9 @@
     "glob": "^11.0.0",
     "js-yaml": "^4.1.1",
     "open": "^10.1.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.50.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

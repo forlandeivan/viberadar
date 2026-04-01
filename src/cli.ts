@@ -33,6 +33,9 @@ function printHelp() {
 Команды:
   npx viberadar          Запустить дашборд на http://localhost:4242
   npx viberadar init     Сгенерировать промпт для AI-агента (настройка фич)
+  npx viberadar probe    Запустить E2E-проверки (synthetic monitoring)
+    --watch              Запускать по расписанию (interval из probe.config.yml)
+    --config <path>      Путь к конфигу (по умолчанию probe.config.yml)
   npx viberadar help     Показать эту справку
 `);
 }
@@ -42,6 +45,11 @@ async function main() {
     case 'init':
       await runInit(PROJECT_ROOT);
       break;
+    case 'probe': {
+      const { runProbe } = await import('./probe');
+      await runProbe(process.argv.slice(3));
+      break;
+    }
     case 'help':
     case '--help':
     case '-h':
