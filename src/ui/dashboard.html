@@ -1560,6 +1560,31 @@
   .load-no-k6 h3 { color: var(--text); margin-bottom: 8px; }
   .load-no-k6 code { background: var(--bg); border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; font-size: 13px; color: var(--blue); }
 
+  /* Probe panel */
+  .probe-container { padding: 20px 24px; max-width: 720px; }
+  .probe-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
+  .probe-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .probe-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
+  .probe-section-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+  .probe-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .probe-schedule-row { display: flex; align-items: center; gap: 8px; }
+  .probe-select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; cursor: pointer; }
+  .probe-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
+  .probe-btn:hover { background: var(--bg-hover); }
+  .probe-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .probe-btn-run   { border-color: var(--green); color: var(--green); }
+  .probe-btn-run:hover { background: rgba(63,185,80,0.1); }
+  .probe-btn-start { border-color: var(--blue); color: var(--blue); }
+  .probe-btn-start:hover { background: rgba(88,166,255,0.1); }
+  .probe-btn-stop  { border-color: var(--red); color: var(--red); }
+  .probe-btn-stop:hover { background: rgba(248,81,73,0.1); }
+  .probe-checks { display: flex; flex-direction: column; gap: 8px; }
+  .probe-check-row { display: grid; grid-template-columns: 20px 1fr auto; align-items: baseline; gap: 6px; font-size: 13px; }
+  .probe-check-icon { font-size: 14px; }
+  .probe-check-name { color: var(--text); }
+  .probe-check-dur { font-size: 11px; }
+  .probe-check-error { grid-column: 2 / -1; font-size: 11px; color: var(--red); margin-top: 2px; word-break: break-word; }
+
   </style>
 </head>
 <body>
@@ -1616,6 +1641,7 @@
       <div class="view-tab" data-view="features">Features</div>
       <div class="view-tab" data-view="files">Files</div>
       <div class="view-tab" data-view="tests">Tests</div>
+      <div class="view-tab" data-view="probe">Probe</div>
     </div>
     <input class="search-input" id="searchInput" type="text" placeholder="Search…" />
     <div id="sidebarExtra"></div>
@@ -1672,6 +1698,8 @@
 let D = null;
 let contextMode = 'qa';
 let view = 'features';
+let probeData = null; // { status, lastRun, intervalSec, nextRunAt, checks, configFound }
+let probeRunning = false;
 let searchQuery = '';
 let activeTypes = new Set();
 let activePanelKey = null;
@@ -3318,6 +3346,11 @@ function renderContent() {
     return;
   }
 
+  if (view === 'probe') {
+    renderProbePanel(c);
+    return;
+  }
+
   if (view === 'features') {
     if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
     else if (drillFeatureKey) renderFeatureDetail(c);
@@ -3327,6 +3360,146 @@ function renderContent() {
   } else {
     renderModuleGrid(c);
   }
+}
+
+// ─── Probe rendering ────────────────────────────────────────────────────────
+
+async function loadProbeData() {
+  try {
+    const res = await fetch('/api/probe/status');
+    probeData = await res.json();
+  } catch {}
+}
+
+function renderProbePanel(c) {
+  const d = probeData;
+  const statusColor = !d ? 'var(--muted)' : d.status === 'running' ? 'var(--yellow)' : d.status === 'scheduled' ? 'var(--green)' : 'var(--muted)';
+  const statusLabel = !d ? '—' : d.status === 'running' ? '● running' : d.status === 'scheduled' ? '● scheduled' : '○ idle';
+
+  const lastRunHtml = d && d.lastRun ? (() => {
+    const r = d.lastRun;
+    const allPassed = r.failed === 0;
+    const rows = r.results.map(res => {
+      const ok = res.status === 'passed';
+      return `<div class="probe-check-row">
+        <span class="probe-check-icon">${ok ? '✅' : '❌'}</span>
+        <span class="probe-check-name">${escapeHtml(res.check)}</span>
+        <span class="probe-check-dur" style="color:var(--muted)">${res.durationMs}ms</span>
+        ${!ok && res.error ? `<div class="probe-check-error">${escapeHtml(res.error)}</div>` : ''}
+        ${!ok && res.screenshotPath ? `<div class="probe-check-error" style="color:var(--muted)">📸 ${escapeHtml(res.screenshotPath)}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `
+      <div class="probe-section">
+        <div class="probe-section-title">Последний прогон <span style="color:var(--muted);font-weight:400;font-size:11px">${r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : ''}</span>
+          <span style="margin-left:8px;font-size:12px">${allPassed ? `<span style="color:var(--green)">✅ ${r.passed}/${r.results.length}</span>` : `<span style="color:var(--red)">❌ ${r.failed} failed</span>`}</span>
+        </div>
+        <div class="probe-checks">${rows}</div>
+      </div>`;
+  })() : `<div style="color:var(--muted);font-size:13px;padding:16px 0">Ещё не запускался</div>`;
+
+  const intervalOptions = [60, 300, 600, 1800, 3600].map(s => {
+    const label = s < 3600 ? `каждые ${s / 60} мин` : `каждый час`;
+    const sel = d && d.intervalSec === s ? ' selected' : '';
+    return `<option value="${s}"${sel}>${label}</option>`;
+  }).join('');
+
+  const isScheduled = d && d.status === 'scheduled';
+  const isRunning = d && d.status === 'running';
+
+  c.innerHTML = `
+    <div class="probe-container">
+      <div class="probe-header">
+        <div>
+          <div class="probe-title">🔭 Probe monitoring</div>
+          ${d && d.configFound ? `<div style="color:var(--muted);font-size:12px">${escapeHtml((d.checks || []).length)} checks · <span style="color:${statusColor}">${statusLabel}</span></div>`
+            : `<div style="color:var(--yellow);font-size:12px">⚠️ probe.config.yml не найден в рабочей директории</div>`}
+        </div>
+        <button class="probe-btn" onclick="openProbeNotifyModal()">⚙️ Уведомления</button>
+      </div>
+
+      <div class="probe-section">
+        <div class="probe-controls">
+          <button class="probe-btn probe-btn-run" onclick="probeRunNow()" ${isRunning ? 'disabled' : ''}>
+            ${isRunning ? '⏳ Выполняется…' : '▶ Run Now'}
+          </button>
+          <div class="probe-schedule-row">
+            <select id="probeIntervalSelect" class="probe-select">
+              ${intervalOptions}
+            </select>
+            ${isScheduled
+              ? `<button class="probe-btn probe-btn-stop" onclick="probeScheduleStop()">⏹ Стоп</button>`
+              : `<button class="probe-btn probe-btn-start" onclick="probeScheduleStart()">🕐 По расписанию</button>`
+            }
+          </div>
+        </div>
+        ${isScheduled && d.nextRunAt ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Следующий запуск: ${new Date(d.nextRunAt).toLocaleTimeString()}</div>` : ''}
+      </div>
+
+      ${lastRunHtml}
+    </div>`;
+}
+
+async function probeRunNow() {
+  probeRunning = true;
+  renderContent();
+  try { await fetch('/api/probe/run', { method: 'POST' }); } catch {}
+}
+
+async function probeScheduleStart() {
+  const sel = document.getElementById('probeIntervalSelect');
+  const intervalSec = sel ? parseInt(sel.value) : 600;
+  await fetch('/api/probe/schedule/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intervalSec }) });
+  await loadProbeData();
+  renderContent();
+}
+
+async function probeScheduleStop() {
+  await fetch('/api/probe/schedule/stop', { method: 'POST' });
+  await loadProbeData();
+  renderContent();
+}
+
+function openProbeNotifyModal() {
+  fetch('/api/probe/notify-config').then(r => r.json()).then(saved => {
+    const tg = saved.telegram || {};
+    let overlay = document.getElementById('probeNotifyOverlay');
+    if (overlay) overlay.remove();
+    overlay = document.createElement('div');
+    overlay.id = 'probeNotifyOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+    overlay.innerHTML = `
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw">
+        <h3 style="margin:0 0 16px;font-size:16px;color:var(--text)">⚙️ Telegram уведомления</h3>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Bot Token</label>
+        <input id="probeBotToken" type="password" placeholder="1234567890:AAF..." value="${escapeHtml(tg.botToken || '')}"
+          style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Chat ID</label>
+        <input id="probeChatId" type="text" placeholder="-1001234567890" value="${escapeHtml(tg.chatId || '')}"
+          style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:4px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Получить токен у @BotFather · Chat ID через @userinfobot</div>
+        <div id="probeNotifyErr" style="display:none;margin-bottom:12px;padding:8px 12px;border-radius:6px;background:rgba(248,81,73,0.1);color:var(--red);font-size:12px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button onclick="document.getElementById('probeNotifyOverlay').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
+          <button id="probeNotifySave" style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px">Сохранить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('probeNotifySave').addEventListener('click', async () => {
+      const botToken = document.getElementById('probeBotToken').value.trim();
+      const chatId = document.getElementById('probeChatId').value.trim();
+      const err = document.getElementById('probeNotifyErr');
+      if (!botToken || !chatId) { err.style.display = 'block'; err.textContent = 'Введите Bot Token и Chat ID'; return; }
+      const btn = document.getElementById('probeNotifySave');
+      btn.disabled = true; btn.textContent = 'Сохраняю…';
+      try {
+        const res = await fetch('/api/probe/notify-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botToken, chatId }) });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Ошибка сохранения'); }
+        overlay.remove();
+      } catch (e) { err.style.display = 'block'; err.textContent = e.message; btn.disabled = false; btn.textContent = 'Сохранить'; }
+    });
+  });
 }
 
 // ─── Service Map rendering ──────────────────────────────────────────────────
@@ -6735,6 +6908,7 @@ document.querySelectorAll('.view-tab').forEach(tab => {
     document.getElementById('searchInput').value = '';
     document.getElementById('panel').classList.remove('open');
     if (view !== 'features') clearFeatureHash();
+    if (view === 'probe') { loadProbeData().then(() => { renderSidebar(); renderContent(); }); return; }
     renderSidebar();
     renderContent();
   };
@@ -7789,6 +7963,31 @@ function connectSSE() {
     const { status, summary } = JSON.parse(e.data);
     if (loadState) { loadState.status = status; loadState.summary = summary || null; loadState.endTime = Date.now(); }
     if (contextMode === 'load') { renderSidebar(); renderContent(); }
+  });
+
+  es.addEventListener('probe-run-started', () => {
+    if (!probeData) probeData = {};
+    probeData.status = 'running';
+    probeRunning = true;
+    if (view === 'probe') renderContent();
+  });
+
+  es.addEventListener('probe-run-done', (e) => {
+    const payload = JSON.parse(e.data || '{}');
+    if (!probeData) probeData = {};
+    if (payload.results) probeData.lastRun = payload;
+    probeData.status = probeData.intervalSec ? 'scheduled' : 'idle';
+    probeRunning = false;
+    if (view === 'probe') renderContent();
+  });
+
+  es.addEventListener('probe-scheduled', (e) => {
+    const payload = JSON.parse(e.data || '{}');
+    if (!probeData) probeData = {};
+    probeData.status = payload.status;
+    probeData.intervalSec = payload.intervalSec;
+    probeData.nextRunAt = payload.nextRunAt;
+    if (view === 'probe') renderContent();
   });
 
   es.onerror = () => {

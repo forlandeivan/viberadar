@@ -30,15 +30,13 @@ function interpolateDeep(obj: any): any {
   return obj;
 }
 
-export function loadProbeConfig(configPath?: string): ProbeConfig {
+export function loadProbeConfig(configPath?: string): ProbeConfig | null {
   const resolved = configPath
     ? path.resolve(configPath)
     : path.join(process.cwd(), 'probe.config.yml');
 
   if (!fs.existsSync(resolved)) {
-    console.error(`❌ Probe config not found: ${resolved}`);
-    console.error(`   Create probe.config.yml or use --config <path>`);
-    process.exit(1);
+    return null;
   }
 
   let raw: any;
@@ -46,34 +44,46 @@ export function loadProbeConfig(configPath?: string): ProbeConfig {
     const content = fs.readFileSync(resolved, 'utf-8');
     raw = yaml.load(content);
   } catch (err: any) {
-    console.error(`❌ Failed to parse ${resolved}: ${err.message}`);
-    process.exit(1);
+    console.warn(`   ⚠️  Failed to parse ${resolved}: ${err.message}`);
+    return null;
   }
 
   if (!raw || typeof raw !== 'object') {
-    console.error(`❌ Invalid config: expected YAML object`);
-    process.exit(1);
+    console.warn(`   ⚠️  Invalid probe config: expected YAML object`);
+    return null;
   }
 
   if (!raw.target || typeof raw.target !== 'string') {
-    console.error(`❌ Config: "target" is required (e.g. https://example.com)`);
-    process.exit(1);
+    console.warn(`   ⚠️  Probe config: "target" is required`);
+    return null;
   }
 
   if (!Array.isArray(raw.checks) || raw.checks.length === 0) {
-    console.error(`❌ Config: "checks" must be a non-empty array`);
-    process.exit(1);
+    console.warn(`   ⚠️  Probe config: "checks" must be a non-empty array`);
+    return null;
   }
 
   const interpolated = interpolateDeep(raw);
 
-  const config: ProbeConfig = {
+  return {
     target: interpolated.target.replace(/\/+$/, ''),
     interval: Number(interpolated.interval) || DEFAULT_INTERVAL,
     timeout: Number(interpolated.timeout) || DEFAULT_TIMEOUT,
     notify: interpolated.notify || undefined,
     checks: interpolated.checks as ProbeCheck[],
   };
+}
 
+export function requireProbeConfig(configPath?: string): ProbeConfig {
+  const resolved = configPath
+    ? path.resolve(configPath)
+    : path.join(process.cwd(), 'probe.config.yml');
+
+  const config = loadProbeConfig(configPath);
+  if (!config) {
+    console.error(`❌ Probe config not found or invalid: ${resolved}`);
+    console.error(`   Create probe.config.yml or use --config <path>`);
+    process.exit(1);
+  }
   return config;
 }

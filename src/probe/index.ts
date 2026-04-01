@@ -1,4 +1,4 @@
-import { loadProbeConfig } from './config';
+import { requireProbeConfig } from './config';
 import { runProbeChecks } from './runner';
 import { createNotifiers, notifyAll } from './notify';
 import { startProbeLoop } from './scheduler';
@@ -41,7 +41,7 @@ function logReport(report: ProbeRunReport): void {
 
 export async function runProbe(argv: string[]): Promise<void> {
   const { watch, configPath } = parseArgs(argv);
-  const config = loadProbeConfig(configPath);
+  const config = requireProbeConfig(configPath);
   const notifiers = createNotifiers(config.notify);
 
   console.log(`🔭 Probe target: ${config.target}`);

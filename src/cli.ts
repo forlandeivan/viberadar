@@ -22,8 +22,10 @@ async function runDashboard() {
   console.log(`\n✅ Dashboard: http://localhost:${PORT}`);
   console.log('   Press Ctrl+C to stop\n');
 
-  const { default: open } = await import('open');
-  await open(`http://localhost:${PORT}`);
+  try {
+    const { default: open } = await import('open');
+    await open(`http://localhost:${PORT}`);
+  } catch {}
 }
 
 function printHelp() {

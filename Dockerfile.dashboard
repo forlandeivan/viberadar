@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/playwright:v1.50.0-noble
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY dist/ ./dist/
+COPY viberadar.js ./
+
+EXPOSE 4242
+
+ENTRYPOINT ["node", "viberadar.js"]

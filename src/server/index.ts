@@ -7,6 +7,10 @@ import * as readline from 'readline';
 import chokidar from 'chokidar';
 import { ScanResult, ModuleInfo, FeatureResult, scanProject, ObservabilityCatalogItem, MissingCriticalLogItem, FailurePoint, ServiceMapReport } from '../scanner';
 import { buildDocx } from '../docx';
+import { loadProbeConfig } from '../probe/config';
+import { runProbeChecks } from '../probe/runner';
+import { createNotifiers, notifyAll } from '../probe/notify';
+import { ProbeNotifyConfig, ProbeResult } from '../probe/types';
 
 interface ServerOptions {
   data: ScanResult;
@@ -2131,6 +2135,59 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       status: 'idle', startTime: 0, buckets: [], totalRequests: 0,
       totalErrors: 0, logs: [], script: '', config: null, summary: null,
     };
+
+    // --- Probe state ---
+    interface ProbeLastRun {
+      target: string;
+      timestamp: string;
+      results: ProbeResult[];
+      passed: number;
+      failed: number;
+    }
+    interface ProbeStateShape {
+      status: 'idle' | 'running' | 'scheduled';
+      lastRun?: ProbeLastRun;
+      nextRunAt?: string;
+      intervalSec?: number;
+    }
+    let probeRunning = false;
+    let probeTimer: ReturnType<typeof setInterval> | null = null;
+    let probeState: ProbeStateShape = { status: 'idle' };
+
+    function loadProbeNotifyConfig(): ProbeNotifyConfig | undefined {
+      const p = path.join(projectRoot, '.viberadar', 'probe-notify.json');
+      try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return undefined; }
+    }
+
+    async function runProbeOnce(): Promise<void> {
+      if (probeRunning) return;
+      probeRunning = true;
+      const prevStatus = probeState.status;
+      probeState.status = 'running';
+      broadcast('probe-run-started', { timestamp: new Date().toISOString() });
+      try {
+        const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
+        if (!config) {
+          probeState.status = prevStatus;
+          return;
+        }
+        const notifyCfg = loadProbeNotifyConfig();
+        if (notifyCfg) config.notify = notifyCfg;
+        const report = await runProbeChecks(config);
+        probeState.lastRun = report as ProbeLastRun;
+        probeState.status = probeTimer ? 'scheduled' : 'idle';
+        broadcast('probe-run-done', report as unknown as Record<string, unknown>);
+        if (report.failed > 0) {
+          const notifiers = createNotifiers(notifyCfg);
+          await notifyAll(notifiers, report);
+        }
+      } catch (err: any) {
+        probeState.status = probeTimer ? 'scheduled' : 'idle';
+        broadcast('probe-run-done', { error: err.message } as Record<string, unknown>);
+      } finally {
+        probeRunning = false;
+      }
+    }
 
     function parseK6Dur(s: string): number {
       let m: RegExpMatchArray | null;
@@ -4709,6 +4766,84 @@ a{color:var(--blue)}
             broadcast('load-done', { status: 'error', summary: null } as Record<string, unknown>);
             try { fs.unlinkSync(scriptPath); } catch {}
           });
+        });
+        return;
+      }
+
+      // --- Probe API ---
+
+      if (url === '/api/probe/status' && req.method === 'GET') {
+        const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
+        const checks = config ? config.checks.map(c => ({ name: c.name, steps: c.steps.length })) : null;
+        res.writeHead(200, jsonH);
+        res.end(JSON.stringify({ ...probeState, checks, configFound: !!config }));
+        return;
+      }
+
+      if (url === '/api/probe/run' && req.method === 'POST') {
+        if (probeRunning) { res.writeHead(409, jsonH); res.end(JSON.stringify({ error: 'Already running' })); return; }
+        res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+        runProbeOnce();
+        return;
+      }
+
+      if (url === '/api/probe/schedule/start' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          let intervalSec = 600;
+          try { const parsed = JSON.parse(body); if (parsed.intervalSec > 0) intervalSec = parsed.intervalSec; } catch {}
+          if (probeTimer) clearInterval(probeTimer);
+          probeState.status = 'scheduled';
+          probeState.intervalSec = intervalSec;
+          const nextRun = () => new Date(Date.now() + intervalSec * 1000).toISOString();
+          probeState.nextRunAt = nextRun();
+          broadcast('probe-scheduled', { status: 'scheduled', intervalSec, nextRunAt: probeState.nextRunAt } as Record<string, unknown>);
+          probeTimer = setInterval(() => {
+            probeState.nextRunAt = nextRun();
+            runProbeOnce();
+          }, intervalSec * 1000);
+          // Run immediately
+          runProbeOnce();
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true, intervalSec }));
+        });
+        return;
+      }
+
+      if (url === '/api/probe/schedule/stop' && req.method === 'POST') {
+        if (probeTimer) { clearInterval(probeTimer); probeTimer = null; }
+        probeState.status = 'idle';
+        probeState.nextRunAt = undefined;
+        probeState.intervalSec = undefined;
+        broadcast('probe-scheduled', { status: 'idle' } as Record<string, unknown>);
+        res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (url === '/api/probe/notify-config' && req.method === 'GET') {
+        const saved = loadProbeNotifyConfig();
+        const masked = saved?.telegram ? {
+          botToken: saved.telegram.botToken ? saved.telegram.botToken.slice(0, 8) + '••••••••' : '',
+          chatId: saved.telegram.chatId || '',
+        } : null;
+        res.writeHead(200, jsonH); res.end(JSON.stringify({ telegram: masked }));
+        return;
+      }
+
+      if (url === '/api/probe/notify-config' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          try {
+            const { botToken, chatId } = JSON.parse(body);
+            if (!botToken || !chatId) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'botToken and chatId are required' })); return; }
+            const dir = path.join(projectRoot, '.viberadar');
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, 'probe-notify.json'), JSON.stringify({ telegram: { botToken, chatId } }, null, 2), 'utf-8');
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
         });
         return;
       }
