@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as child_process from 'child_process';
 import { createRequire } from 'module';
 import { ProbeConfig, ProbeCheck, ProbeStep, ProbeResult, ProbeRunReport } from './types';
 
@@ -66,13 +67,47 @@ async function executeStep(page: any, step: ProbeStep, target: string, timeout: 
   }
 }
 
+async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: number): Promise<ProbeResult> {
+  const start = Date.now();
+  const filePath = path.resolve(process.cwd(), check.file!);
+  if (!fs.existsSync(filePath)) {
+    return { check: check.name, status: 'failed', durationMs: 0, error: `File not found: ${filePath}` };
+  }
+  return new Promise(resolve => {
+    const env = { ...process.env, BASE_URL: target, PLAYWRIGHT_BASE_URL: target };
+    const proc = child_process.spawn('npx', ['playwright', 'test', filePath, '--reporter=line'], {
+      env, cwd: process.cwd(), shell: true, timeout,
+    });
+    let output = '';
+    proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.on('close', code => {
+      const passed = code === 0;
+      resolve({
+        check: check.name,
+        status: passed ? 'passed' : 'failed',
+        durationMs: Date.now() - start,
+        error: passed ? undefined : output.slice(-500),
+      });
+    });
+    proc.on('error', err => {
+      resolve({ check: check.name, status: 'failed', durationMs: Date.now() - start, error: err.message });
+    });
+  });
+}
+
 async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): Promise<ProbeResult> {
+  // Run real Playwright test file if specified
+  if (check.file) {
+    return runPlaywrightFile(check, config.target, config.timeout);
+  }
+
   const start = Date.now();
   const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
-    for (const step of check.steps) {
+    for (const step of (check.steps || [])) {
       await executeStep(page, step, config.target, config.timeout);
     }
     return {

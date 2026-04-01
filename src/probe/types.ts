@@ -15,7 +15,8 @@ export interface ProbeNotifyConfig {
 
 export interface ProbeCheck {
   name: string;
-  steps: ProbeStep[];
+  steps?: ProbeStep[];   // DSL-шаги (inline)
+  file?: string;         // путь к Playwright spec файлу (относительно cwd)
 }
 
 export type ProbeStep =

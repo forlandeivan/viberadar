@@ -1641,7 +1641,6 @@
       <div class="view-tab" data-view="features">Features</div>
       <div class="view-tab" data-view="files">Files</div>
       <div class="view-tab" data-view="tests">Tests</div>
-      <div class="view-tab" data-view="probe">Probe</div>
     </div>
     <input class="search-input" id="searchInput" type="text" placeholder="Search…" />
     <div id="sidebarExtra"></div>
@@ -1808,13 +1807,14 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load') {
+  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load' || contextMode === 'probe') {
     view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
     activePanelKey = null;
     clearFeatureHash();
   }
+  if (contextMode === 'probe') { loadProbeData(); }
   if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
   if (contextMode === 'load') {
     loadRefreshScripts();
@@ -3183,6 +3183,7 @@ function renderModeSwitch() {
     { key: 'scenarios', label: 'Сценарии', hint: 'Пользовательские сценарии, user journeys' },
     { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
     { key: 'load', label: 'Нагрузка', hint: 'k6: метрики, сценарии, AI-анализ' },
+    { key: 'probe', label: 'Probe', hint: 'Synthetic monitoring, E2E на стенде' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -3200,6 +3201,16 @@ function renderSidebar() {
   renderModeSwitch();
   const tabs = document.getElementById('viewTabs');
   const extra = document.getElementById('sidebarExtra');
+
+  if (contextMode === 'probe') {
+    tabs.style.display = 'none';
+    extra.innerHTML = `
+      <div class="sidebar-label">Probe</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
+        Запуск E2E-проверок на стенде. Домен задаётся в Настройках.
+      </div>`;
+    return;
+  }
 
   if (contextMode === 'observability') {
     tabs.style.display = 'none';
@@ -3346,7 +3357,7 @@ function renderContent() {
     return;
   }
 
-  if (view === 'probe') {
+  if (contextMode === 'probe') {
     renderProbePanel(c);
     return;
   }
@@ -3412,10 +3423,10 @@ function renderProbePanel(c) {
       <div class="probe-header">
         <div>
           <div class="probe-title">🔭 Probe monitoring</div>
-          ${d && d.configFound ? `<div style="color:var(--muted);font-size:12px">${escapeHtml((d.checks || []).length)} checks · <span style="color:${statusColor}">${statusLabel}</span></div>`
-            : `<div style="color:var(--yellow);font-size:12px">⚠️ probe.config.yml не найден в рабочей директории</div>`}
+          ${d && d.effectiveTarget ? `<div style="color:var(--muted);font-size:12px">${escapeHtml(d.effectiveTarget)} · ${escapeHtml((d.checks || []).length)} checks · <span style="color:${statusColor}">${statusLabel}</span></div>`
+            : `<div style="color:var(--yellow);font-size:12px">⚠️ Задайте домен стенда в Настройках</div>`}
         </div>
-        <button class="probe-btn" onclick="openProbeNotifyModal()">⚙️ Уведомления</button>
+        <button class="probe-btn" onclick="openProbeSettingsModal()">⚙️ Настройки</button>
       </div>
 
       <div class="probe-section">
@@ -3460,42 +3471,57 @@ async function probeScheduleStop() {
   renderContent();
 }
 
-function openProbeNotifyModal() {
-  fetch('/api/probe/notify-config').then(r => r.json()).then(saved => {
+function openProbeSettingsModal() {
+  fetch('/api/probe/settings').then(r => r.json()).then(saved => {
     const tg = saved.telegram || {};
-    let overlay = document.getElementById('probeNotifyOverlay');
+    const inp = s => `style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"`;
+    const lbl = t => `<label style="font-size:12px;color:var(--muted);display:block;margin:12px 0 4px">${t}</label>`;
+    let overlay = document.getElementById('probeSettingsOverlay');
     if (overlay) overlay.remove();
     overlay = document.createElement('div');
-    overlay.id = 'probeNotifyOverlay';
+    overlay.id = 'probeSettingsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
     overlay.innerHTML = `
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw">
-        <h3 style="margin:0 0 16px;font-size:16px;color:var(--text)">⚙️ Telegram уведомления</h3>
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Bot Token</label>
-        <input id="probeBotToken" type="password" placeholder="1234567890:AAF..." value="${escapeHtml(tg.botToken || '')}"
-          style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:12px">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Chat ID</label>
-        <input id="probeChatId" type="text" placeholder="-1001234567890" value="${escapeHtml(tg.chatId || '')}"
-          style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:4px">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Получить токен у @BotFather · Chat ID через @userinfobot</div>
-        <div id="probeNotifyErr" style="display:none;margin-bottom:12px;padding:8px 12px;border-radius:6px;background:rgba(248,81,73,0.1);color:var(--red);font-size:12px"></div>
-        <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button onclick="document.getElementById('probeNotifyOverlay').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
-          <button id="probeNotifySave" style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px">Сохранить</button>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:440px;max-width:90vw">
+        <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">⚙️ Настройки Probe</h3>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Настройки сохраняются локально, не попадают в git</div>
+
+        <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:4px">
+          ${lbl('Домен стенда')}
+          <input id="probeTarget" type="text" placeholder="https://staging.myapp.com" value="${escapeHtml(saved.target || '')}" ${inp()}>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Все проверки будут запускаться на этом домене. Переопределяет target из probe.config.yml</div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Telegram уведомления</div>
+          ${lbl('Bot Token')}
+          <input id="probeBotToken" type="password" placeholder="1234567890:AAF..." value="${escapeHtml(tg.botToken || '')}" ${inp()}>
+          ${lbl('Chat ID')}
+          <input id="probeChatId" type="text" placeholder="-1001234567890" value="${escapeHtml(tg.chatId || '')}" ${inp()}>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Токен у @BotFather · Chat ID через @userinfobot</div>
+        </div>
+
+        <div id="probeSettingsErr" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(248,81,73,0.1);color:var(--red);font-size:12px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+          <button onclick="document.getElementById('probeSettingsOverlay').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
+          <button id="probeSettingsSave" style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px">Сохранить</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    document.getElementById('probeNotifySave').addEventListener('click', async () => {
+    document.getElementById('probeSettingsSave').addEventListener('click', async () => {
+      const target = document.getElementById('probeTarget').value.trim();
       const botToken = document.getElementById('probeBotToken').value.trim();
       const chatId = document.getElementById('probeChatId').value.trim();
-      const err = document.getElementById('probeNotifyErr');
-      if (!botToken || !chatId) { err.style.display = 'block'; err.textContent = 'Введите Bot Token и Chat ID'; return; }
-      const btn = document.getElementById('probeNotifySave');
+      const err = document.getElementById('probeSettingsErr');
+      const btn = document.getElementById('probeSettingsSave');
       btn.disabled = true; btn.textContent = 'Сохраняю…';
       try {
-        const res = await fetch('/api/probe/notify-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botToken, chatId }) });
+        const res = await fetch('/api/probe/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, botToken, chatId }) });
         if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Ошибка сохранения'); }
+        // Refresh probe data to show new target
+        await loadProbeData();
+        renderContent();
         overlay.remove();
       } catch (e) { err.style.display = 'block'; err.textContent = e.message; btn.disabled = false; btn.textContent = 'Сохранить'; }
     });

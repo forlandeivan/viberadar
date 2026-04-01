@@ -2154,9 +2154,26 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     let probeTimer: ReturnType<typeof setInterval> | null = null;
     let probeState: ProbeStateShape = { status: 'idle' };
 
+    interface ProbeSettings {
+      target?: string;
+      telegram?: { botToken: string; chatId: string };
+    }
+
+    function loadProbeSettings(): ProbeSettings {
+      const p = path.join(projectRoot, '.viberadar', 'probe-settings.json');
+      try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return {}; }
+    }
+
+    function saveProbeSettings(settings: ProbeSettings): void {
+      const dir = path.join(projectRoot, '.viberadar');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'probe-settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+    }
+
+    // legacy shim — читаем из нового файла
     function loadProbeNotifyConfig(): ProbeNotifyConfig | undefined {
-      const p = path.join(projectRoot, '.viberadar', 'probe-notify.json');
-      try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return undefined; }
+      const s = loadProbeSettings();
+      return s.telegram ? { telegram: s.telegram } : undefined;
     }
 
     async function runProbeOnce(): Promise<void> {
@@ -2166,14 +2183,19 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       probeState.status = 'running';
       broadcast('probe-run-started', { timestamp: new Date().toISOString() });
       try {
+        const settings = loadProbeSettings();
         const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
-        if (!config) {
+        // settings.target overrides config target; or we can run without a config file
+        if (!config && !settings.target) {
+          process.stdout.write('   ⚠️  Probe: no target configured\n');
           probeState.status = prevStatus;
           return;
         }
-        const notifyCfg = loadProbeNotifyConfig();
-        if (notifyCfg) config.notify = notifyCfg;
-        const report = await runProbeChecks(config);
+        const effectiveConfig = config || { target: '', interval: 300, timeout: 30000, checks: [] };
+        if (settings.target) effectiveConfig.target = settings.target;
+        if (settings.telegram) effectiveConfig.notify = { telegram: settings.telegram };
+        const notifyCfg = effectiveConfig.notify;
+        const report = await runProbeChecks(effectiveConfig);
         probeState.lastRun = report as ProbeLastRun;
         probeState.status = probeTimer ? 'scheduled' : 'idle';
         broadcast('probe-run-done', report as unknown as Record<string, unknown>);
@@ -4774,9 +4796,11 @@ a{color:var(--blue)}
 
       if (url === '/api/probe/status' && req.method === 'GET') {
         const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
-        const checks = config ? config.checks.map(c => ({ name: c.name, steps: c.steps.length })) : null;
+        const settings = loadProbeSettings();
+        const effectiveTarget = settings.target || (config ? config.target : null);
+        const checks = config ? config.checks.map(c => ({ name: c.name, type: c.file ? 'file' : 'dsl', steps: c.steps?.length ?? 0 })) : null;
         res.writeHead(200, jsonH);
-        res.end(JSON.stringify({ ...probeState, checks, configFound: !!config }));
+        res.end(JSON.stringify({ ...probeState, checks, configFound: !!config, effectiveTarget }));
         return;
       }
 
@@ -4820,26 +4844,28 @@ a{color:var(--blue)}
         return;
       }
 
-      if (url === '/api/probe/notify-config' && req.method === 'GET') {
-        const saved = loadProbeNotifyConfig();
-        const masked = saved?.telegram ? {
-          botToken: saved.telegram.botToken ? saved.telegram.botToken.slice(0, 8) + '••••••••' : '',
-          chatId: saved.telegram.chatId || '',
+      if (url === '/api/probe/settings' && req.method === 'GET') {
+        const s = loadProbeSettings();
+        const masked = s.telegram ? {
+          botToken: s.telegram.botToken ? s.telegram.botToken.slice(0, 8) + '••••••••' : '',
+          chatId: s.telegram.chatId || '',
         } : null;
-        res.writeHead(200, jsonH); res.end(JSON.stringify({ telegram: masked }));
+        res.writeHead(200, jsonH); res.end(JSON.stringify({ target: s.target || '', telegram: masked }));
         return;
       }
 
-      if (url === '/api/probe/notify-config' && req.method === 'POST') {
+      if (url === '/api/probe/settings' && req.method === 'POST') {
         let body = '';
         req.on('data', (d: Buffer) => { body += d; });
         req.on('end', () => {
           try {
-            const { botToken, chatId } = JSON.parse(body);
-            if (!botToken || !chatId) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'botToken and chatId are required' })); return; }
-            const dir = path.join(projectRoot, '.viberadar');
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(path.join(dir, 'probe-notify.json'), JSON.stringify({ telegram: { botToken, chatId } }, null, 2), 'utf-8');
+            const { target, botToken, chatId } = JSON.parse(body);
+            const current = loadProbeSettings();
+            const updated: ProbeSettings = { ...current };
+            if (target !== undefined) updated.target = target || undefined;
+            if (botToken && chatId) updated.telegram = { botToken, chatId };
+            else if (botToken === '' && chatId === '') delete updated.telegram;
+            saveProbeSettings(updated);
             res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {
             res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
