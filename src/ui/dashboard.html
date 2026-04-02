@@ -3411,6 +3411,7 @@ async function loadProbeData() {
   try {
     const res = await fetch('/api/probe/status');
     probeData = await res.json();
+    if (contextMode === 'probe') renderContent();
   } catch {}
 }
 
