@@ -81,7 +81,7 @@ function findPlaywrightConfig(filePath: string): { configFile: string; projectRo
   return null;
 }
 
-async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: number, config: ProbeConfig): Promise<ProbeResult> {
+async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: number, config: ProbeConfig, onOutput?: (chunk: string) => void): Promise<ProbeResult> {
   const start = Date.now();
   const filePath = path.resolve(process.cwd(), check.file!);
   if (!fs.existsSync(filePath)) {
@@ -132,8 +132,8 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
       ...configArgs,
     ], { env, cwd: runCwd, shell: true, timeout });
     let output = '';
-    proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
-    proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.stdout.on('data', (d: Buffer) => { const chunk = d.toString(); output += chunk; onOutput?.(chunk); });
+    proc.stderr.on('data', (d: Buffer) => { const chunk = d.toString(); output += chunk; onOutput?.(chunk); });
     proc.on('close', code => {
       if (tempSpecFile) { try { fs.unlinkSync(tempSpecFile); } catch {} }
       const passed = code === 0;
@@ -186,10 +186,10 @@ function nowHms(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
-async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): Promise<ProbeResult> {
+async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig, onOutput?: (chunk: string) => void): Promise<ProbeResult> {
   // Run real Playwright test file if specified
   if (check.file) {
-    return runPlaywrightFile(check, config.target, config.timeout, config);
+    return runPlaywrightFile(check, config.target, config.timeout, config, onOutput);
   }
 
   const start = Date.now();
@@ -202,13 +202,15 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
   const runTs = new Date().toISOString().replace(/[:.]/g, '-');
   const screenshotFiles: string[] = [];
 
+  const emit = (line: string) => { logLines.push(line); onOutput?.(line + '\n'); };
+
   const takeScreenshot = async (label: string) => {
     try {
       const fname = `dsl-${checkSafe}-${label}-${runTs}.png`;
       const fpath = path.join(SCREENSHOTS_DIR, fname);
       await page.screenshot({ path: fpath, fullPage: true });
       screenshotFiles.push(fname);
-      logLines.push(`[${nowHms()}] 📸 ${fname}`);
+      emit(`[${nowHms()}] 📸 ${fname}`);
     } catch {}
   };
 
@@ -217,10 +219,10 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
       const step = check.steps![i];
       const label = stepLabel(step);
       const t0 = Date.now();
-      logLines.push(`[${nowHms()}] ▶ ${label}`);
+      emit(`[${nowHms()}] ▶ ${label}`);
       await executeStep(page, step, config.target, config.timeout);
       const elapsed = Date.now() - t0;
-      logLines.push(`[${nowHms()}] ✓ ${label}  +${elapsed}ms`);
+      emit(`[${nowHms()}] ✓ ${label}  +${elapsed}ms`);
       await takeScreenshot(`step${i + 1}`);
     }
     return {
@@ -231,7 +233,7 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
       screenshotFiles: screenshotFiles.length ? screenshotFiles : undefined,
     };
   } catch (err: any) {
-    logLines.push(`[${nowHms()}] ✗ ${err.message}`);
+    emit(`[${nowHms()}] ✗ ${err.message}`);
     await takeScreenshot('fail');
     const lastScreenshot = screenshotFiles[screenshotFiles.length - 1];
     return {
@@ -265,9 +267,10 @@ function loadPlaywright(): any {
 }
 
 export interface RunProbeOptions {
-  checkNames?: string[];                          // run only these checks (by name)
-  onCheckStart?: (checkName: string) => void;     // fired just before each check
-  onCheckDone?: (result: ProbeResult) => void;    // fired after each check
+  checkNames?: string[];                                           // run only these checks (by name)
+  onCheckStart?: (checkName: string) => void;                      // fired just before each check
+  onCheckDone?: (result: ProbeResult) => void;                     // fired after each check
+  onCheckOutput?: (checkName: string, chunk: string) => void;      // fired for each output chunk (streaming)
 }
 
 export async function runProbeChecks(config: ProbeConfig, options?: RunProbeOptions): Promise<ProbeRunReport> {
@@ -282,7 +285,10 @@ export async function runProbeChecks(config: ProbeConfig, options?: RunProbeOpti
     const results: ProbeResult[] = [];
     for (const check of checksToRun) {
       options?.onCheckStart?.(check.name);
-      const result = await runCheck(browser, check, config);
+      const onOutput = options?.onCheckOutput
+        ? (chunk: string) => options.onCheckOutput!(check.name, chunk)
+        : undefined;
+      const result = await runCheck(browser, check, config, onOutput);
       options?.onCheckDone?.(result);
       results.push(result);
     }

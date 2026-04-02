@@ -2212,6 +2212,9 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             probeState.runningCheck = null;
             broadcast('probe-check-done', result as unknown as Record<string, unknown>);
           },
+          onCheckOutput: (checkName, chunk) => {
+            broadcast('probe-check-output', { checkName, chunk } as Record<string, unknown>);
+          },
         });
         probeState.lastRun = report as ProbeLastRun;
         probeState.status = probeTimer ? 'scheduled' : 'idle';

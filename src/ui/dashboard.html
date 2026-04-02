@@ -3572,9 +3572,14 @@ function renderProbeDetail(c) {
     ? `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Файл теста</div>
        <code style="font-size:12px;color:var(--blue);background:var(--bg);padding:6px 10px;border-radius:4px;display:block">${escapeHtml(ch.file || '')}</code>` : '';
 
-  const outputHtml = result?.output
-    ? `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:20px;margin-bottom:6px">Вывод</div>
-       <div class="probe-output-box">${escapeHtml(result.output)}</div>` : '';
+  const liveOut = probeData?.liveOutput?.[ch.name] || '';
+  const displayOutput = (isRunning && liveOut) ? liveOut : (result?.output || '');
+  const outputHtml = (displayOutput || isRunning)
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:20px;margin-bottom:6px">
+         <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Вывод</div>
+         ${displayOutput ? `<button onclick="navigator.clipboard.writeText(document.getElementById('probeOutputBox').textContent).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='📋 Копировать',1500)})" title="Копировать" style="font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer">📋 Копировать</button>` : ''}
+       </div>
+       <div class="probe-output-box" id="probeOutputBox"${isRunning ? ' data-streaming="1"' : ''}>${escapeHtml(displayOutput)}${isRunning && !displayOutput ? '<span style="opacity:0.4">Ожидание вывода…</span>' : ''}</div>` : '';
 
   const errorHtml = result?.error && !result.output
     ? `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:20px;margin-bottom:6px">Ошибка</div>
@@ -8496,6 +8501,9 @@ function connectSSE() {
     const payload = JSON.parse(e.data || '{}');
     if (!probeData) probeData = {};
     probeData.runningCheck = payload.checkName;
+    // Clear stale live output for this check
+    if (!probeData.liveOutput) probeData.liveOutput = {};
+    probeData.liveOutput[payload.checkName] = '';
     if (contextMode === 'probe') renderContent();
   });
 
@@ -8506,6 +8514,22 @@ function connectSSE() {
     probeData.checkResults[result.check] = result;
     probeData.runningCheck = null;
     if (contextMode === 'probe') renderContent();
+  });
+
+  es.addEventListener('probe-check-output', (e) => {
+    const { checkName, chunk } = JSON.parse(e.data || '{}');
+    if (!checkName || !chunk) return;
+    if (!probeData) probeData = {};
+    if (!probeData.liveOutput) probeData.liveOutput = {};
+    probeData.liveOutput[checkName] = (probeData.liveOutput[checkName] || '') + chunk;
+    // Direct DOM append if currently viewing this check — no full re-render needed
+    if (contextMode === 'probe' && probeDetailCheck === checkName) {
+      const box = document.getElementById('probeOutputBox');
+      if (box) {
+        box.textContent = probeData.liveOutput[checkName];
+        box.scrollTop = box.scrollHeight;
+      }
+    }
   });
 
   es.addEventListener('probe-run-done', (e) => {
