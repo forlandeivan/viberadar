@@ -3462,7 +3462,7 @@ function renderProbePanel(c) {
     const typeLabel = ch.type === 'file' ? 'playwright' : 'dsl';
     const stepsCount = ch.type === 'dsl' ? `${ch.steps.length} шагов` : ch.file?.split('/').pop() || '';
     return `
-      <div class="probe-card ${status}" onclick="probeOpenDetail(${JSON.stringify(ch.name)})">
+      <div class="probe-card ${status}" onclick="probeOpenDetail(${escapeHtml(JSON.stringify(ch.name))})">
         <div class="probe-card-top">
           <div class="probe-card-name">${escapeHtml(ch.name)}</div>
           <div class="probe-card-icon">${probeStatusIcon(status)}</div>
@@ -3475,7 +3475,7 @@ function renderProbePanel(c) {
         ${result?.error ? `<div class="probe-card-err">${escapeHtml(result.error)}</div>` : ''}
         <div class="probe-card-footer">
           <button class="probe-btn probe-btn-run" style="font-size:11px;padding:4px 10px"
-            onclick="event.stopPropagation();probeRunOne(${JSON.stringify(ch.name)})"
+            onclick="event.stopPropagation();probeRunOne(${escapeHtml(JSON.stringify(ch.name))})"
             ${status === 'running' ? 'disabled' : ''}>▶ Run</button>
         </div>
       </div>`;
@@ -3575,7 +3575,7 @@ function renderProbeDetail(c) {
             ${result ? `<span style="color:var(--muted)">${new Date().toLocaleTimeString()}</span>` : ''}
           </div>
         </div>
-        <button class="probe-btn probe-btn-run" style="flex-shrink:0" onclick="probeRunOne(${JSON.stringify(ch.name)})" ${isRunning ? 'disabled' : ''}>
+        <button class="probe-btn probe-btn-run" style="flex-shrink:0" onclick="probeRunOne(${escapeHtml(JSON.stringify(ch.name))})" ${isRunning ? 'disabled' : ''}>
           ${isRunning ? '<span class="probe-spin">⏳</span> Выполняется…' : '▶ Run'}
         </button>
       </div>
