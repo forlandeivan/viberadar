@@ -3474,26 +3474,37 @@ async function probeScheduleStop() {
 function openProbeSettingsModal() {
   fetch('/api/probe/settings').then(r => r.json()).then(saved => {
     const tg = saved.telegram || {};
-    const inp = s => `style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"`;
+    const inp = () => `style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"`;
     const lbl = t => `<label style="font-size:12px;color:var(--muted);display:block;margin:12px 0 4px">${t}</label>`;
+    const sec = t => `<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">${t}</div>`;
     let overlay = document.getElementById('probeSettingsOverlay');
     if (overlay) overlay.remove();
     overlay = document.createElement('div');
     overlay.id = 'probeSettingsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
     overlay.innerHTML = `
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:440px;max-width:90vw">
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:460px;max-width:90vw;max-height:90vh;overflow-y:auto">
         <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">⚙️ Настройки Probe</h3>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Настройки сохраняются локально, не попадают в git</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Сохраняются локально в .viberadar/probe-settings.json · не попадают в git</div>
 
-        <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:4px">
-          ${lbl('Домен стенда')}
+        <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
+          ${sec('Стенд')}
+          ${lbl('Домен')}
           <input id="probeTarget" type="text" placeholder="https://staging.myapp.com" value="${escapeHtml(saved.target || '')}" ${inp()}>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Все проверки будут запускаться на этом домене. Переопределяет target из probe.config.yml</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Переопределяет target из probe.config.yml для всех проверок</div>
         </div>
 
-        <div style="margin-top:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Telegram уведомления</div>
+        <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
+          ${sec('E2E-учётные данные')}
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Передаются как <code>E2E_USER_EMAIL</code> и <code>E2E_USER_PASSWORD</code> в тесты через <code>file:</code></div>
+          ${lbl('Email')}
+          <input id="probeE2eEmail" type="text" placeholder="user@example.com" value="${escapeHtml(saved.e2eEmail || '')}" ${inp()}>
+          ${lbl('Пароль')}
+          <input id="probeE2ePassword" type="password" placeholder="${saved.e2ePasswordSet ? '••••••• (сохранён, оставьте пустым чтобы не менять)' : 'пароль'}" ${inp()}>
+        </div>
+
+        <div style="margin-bottom:4px">
+          ${sec('Telegram уведомления')}
           ${lbl('Bot Token')}
           <input id="probeBotToken" type="password" placeholder="1234567890:AAF..." value="${escapeHtml(tg.botToken || '')}" ${inp()}>
           ${lbl('Chat ID')}
@@ -3513,13 +3524,15 @@ function openProbeSettingsModal() {
       const target = document.getElementById('probeTarget').value.trim();
       const botToken = document.getElementById('probeBotToken').value.trim();
       const chatId = document.getElementById('probeChatId').value.trim();
+      const e2eEmail = document.getElementById('probeE2eEmail').value.trim();
+      const e2ePassword = document.getElementById('probeE2ePassword').value;
       const err = document.getElementById('probeSettingsErr');
       const btn = document.getElementById('probeSettingsSave');
       btn.disabled = true; btn.textContent = 'Сохраняю…';
       try {
-        const res = await fetch('/api/probe/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, botToken, chatId }) });
+        const body = { target, botToken, chatId, e2eEmail, e2ePassword };
+        const res = await fetch('/api/probe/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Ошибка сохранения'); }
-        // Refresh probe data to show new target
         await loadProbeData();
         renderContent();
         overlay.remove();

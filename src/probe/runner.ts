@@ -67,16 +67,47 @@ async function executeStep(page: any, step: ProbeStep, target: string, timeout: 
   }
 }
 
-async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: number): Promise<ProbeResult> {
+function findPlaywrightConfig(filePath: string): { configFile: string; projectRoot: string } | null {
+  let dir = path.dirname(filePath);
+  for (let i = 0; i < 8; i++) {
+    for (const name of ['playwright.config.ts', 'playwright.config.js']) {
+      const candidate = path.join(dir, name);
+      if (fs.existsSync(candidate)) return { configFile: candidate, projectRoot: dir };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: number, config: ProbeConfig): Promise<ProbeResult> {
   const start = Date.now();
   const filePath = path.resolve(process.cwd(), check.file!);
   if (!fs.existsSync(filePath)) {
     return { check: check.name, status: 'failed', durationMs: 0, error: `File not found: ${filePath}` };
   }
+  const pwConfig = findPlaywrightConfig(filePath);
+  const configArgs = pwConfig ? ['--config', pwConfig.configFile] : [];
+  const runCwd = pwConfig ? pwConfig.projectRoot : process.cwd();
   return new Promise(resolve => {
-    const env = { ...process.env, BASE_URL: target, PLAYWRIGHT_BASE_URL: target };
-    const proc = child_process.spawn('npx', ['playwright', 'test', filePath, '--reporter=line'], {
-      env, cwd: process.cwd(), shell: true, timeout,
+    const env: Record<string, string> = {
+      ...process.env as Record<string, string>,
+      BASE_URL: target,
+      PLAYWRIGHT_BASE_URL: target,
+      PLAYWRIGHT_USE_WEBSERVER: '0',
+      PLAYWRIGHT_BROWSERS: 'chromium',
+    };
+    if (config.e2eEmail) {
+      env.E2E_USER_EMAIL = config.e2eEmail;
+      env.E2E_EMAIL = config.e2eEmail;
+    }
+    if (config.e2ePassword) {
+      env.E2E_USER_PASSWORD = config.e2ePassword;
+      env.E2E_PASSWORD = config.e2ePassword;
+    }
+    const proc = child_process.spawn('npx', ['playwright', 'test', filePath, '--reporter=line', ...configArgs], {
+      env, cwd: runCwd, shell: true, timeout,
     });
     let output = '';
     proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
@@ -99,7 +130,7 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
 async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): Promise<ProbeResult> {
   // Run real Playwright test file if specified
   if (check.file) {
-    return runPlaywrightFile(check, config.target, config.timeout);
+    return runPlaywrightFile(check, config.target, config.timeout, config);
   }
 
   const start = Date.now();

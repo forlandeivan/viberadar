@@ -2157,6 +2157,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
     interface ProbeSettings {
       target?: string;
       telegram?: { botToken: string; chatId: string };
+      e2eEmail?: string;
+      e2ePassword?: string;
     }
 
     function loadProbeSettings(): ProbeSettings {
@@ -2194,6 +2196,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const effectiveConfig = config || { target: '', interval: 300, timeout: 30000, checks: [] };
         if (settings.target) effectiveConfig.target = settings.target;
         if (settings.telegram) effectiveConfig.notify = { telegram: settings.telegram };
+        if (settings.e2eEmail) effectiveConfig.e2eEmail = settings.e2eEmail;
+        if (settings.e2ePassword) effectiveConfig.e2ePassword = settings.e2ePassword;
         const notifyCfg = effectiveConfig.notify;
         const report = await runProbeChecks(effectiveConfig);
         probeState.lastRun = report as ProbeLastRun;
@@ -4850,7 +4854,12 @@ a{color:var(--blue)}
           botToken: s.telegram.botToken ? s.telegram.botToken.slice(0, 8) + '••••••••' : '',
           chatId: s.telegram.chatId || '',
         } : null;
-        res.writeHead(200, jsonH); res.end(JSON.stringify({ target: s.target || '', telegram: masked }));
+        res.writeHead(200, jsonH); res.end(JSON.stringify({
+          target: s.target || '',
+          telegram: masked,
+          e2eEmail: s.e2eEmail || '',
+          e2ePasswordSet: !!s.e2ePassword,
+        }));
         return;
       }
 
@@ -4859,12 +4868,15 @@ a{color:var(--blue)}
         req.on('data', (d: Buffer) => { body += d; });
         req.on('end', () => {
           try {
-            const { target, botToken, chatId } = JSON.parse(body);
+            const { target, botToken, chatId, e2eEmail, e2ePassword } = JSON.parse(body);
             const current = loadProbeSettings();
             const updated: ProbeSettings = { ...current };
             if (target !== undefined) updated.target = target || undefined;
             if (botToken && chatId) updated.telegram = { botToken, chatId };
             else if (botToken === '' && chatId === '') delete updated.telegram;
+            if (e2eEmail !== undefined) updated.e2eEmail = e2eEmail || undefined;
+            if (e2ePassword) updated.e2ePassword = e2ePassword;
+            else if (e2ePassword === '') delete updated.e2ePassword;
             saveProbeSettings(updated);
             res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {

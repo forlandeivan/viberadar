@@ -4,6 +4,8 @@ export interface ProbeConfig {
   timeout: number;       // ms per step
   notify?: ProbeNotifyConfig;
   checks: ProbeCheck[];
+  e2eEmail?: string;     // credentials injected into file-based checks
+  e2ePassword?: string;
 }
 
 export interface ProbeNotifyConfig {
