@@ -1749,6 +1749,7 @@ const modeStore = {
   scenarios: { view: 'list', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
   load:     { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  probe:    { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
@@ -1756,6 +1757,7 @@ function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/docs')) return 'docs';
   if (pathname.startsWith('/radar/services')) return 'services';
   if (pathname.startsWith('/radar/load')) return 'load';
+  if (pathname.startsWith('/radar/probe')) return 'probe';
   return 'qa';
 }
 
@@ -1764,6 +1766,7 @@ function routePathForMode(mode) {
   if (mode === 'docs') return '/radar/docs';
   if (mode === 'services') return '/radar/services';
   if (mode === 'load') return '/radar/load';
+  if (mode === 'probe') return '/radar/probe';
   return '/radar/qa';
 }
 
