@@ -115,7 +115,6 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
     const proc = child_process.spawn('npx', [
       'playwright', 'test', filePath,
       '--reporter=line',
-      '--screenshot=on',
       `--output=${pwOutputDir}`,
       ...configArgs,
     ], { env, cwd: runCwd, shell: true, timeout });

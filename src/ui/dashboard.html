@@ -8514,7 +8514,9 @@ function connectSSE() {
     probeData.status = probeData.intervalSec ? 'scheduled' : 'idle';
     probeData.runningCheck = null;
     probeRunning = false;
-    if (contextMode === 'probe') renderContent();
+    // Full reload after run to sync any state missed via SSE
+    if (contextMode === 'probe') loadProbeData();
+    else renderContent();
   });
 
   es.addEventListener('probe-scheduled', (e) => {
@@ -8531,6 +8533,11 @@ function connectSSE() {
     es.close();
     setTimeout(connectSSE, 3000);
   };
+
+  es.addEventListener('open', () => {
+    // On SSE reconnect, re-sync probe state to fix any stuck spinners
+    if (contextMode === 'probe') loadProbeData();
+  });
 }
 
 init().then(async () => {
