@@ -3782,29 +3782,61 @@ function openProbeUploadModal() {
   overlay = document.createElement('div');
   overlay.id = 'probeUploadOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
-  overlay.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:480px;max-width:90vw">
-      <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">📤 Загрузить тест</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Файл сохранится в <code>e2e/</code> и появится в списке проверок</div>
 
-      <div id="probeUploadDrop" style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s" onclick="document.getElementById('probeUploadInput').click()">
-        <div style="font-size:24px;margin-bottom:8px">📁</div>
-        <div style="font-size:13px;color:var(--muted)">Нажмите или перетащите <code>.spec.ts</code> файл</div>
-        <div id="probeUploadFileName" style="margin-top:8px;font-size:12px;color:var(--blue)"></div>
-        <input id="probeUploadInput" type="file" accept=".ts" style="display:none">
+  const tabStyle = (active) => `padding:7px 16px;font-size:13px;cursor:pointer;border:none;background:none;border-bottom:2px solid ${active ? 'var(--blue)' : 'transparent'};color:${active ? 'var(--blue)' : 'var(--muted)'};transition:all 0.15s`;
+  const inputStyle = `width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px`;
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
+      <h3 style="margin:0 0 16px;font-size:16px;color:var(--text)">📤 Импорт теста</h3>
+
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px">
+        <button id="tabFile" style="${tabStyle(true)}" onclick="probeUploadSwitchTab('file')">📁 Файл</button>
+        <button id="tabPaste" style="${tabStyle(false)}" onclick="probeUploadSwitchTab('paste')">📋 Вставить код</button>
+      </div>
+
+      <!-- TAB: file -->
+      <div id="tabFileContent">
+        <div id="probeUploadDrop" style="border:2px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s" onclick="document.getElementById('probeUploadInput').click()">
+          <div style="font-size:24px;margin-bottom:8px">📁</div>
+          <div style="font-size:13px;color:var(--muted)">Нажмите или перетащите <code>.spec.ts</code> файл</div>
+          <div id="probeUploadFileName" style="margin-top:8px;font-size:12px;color:var(--blue)"></div>
+          <input id="probeUploadInput" type="file" accept=".ts" style="display:none">
+        </div>
+      </div>
+
+      <!-- TAB: paste -->
+      <div id="tabPasteContent" style="display:none">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Имя файла <span style="color:var(--dim)">(например: my-test.spec.ts)</span></label>
+        <input id="probeUploadPasteName" type="text" placeholder="my-test.spec.ts" style="${inputStyle};margin-bottom:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Код теста</label>
+        <textarea id="probeUploadPasteCode" placeholder="Вставьте содержимое .spec.ts файла…"
+          style="${inputStyle};height:240px;resize:vertical;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre"></textarea>
       </div>
 
       <div id="probeUploadErr" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(248,81,73,0.1);color:var(--red);font-size:12px"></div>
-      <div id="probeUploadOk" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(63,185,80,0.1);color:var(--green);font-size:12px"></div>
+      <div id="probeUploadOk"  style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(63,185,80,0.1);color:var(--green);font-size:12px"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
         <button onclick="document.getElementById('probeUploadOverlay').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
         <button id="probeUploadSave" disabled style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px;opacity:0.5">Загрузить</button>
       </div>
     </div>`;
+
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
-  // Drag & drop
+  // Tab switching
+  window.probeUploadSwitchTab = (tab) => {
+    const isFile = tab === 'file';
+    document.getElementById('tabFileContent').style.display  = isFile ? '' : 'none';
+    document.getElementById('tabPasteContent').style.display = isFile ? 'none' : '';
+    const tabStyle = (active) => `padding:7px 16px;font-size:13px;cursor:pointer;border:none;background:none;border-bottom:2px solid ${active ? 'var(--blue)' : 'transparent'};color:${active ? 'var(--blue)' : 'var(--muted)'};transition:all 0.15s`;
+    document.getElementById('tabFile').style.cssText  = tabStyle(isFile);
+    document.getElementById('tabPaste').style.cssText = tabStyle(!isFile);
+    checkPasteReady();
+  };
+
+  // File tab — drag & drop + file picker
   const dropZone = document.getElementById('probeUploadDrop');
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--blue)'; });
   dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = 'var(--border)'; });
@@ -3812,33 +3844,73 @@ function openProbeUploadModal() {
     e.preventDefault();
     dropZone.style.borderColor = 'var(--border)';
     const file = e.dataTransfer?.files?.[0];
-    if (file) handleUploadFile(file);
+    if (file) setUploadFile(file);
   });
-
   let uploadFile = null;
   const input = document.getElementById('probeUploadInput');
-  input.addEventListener('change', () => { if (input.files[0]) handleUploadFile(input.files[0]); });
-
-  function handleUploadFile(file) {
+  input.addEventListener('change', () => { if (input.files[0]) setUploadFile(input.files[0]); });
+  function setUploadFile(file) {
     uploadFile = file;
     document.getElementById('probeUploadFileName').textContent = file.name;
-    document.getElementById('probeUploadSave').disabled = false;
-    document.getElementById('probeUploadSave').style.opacity = '1';
+    setSubmitReady(true);
   }
 
+  // Paste tab — enable button when both fields filled
+  function checkPasteReady() {
+    const name = (document.getElementById('probeUploadPasteName')?.value || '').trim();
+    const code = (document.getElementById('probeUploadPasteCode')?.value || '').trim();
+    const tabVisible = document.getElementById('tabPasteContent')?.style.display !== 'none';
+    if (tabVisible) setSubmitReady(!!(name && code));
+  }
+  document.getElementById('probeUploadPasteName').addEventListener('input', checkPasteReady);
+  document.getElementById('probeUploadPasteCode').addEventListener('input', checkPasteReady);
+
+  // Auto-detect filename from `test(` or filename line in pasted code
+  document.getElementById('probeUploadPasteCode').addEventListener('paste', (e) => {
+    setTimeout(() => {
+      const nameInput = document.getElementById('probeUploadPasteName');
+      if (nameInput && !nameInput.value.trim()) {
+        const code = document.getElementById('probeUploadPasteCode').value;
+        // Try to extract filename from first comment like // auth-login.spec.ts
+        const m = code.match(/\/\/\s*([\w.-]+\.spec\.ts)/);
+        if (m) nameInput.value = m[1];
+      }
+      checkPasteReady();
+    }, 0);
+  });
+
+  function setSubmitReady(ready) {
+    const btn = document.getElementById('probeUploadSave');
+    if (!btn) return;
+    btn.disabled = !ready;
+    btn.style.opacity = ready ? '1' : '0.5';
+  }
+
+  // Submit
   document.getElementById('probeUploadSave').addEventListener('click', async () => {
-    if (!uploadFile) return;
     const btn = document.getElementById('probeUploadSave');
     const err = document.getElementById('probeUploadErr');
-    const ok = document.getElementById('probeUploadOk');
+    const ok  = document.getElementById('probeUploadOk');
     err.style.display = 'none'; ok.style.display = 'none';
+
+    const pasteVisible = document.getElementById('tabPasteContent').style.display !== 'none';
+    let filename, content;
+    if (pasteVisible) {
+      filename = document.getElementById('probeUploadPasteName').value.trim();
+      content  = document.getElementById('probeUploadPasteCode').value;
+      if (!filename.endsWith('.ts')) filename += '.ts';
+    } else {
+      if (!uploadFile) return;
+      filename = uploadFile.name;
+      content  = await uploadFile.text();
+    }
+
     btn.disabled = true; btn.textContent = 'Загружаю…';
     try {
-      const content = await uploadFile.text();
       const res = await fetch('/api/probe/upload-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: uploadFile.name, content }),
+        body: JSON.stringify({ filename, content }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
