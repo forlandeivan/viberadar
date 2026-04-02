@@ -4884,7 +4884,8 @@ a{color:var(--blue)}
       }
 
       if (url.startsWith('/api/probe/screenshot/') && req.method === 'GET') {
-        const filename = path.basename(url.replace('/api/probe/screenshot/', ''));
+        const rawName = url.replace('/api/probe/screenshot/', '').split('?')[0];
+        const filename = path.basename(decodeURIComponent(rawName));
         const screenshotsDir = path.join(process.cwd(), '.viberadar', 'probe-screenshots');
         const filePath = path.join(screenshotsDir, filename);
         // Security: only serve .png files from the designated screenshots directory

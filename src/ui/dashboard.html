@@ -3622,20 +3622,29 @@ function probeShowScreenshot(url) {
 }
 
 async function probeRunNow() {
+  if (!probeData) probeData = {};
+  probeData.status = 'running';
+  probeData.runningCheck = null;
   probeRunning = true;
   renderContent();
   try { await fetch('/api/probe/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' }); } catch {}
 }
 
 async function probeRunOne(checkName) {
+  if (!probeData) probeData = {};
+  probeData.runningCheck = checkName;
+  renderContent();
   try {
     await fetch('/api/probe/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ checkName }),
     });
+  } catch {
+    // On error restore state
+    probeData.runningCheck = null;
     renderContent();
-  } catch {}
+  }
 }
 
 async function probeScheduleStart() {
