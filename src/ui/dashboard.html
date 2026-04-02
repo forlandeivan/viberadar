@@ -1872,7 +1872,9 @@ function escapeHtml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 
@@ -3119,6 +3121,7 @@ async function init() {
     document.getElementById('searchInput').value = searchQuery;
 
     document.getElementById('loading').style.display = 'none';
+    if (contextMode === 'probe') { await loadProbeData(); }
     renderStats();
     renderSidebar();
     renderContent();
