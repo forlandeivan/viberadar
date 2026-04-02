@@ -4667,14 +4667,19 @@ a{color:var(--blue)}
       if (url === '/api/load/check' && req.method === 'GET') {
         const k6 = spawn('k6', ['version'], { shell: WIN, stdio: 'pipe' });
         let ver = '';
+        let responded = false;
+        const sendK6Result = (available: boolean, version = '') => {
+          if (responded) return;
+          responded = true;
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify({ available, version }));
+        };
         k6.stdout?.on('data', (d: Buffer) => { ver += d.toString(); });
         k6.on('close', (code: number) => {
-          res.writeHead(200, jsonH);
-          res.end(JSON.stringify({ available: code === 0, version: ver.trim().split('\n')[0] || '' }));
+          sendK6Result(code === 0, ver.trim().split('\n')[0] || '');
         });
         k6.on('error', () => {
-          res.writeHead(200, jsonH);
-          res.end(JSON.stringify({ available: false, version: '' }));
+          sendK6Result(false, '');
         });
         return;
       }
