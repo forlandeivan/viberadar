@@ -4953,8 +4953,10 @@ a{color:var(--blue)}
               .replace(/^\.+/, '')          // no leading dots
               .trim();
             if (!safeName) safeName = 'test.spec.ts';
-            if (!safeName.endsWith('.ts')) safeName += '.ts';
-            if (safeName.length > 200) safeName = safeName.slice(0, 196) + '.ts';
+            // Ensure .spec.ts extension so Playwright testMatch picks it up
+            if (!safeName.endsWith('.ts')) safeName += '.spec.ts';
+            else if (!safeName.endsWith('.spec.ts')) safeName = safeName.replace(/\.ts$/, '.spec.ts');
+            if (safeName.length > 200) safeName = safeName.slice(0, 196) + '.spec.ts';
             const e2eDir = path.join(projectRoot, 'e2e');
             if (!fs.existsSync(e2eDir)) fs.mkdirSync(e2eDir, { recursive: true });
             const filePath = path.join(e2eDir, safeName);

@@ -90,6 +90,8 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
   const pwConfig = findPlaywrightConfig(filePath);
   const configArgs = pwConfig ? ['--config', pwConfig.configFile] : [];
   const runCwd = pwConfig ? pwConfig.projectRoot : process.cwd();
+  // Use relative path so Playwright treats it as a filter pattern against discovered files
+  const relFilePath = path.relative(runCwd, filePath).replace(/\\/g, '/');
 
   ensureScreenshotsDir();
   const checkSafe = check.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
@@ -113,7 +115,7 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
       env.E2E_PASSWORD = config.e2ePassword;
     }
     const proc = child_process.spawn('npx', [
-      'playwright', 'test', filePath,
+      'playwright', 'test', relFilePath,
       '--reporter=line',
       `--output=${pwOutputDir}`,
       ...configArgs,

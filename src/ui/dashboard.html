@@ -3859,8 +3859,9 @@ function openProbeUploadModal() {
   function sanitizeUploadName(raw) {
     let s = raw.replace(/[\\/]/g, '').replace(/[*?"<>|:\0]/g, '').replace(/\s+/g, '-').replace(/^\.+/, '').trim();
     if (!s) return '';
-    if (!s.endsWith('.ts')) s += '.ts';
-    if (s.length > 200) s = s.slice(0, 196) + '.ts';
+    if (!s.endsWith('.ts')) s += '.spec.ts';
+    else if (!s.endsWith('.spec.ts')) s = s.replace(/\.ts$/, '.spec.ts');
+    if (s.length > 200) s = s.slice(0, 196) + '.spec.ts';
     return s;
   }
 
