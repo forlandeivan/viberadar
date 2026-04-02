@@ -90,8 +90,19 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
   const pwConfig = findPlaywrightConfig(filePath);
   const configArgs = pwConfig ? ['--config', pwConfig.configFile] : [];
   const runCwd = pwConfig ? pwConfig.projectRoot : process.cwd();
+
+  // Playwright's testMatch only picks up *.spec.ts / *.test.ts by default.
+  // If the file doesn't match, create a temporary .spec.ts copy so it gets discovered.
+  let runFilePath = filePath;
+  let tempSpecFile: string | null = null;
+  if (!/\.(spec|test)\.[jt]sx?$/.test(filePath)) {
+    tempSpecFile = filePath.replace(/\.[jt]sx?$/, '.spec.ts');
+    if (tempSpecFile === filePath) tempSpecFile = filePath + '.spec.ts';
+    try { fs.copyFileSync(filePath, tempSpecFile); } catch {}
+    runFilePath = tempSpecFile;
+  }
   // Use relative path so Playwright treats it as a filter pattern against discovered files
-  const relFilePath = path.relative(runCwd, filePath).replace(/\\/g, '/');
+  const relFilePath = path.relative(runCwd, runFilePath).replace(/\\/g, '/');
 
   ensureScreenshotsDir();
   const checkSafe = (check.name || 'unnamed').replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
@@ -124,6 +135,7 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
     proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
     proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
     proc.on('close', code => {
+      if (tempSpecFile) { try { fs.unlinkSync(tempSpecFile); } catch {} }
       const passed = code === 0;
       // Collect screenshots from output dir
       let screenshotFiles: string[] = [];
@@ -156,6 +168,7 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
       });
     });
     proc.on('error', err => {
+      if (tempSpecFile) { try { fs.unlinkSync(tempSpecFile); } catch {} }
       resolve({ check: check.name, status: 'failed', durationMs: Date.now() - start, error: err.message, output: err.message });
     });
   });

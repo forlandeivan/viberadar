@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { requireProbeConfig } from './config';
 import { runProbeChecks } from './runner';
 import { createNotifiers, notifyAll } from './notify';
@@ -42,6 +44,17 @@ function logReport(report: ProbeRunReport): void {
 export async function runProbe(argv: string[]): Promise<void> {
   const { watch, configPath } = parseArgs(argv);
   const config = requireProbeConfig(configPath);
+
+  // Merge credentials and target override from probe-settings.json (browser-managed, gitignored)
+  const settingsPath = path.join(process.cwd(), '.viberadar', 'probe-settings.json');
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      if (settings.target)      config.target      = settings.target;
+      if (settings.e2eEmail)    config.e2eEmail    = settings.e2eEmail;
+      if (settings.e2ePassword) config.e2ePassword = settings.e2ePassword;
+    } catch {}
+  }
   const notifiers = createNotifiers(config.notify);
 
   console.log(`🔭 Probe target: ${config.target}`);
