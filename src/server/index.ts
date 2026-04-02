@@ -4898,7 +4898,8 @@ a{color:var(--blue)}
       }
     });
 
-    server.listen(port, '127.0.0.1', () => resolve({ server }));
+    const host = process.env.VIBERADAR_HOST || '127.0.0.1';
+    server.listen(port, host, () => resolve({ server }));
 
     process.once('SIGINT', () => {
       console.log('\n👋 VibeRadar stopped.');
