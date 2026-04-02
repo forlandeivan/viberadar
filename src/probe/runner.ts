@@ -90,6 +90,12 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
   const pwConfig = findPlaywrightConfig(filePath);
   const configArgs = pwConfig ? ['--config', pwConfig.configFile] : [];
   const runCwd = pwConfig ? pwConfig.projectRoot : process.cwd();
+
+  ensureScreenshotsDir();
+  const checkSafe = check.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const pwOutputDir = path.join(SCREENSHOTS_DIR, `pw-${checkSafe}-${ts}`);
+
   return new Promise(resolve => {
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
@@ -106,20 +112,46 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
       env.E2E_USER_PASSWORD = config.e2ePassword;
       env.E2E_PASSWORD = config.e2ePassword;
     }
-    const proc = child_process.spawn('npx', ['playwright', 'test', filePath, '--reporter=line', ...configArgs], {
-      env, cwd: runCwd, shell: true, timeout,
-    });
+    const proc = child_process.spawn('npx', [
+      'playwright', 'test', filePath,
+      '--reporter=line',
+      '--screenshot=on',
+      `--output=${pwOutputDir}`,
+      ...configArgs,
+    ], { env, cwd: runCwd, shell: true, timeout });
     let output = '';
     proc.stdout.on('data', (d: Buffer) => { output += d.toString(); });
     proc.stderr.on('data', (d: Buffer) => { output += d.toString(); });
     proc.on('close', code => {
       const passed = code === 0;
+      // Collect screenshots from output dir
+      let screenshotFiles: string[] = [];
+      try {
+        if (fs.existsSync(pwOutputDir)) {
+          const collect = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (entry.isDirectory()) collect(path.join(dir, entry.name));
+              else if (entry.name.endsWith('.png')) {
+                // Copy to SCREENSHOTS_DIR flat with unique name
+                const destName = `pw-${checkSafe}-${ts}-${entry.name}`;
+                const destPath = path.join(SCREENSHOTS_DIR, destName);
+                fs.copyFileSync(path.join(dir, entry.name), destPath);
+                screenshotFiles.push(destName);
+              }
+            }
+          };
+          collect(pwOutputDir);
+          // Clean up nested output dir after copying
+          fs.rmSync(pwOutputDir, { recursive: true, force: true });
+        }
+      } catch {}
       resolve({
         check: check.name,
         status: passed ? 'passed' : 'failed',
         durationMs: Date.now() - start,
         output: output.slice(-3000),
         error: passed ? undefined : output.slice(-800),
+        screenshotFiles: screenshotFiles.length ? screenshotFiles : undefined,
       });
     });
     proc.on('error', err => {
@@ -151,36 +183,50 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
   const page = await context.newPage();
   const logLines: string[] = [];
 
+  ensureScreenshotsDir();
+  const checkSafe = check.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
+  const runTs = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotFiles: string[] = [];
+
+  const takeScreenshot = async (label: string) => {
+    try {
+      const fname = `dsl-${checkSafe}-${label}-${runTs}.png`;
+      const fpath = path.join(SCREENSHOTS_DIR, fname);
+      await page.screenshot({ path: fpath, fullPage: true });
+      screenshotFiles.push(fname);
+      logLines.push(`[${nowHms()}] 📸 ${fname}`);
+    } catch {}
+  };
+
   try {
-    for (const step of (check.steps || [])) {
+    for (let i = 0; i < (check.steps || []).length; i++) {
+      const step = check.steps![i];
       const label = stepLabel(step);
       const t0 = Date.now();
       logLines.push(`[${nowHms()}] ▶ ${label}`);
       await executeStep(page, step, config.target, config.timeout);
-      logLines.push(`[${nowHms()}] ✓ ${label}  +${Date.now() - t0}ms`);
+      const elapsed = Date.now() - t0;
+      logLines.push(`[${nowHms()}] ✓ ${label}  +${elapsed}ms`);
+      await takeScreenshot(`step${i + 1}`);
     }
     return {
       check: check.name,
       status: 'passed',
       durationMs: Date.now() - start,
       output: logLines.join('\n'),
+      screenshotFiles: screenshotFiles.length ? screenshotFiles : undefined,
     };
   } catch (err: any) {
     logLines.push(`[${nowHms()}] ✗ ${err.message}`);
-    ensureScreenshotsDir();
-    const filename = screenshotName(check.name);
-    const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
-    try {
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      logLines.push(`[${nowHms()}] 📸 screenshot: ${screenshotPath}`);
-    } catch {}
-
+    await takeScreenshot('fail');
+    const lastScreenshot = screenshotFiles[screenshotFiles.length - 1];
     return {
       check: check.name,
       status: 'failed',
       durationMs: Date.now() - start,
       error: err.message,
-      screenshotPath,
+      screenshotPath: lastScreenshot ? path.join(SCREENSHOTS_DIR, lastScreenshot) : undefined,
+      screenshotFiles: screenshotFiles.length ? screenshotFiles : undefined,
       output: logLines.join('\n'),
     };
   } finally {

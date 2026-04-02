@@ -35,6 +35,7 @@ export interface ProbeResult {
   durationMs: number;
   error?: string;
   screenshotPath?: string;
+  screenshotFiles?: string[];  // filenames relative to SCREENSHOTS_DIR (for gallery)
   output?: string;   // full stdout/stderr from playwright or DSL runner
 }
 

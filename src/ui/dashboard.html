@@ -1612,6 +1612,13 @@
   .probe-step-type { font-size: 10px; font-weight: 600; color: var(--blue); background: rgba(88,166,255,0.1); padding: 1px 5px; border-radius: 3px; min-width: 80px; text-align: center; }
   .probe-step-val { color: var(--text); font-family: monospace; }
   .probe-output-box { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; max-height: 360px; overflow-y: auto; color: var(--text); line-height: 1.5; margin-top: 8px; }
+  .probe-screenshots { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .probe-screenshot-thumb { position: relative; cursor: pointer; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); transition: border-color 0.15s; flex-shrink: 0; }
+  .probe-screenshot-thumb:hover { border-color: var(--blue); }
+  .probe-screenshot-thumb img { display: block; width: 180px; height: 110px; object-fit: cover; }
+  .probe-screenshot-thumb .probe-screenshot-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.65); font-size: 10px; color: var(--muted); padding: 3px 6px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .probe-screenshot-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 99999; cursor: zoom-out; }
+  .probe-screenshot-lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
 
   </style>
 </head>
@@ -3564,6 +3571,17 @@ function renderProbeDetail(c) {
     ? `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:20px;margin-bottom:6px">Ошибка</div>
        <div class="probe-output-box" style="color:var(--red)">${escapeHtml(result.error)}</div>` : '';
 
+  const screenshots = result?.screenshotFiles || [];
+  const screenshotsHtml = screenshots.length
+    ? `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:20px;margin-bottom:6px">📸 Скриншоты (${screenshots.length})</div>
+       <div class="probe-screenshots">
+         ${screenshots.map((f, i) => `
+           <div class="probe-screenshot-thumb" onclick="probeShowScreenshot('/api/probe/screenshot/${escapeHtml(f)}')">
+             <img src="/api/probe/screenshot/${escapeHtml(f)}" alt="step ${i+1}" loading="lazy">
+             <div class="probe-screenshot-label">${escapeHtml(f.replace(/^(dsl|pw)-[^-]+-/, '').replace(/-\d{4}-\d{2}-\d{2}.*/, ''))}</div>
+           </div>`).join('')}
+       </div>` : '';
+
   c.innerHTML = `
     <div class="probe-detail">
       <div class="probe-back" onclick="probeDetailCheck=null;renderContent()">← Назад к проверкам</div>
@@ -3585,9 +3603,22 @@ function renderProbeDetail(c) {
 
       ${stepsHtml}
       ${fileHtml}
+      ${screenshotsHtml}
       ${outputHtml}
       ${errorHtml}
     </div>`;
+}
+
+function probeShowScreenshot(url) {
+  let lb = document.getElementById('probeScreenshotLb');
+  if (lb) lb.remove();
+  lb = document.createElement('div');
+  lb.id = 'probeScreenshotLb';
+  lb.className = 'probe-screenshot-lightbox';
+  lb.innerHTML = `<img src="${url}" alt="screenshot">`;
+  lb.addEventListener('click', () => lb.remove());
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { lb.remove(); document.removeEventListener('keydown', esc); } });
+  document.body.appendChild(lb);
 }
 
 async function probeRunNow() {

@@ -4883,6 +4883,20 @@ a{color:var(--blue)}
         return;
       }
 
+      if (url.startsWith('/api/probe/screenshot/') && req.method === 'GET') {
+        const filename = path.basename(url.replace('/api/probe/screenshot/', ''));
+        const screenshotsDir = path.join(process.cwd(), '.viberadar', 'probe-screenshots');
+        const filePath = path.join(screenshotsDir, filename);
+        // Security: only serve .png files from the designated screenshots directory
+        if (!filename.endsWith('.png') || !filePath.startsWith(screenshotsDir)) {
+          res.writeHead(403); res.end('Forbidden'); return;
+        }
+        if (!fs.existsSync(filePath)) { res.writeHead(404); res.end('Not found'); return; }
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' });
+        fs.createReadStream(filePath).pipe(res);
+        return;
+      }
+
       if (url === '/api/probe/settings' && req.method === 'GET') {
         const s = loadProbeSettings();
         const masked = s.telegram ? {
