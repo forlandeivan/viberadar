@@ -3497,7 +3497,10 @@ function renderProbePanel(c) {
             ${d?.effectiveTarget ? escapeHtml(d.effectiveTarget) + ' · ' : ''}${summary || '<span style="color:#e3b341">⚠️ Задайте домен в Настройках</span>'}
           </div>
         </div>
-        <button class="probe-btn" onclick="openProbeSettingsModal()">⚙️ Настройки</button>
+        <div style="display:flex;gap:8px">
+          <button class="probe-btn" onclick="openProbeUploadModal()">📤 Загрузить тест</button>
+          <button class="probe-btn" onclick="openProbeSettingsModal()">⚙️ Настройки</button>
+        </div>
       </div>
 
       <div class="probe-section" style="margin-bottom:0">
@@ -3613,6 +3616,85 @@ async function probeScheduleStop() {
   await fetch('/api/probe/schedule/stop', { method: 'POST' });
   await loadProbeData();
   renderContent();
+}
+
+function openProbeUploadModal() {
+  let overlay = document.getElementById('probeUploadOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'probeUploadOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:480px;max-width:90vw">
+      <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">📤 Загрузить тест</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Файл сохранится в <code>e2e/</code> и появится в списке проверок</div>
+
+      <div id="probeUploadDrop" style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s" onclick="document.getElementById('probeUploadInput').click()">
+        <div style="font-size:24px;margin-bottom:8px">📁</div>
+        <div style="font-size:13px;color:var(--muted)">Нажмите или перетащите <code>.spec.ts</code> файл</div>
+        <div id="probeUploadFileName" style="margin-top:8px;font-size:12px;color:var(--blue)"></div>
+        <input id="probeUploadInput" type="file" accept=".ts" style="display:none">
+      </div>
+
+      <div id="probeUploadErr" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(248,81,73,0.1);color:var(--red);font-size:12px"></div>
+      <div id="probeUploadOk" style="display:none;margin-top:12px;padding:8px 12px;border-radius:6px;background:rgba(63,185,80,0.1);color:var(--green);font-size:12px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('probeUploadOverlay').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
+        <button id="probeUploadSave" disabled style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px;opacity:0.5">Загрузить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // Drag & drop
+  const dropZone = document.getElementById('probeUploadDrop');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--blue)'; });
+  dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = 'var(--border)'; });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--border)';
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleUploadFile(file);
+  });
+
+  let uploadFile = null;
+  const input = document.getElementById('probeUploadInput');
+  input.addEventListener('change', () => { if (input.files[0]) handleUploadFile(input.files[0]); });
+
+  function handleUploadFile(file) {
+    uploadFile = file;
+    document.getElementById('probeUploadFileName').textContent = file.name;
+    document.getElementById('probeUploadSave').disabled = false;
+    document.getElementById('probeUploadSave').style.opacity = '1';
+  }
+
+  document.getElementById('probeUploadSave').addEventListener('click', async () => {
+    if (!uploadFile) return;
+    const btn = document.getElementById('probeUploadSave');
+    const err = document.getElementById('probeUploadErr');
+    const ok = document.getElementById('probeUploadOk');
+    err.style.display = 'none'; ok.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Загружаю…';
+    try {
+      const content = await uploadFile.text();
+      const res = await fetch('/api/probe/upload-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: uploadFile.name, content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+      ok.style.display = 'block';
+      ok.textContent = `✅ Тест "${data.checkName}" добавлен (${data.file})`;
+      btn.textContent = 'Загружено!';
+      await loadProbeData();
+      renderContent();
+      setTimeout(() => { overlay.remove(); }, 1500);
+    } catch (e) {
+      err.style.display = 'block'; err.textContent = e.message;
+      btn.disabled = false; btn.textContent = 'Загрузить';
+    }
+  });
 }
 
 function openProbeSettingsModal() {

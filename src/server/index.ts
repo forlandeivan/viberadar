@@ -4916,6 +4916,58 @@ a{color:var(--blue)}
         return;
       }
 
+      if (url === '/api/probe/upload-test' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          try {
+            const { filename, content } = JSON.parse(body);
+            if (!filename || !content) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'filename and content required' })); return;
+            }
+            // Sanitize filename: allow only .ts files, strip path separators
+            const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '-');
+            if (!safeName.endsWith('.ts')) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Only .ts files are allowed' })); return;
+            }
+            const e2eDir = path.join(projectRoot, 'e2e');
+            if (!fs.existsSync(e2eDir)) fs.mkdirSync(e2eDir, { recursive: true });
+            const filePath = path.join(e2eDir, safeName);
+            fs.writeFileSync(filePath, content, 'utf-8');
+
+            // Append to probe.config.yml
+            const configPath = path.join(projectRoot, 'probe.config.yml');
+            const checkName = safeName.replace(/\.spec\.ts$|\.ts$/, '').replace(/[-_]/g, ' ');
+            const relPath = `e2e/${safeName}`;
+            let yaml = '';
+            if (fs.existsSync(configPath)) {
+              yaml = fs.readFileSync(configPath, 'utf-8');
+              // Check if this file is already referenced
+              if (!yaml.includes(relPath)) {
+                // Append new check entry
+                const entry = `\n  - name: ${checkName}\n    file: ${relPath}\n`;
+                if (yaml.includes('checks:')) {
+                  yaml = yaml + entry;
+                } else {
+                  yaml = yaml + '\nchecks:' + entry;
+                }
+                fs.writeFileSync(configPath, yaml, 'utf-8');
+              }
+            } else {
+              // Create minimal probe.config.yml
+              const settings = loadProbeSettings();
+              const target = settings.target || 'http://localhost:3000';
+              yaml = `target: ${target}\ninterval: 600\ntimeout: 30000\nchecks:\n  - name: ${checkName}\n    file: ${relPath}\n`;
+              fs.writeFileSync(configPath, yaml, 'utf-8');
+            }
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true, filename: safeName, checkName, file: relPath }));
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
       res.writeHead(404);
       res.end('Not found');
     });
