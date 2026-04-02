@@ -128,6 +128,18 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
   });
 }
 
+function stepLabel(step: ProbeStep): string {
+  const type = getStepType(step);
+  const val = (step as any)[type];
+  if (typeof val === 'string') return `${type}: ${val}`;
+  if (typeof val === 'object' && val !== null) return `${type}: ${JSON.stringify(val)}`;
+  return `${type}: ${val}`;
+}
+
+function nowHms(): string {
+  return new Date().toTimeString().slice(0, 8);
+}
+
 async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): Promise<ProbeResult> {
   // Run real Playwright test file if specified
   if (check.file) {
@@ -137,22 +149,30 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
   const start = Date.now();
   const context = await browser.newContext();
   const page = await context.newPage();
+  const logLines: string[] = [];
 
   try {
     for (const step of (check.steps || [])) {
+      const label = stepLabel(step);
+      const t0 = Date.now();
+      logLines.push(`[${nowHms()}] ▶ ${label}`);
       await executeStep(page, step, config.target, config.timeout);
+      logLines.push(`[${nowHms()}] ✓ ${label}  +${Date.now() - t0}ms`);
     }
     return {
       check: check.name,
       status: 'passed',
       durationMs: Date.now() - start,
+      output: logLines.join('\n'),
     };
   } catch (err: any) {
+    logLines.push(`[${nowHms()}] ✗ ${err.message}`);
     ensureScreenshotsDir();
     const filename = screenshotName(check.name);
     const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
     try {
       await page.screenshot({ path: screenshotPath, fullPage: true });
+      logLines.push(`[${nowHms()}] 📸 screenshot: ${screenshotPath}`);
     } catch {}
 
     return {
@@ -161,6 +181,7 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
       durationMs: Date.now() - start,
       error: err.message,
       screenshotPath,
+      output: logLines.join('\n'),
     };
   } finally {
     await context.close();
