@@ -94,7 +94,7 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
   const relFilePath = path.relative(runCwd, filePath).replace(/\\/g, '/');
 
   ensureScreenshotsDir();
-  const checkSafe = check.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
+  const checkSafe = (check.name || 'unnamed').replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const pwOutputDir = path.join(SCREENSHOTS_DIR, `pw-${checkSafe}-${ts}`);
 
@@ -185,7 +185,7 @@ async function runCheck(browser: any, check: ProbeCheck, config: ProbeConfig): P
   const logLines: string[] = [];
 
   ensureScreenshotsDir();
-  const checkSafe = check.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
+  const checkSafe = (check.name || 'unnamed').replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-').toLowerCase();
   const runTs = new Date().toISOString().replace(/[:.]/g, '-');
   const screenshotFiles: string[] = [];
 

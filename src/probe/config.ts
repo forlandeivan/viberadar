@@ -65,12 +65,24 @@ export function loadProbeConfig(configPath?: string): ProbeConfig | null {
 
   const interpolated = interpolateDeep(raw);
 
+  // Filter out checks with null/empty name and warn
+  const validChecks: ProbeCheck[] = (interpolated.checks as any[]).filter((c: any, i: number) => {
+    if (!c || typeof c !== 'object') { console.warn(`   ⚠️  Check #${i + 1} is not an object, skipping`); return false; }
+    if (!c.name) { console.warn(`   ⚠️  Check #${i + 1} has no name, skipping (file: ${c.file || 'dsl'})`); return false; }
+    return true;
+  }).map((c: any) => ({ ...c, name: String(c.name) }));
+
+  if (validChecks.length === 0) {
+    console.warn(`   ⚠️  Probe config: no valid checks found`);
+    return null;
+  }
+
   return {
     target: interpolated.target.replace(/\/+$/, ''),
     interval: Number(interpolated.interval) || DEFAULT_INTERVAL,
     timeout: Number(interpolated.timeout) || DEFAULT_TIMEOUT,
     notify: interpolated.notify || undefined,
-    checks: interpolated.checks as ProbeCheck[],
+    checks: validChecks,
   };
 }
 
