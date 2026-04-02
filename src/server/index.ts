@@ -2149,10 +2149,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       lastRun?: ProbeLastRun;
       nextRunAt?: string;
       intervalSec?: number;
+      checkResults: Record<string, ProbeResult>;
+      runningCheck: string | null;
     }
     let probeRunning = false;
     let probeTimer: ReturnType<typeof setInterval> | null = null;
-    let probeState: ProbeStateShape = { status: 'idle' };
+    let probeState: ProbeStateShape = { status: 'idle', checkResults: {}, runningCheck: null };
 
     interface ProbeSettings {
       target?: string;
@@ -2178,16 +2180,16 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       return s.telegram ? { telegram: s.telegram } : undefined;
     }
 
-    async function runProbeOnce(): Promise<void> {
+    async function runProbeOnce(checkNames?: string[]): Promise<void> {
       if (probeRunning) return;
       probeRunning = true;
       const prevStatus = probeState.status;
       probeState.status = 'running';
-      broadcast('probe-run-started', { timestamp: new Date().toISOString() });
+      probeState.runningCheck = null;
+      broadcast('probe-run-started', { timestamp: new Date().toISOString(), checkNames: checkNames ?? null });
       try {
         const settings = loadProbeSettings();
         const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
-        // settings.target overrides config target; or we can run without a config file
         if (!config && !settings.target) {
           process.stdout.write('   ⚠️  Probe: no target configured\n');
           probeState.status = prevStatus;
@@ -2199,9 +2201,21 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         if (settings.e2eEmail) effectiveConfig.e2eEmail = settings.e2eEmail;
         if (settings.e2ePassword) effectiveConfig.e2ePassword = settings.e2ePassword;
         const notifyCfg = effectiveConfig.notify;
-        const report = await runProbeChecks(effectiveConfig);
+        const report = await runProbeChecks(effectiveConfig, {
+          checkNames,
+          onCheckStart: (checkName) => {
+            probeState.runningCheck = checkName;
+            broadcast('probe-check-started', { checkName, timestamp: new Date().toISOString() });
+          },
+          onCheckDone: (result) => {
+            probeState.checkResults[result.check] = result;
+            probeState.runningCheck = null;
+            broadcast('probe-check-done', result as unknown as Record<string, unknown>);
+          },
+        });
         probeState.lastRun = report as ProbeLastRun;
         probeState.status = probeTimer ? 'scheduled' : 'idle';
+        probeState.runningCheck = null;
         broadcast('probe-run-done', report as unknown as Record<string, unknown>);
         if (report.failed > 0) {
           const notifiers = createNotifiers(notifyCfg);
@@ -2209,6 +2223,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         }
       } catch (err: any) {
         probeState.status = probeTimer ? 'scheduled' : 'idle';
+        probeState.runningCheck = null;
         broadcast('probe-run-done', { error: err.message } as Record<string, unknown>);
       } finally {
         probeRunning = false;
@@ -4802,7 +4817,16 @@ a{color:var(--blue)}
         const config = loadProbeConfig(path.join(projectRoot, 'probe.config.yml'));
         const settings = loadProbeSettings();
         const effectiveTarget = settings.target || (config ? config.target : null);
-        const checks = config ? config.checks.map(c => ({ name: c.name, type: c.file ? 'file' : 'dsl', steps: c.steps?.length ?? 0 })) : null;
+        const checks = config ? config.checks.map(c => ({
+          name: c.name,
+          type: c.file ? 'file' : 'dsl',
+          file: c.file || null,
+          steps: c.steps ? c.steps.map(s => {
+            const key = Object.keys(s)[0];
+            const val = (s as any)[key];
+            return { type: key, value: typeof val === 'object' ? JSON.stringify(val) : String(val) };
+          }) : [],
+        })) : null;
         res.writeHead(200, jsonH);
         res.end(JSON.stringify({ ...probeState, checks, configFound: !!config, effectiveTarget }));
         return;
@@ -4810,8 +4834,14 @@ a{color:var(--blue)}
 
       if (url === '/api/probe/run' && req.method === 'POST') {
         if (probeRunning) { res.writeHead(409, jsonH); res.end(JSON.stringify({ error: 'Already running' })); return; }
-        res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
-        runProbeOnce();
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          let checkNames: string[] | undefined;
+          try { const parsed = JSON.parse(body); if (parsed.checkName) checkNames = [parsed.checkName]; } catch {}
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+          runProbeOnce(checkNames);
+        });
         return;
       }
 

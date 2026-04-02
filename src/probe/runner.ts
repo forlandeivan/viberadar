@@ -118,11 +118,12 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
         check: check.name,
         status: passed ? 'passed' : 'failed',
         durationMs: Date.now() - start,
-        error: passed ? undefined : output.slice(-500),
+        output: output.slice(-3000),
+        error: passed ? undefined : output.slice(-800),
       });
     });
     proc.on('error', err => {
-      resolve({ check: check.name, status: 'failed', durationMs: Date.now() - start, error: err.message });
+      resolve({ check: check.name, status: 'failed', durationMs: Date.now() - start, error: err.message, output: err.message });
     });
   });
 }
@@ -182,14 +183,26 @@ function loadPlaywright(): any {
   process.exit(1);
 }
 
-export async function runProbeChecks(config: ProbeConfig): Promise<ProbeRunReport> {
+export interface RunProbeOptions {
+  checkNames?: string[];                          // run only these checks (by name)
+  onCheckStart?: (checkName: string) => void;     // fired just before each check
+  onCheckDone?: (result: ProbeResult) => void;    // fired after each check
+}
+
+export async function runProbeChecks(config: ProbeConfig, options?: RunProbeOptions): Promise<ProbeRunReport> {
+  const checksToRun = options?.checkNames
+    ? config.checks.filter(c => options.checkNames!.includes(c.name))
+    : config.checks;
+
   const pw = loadPlaywright();
   const browser = await pw.chromium.launch({ headless: true });
 
   try {
     const results: ProbeResult[] = [];
-    for (const check of config.checks) {
+    for (const check of checksToRun) {
+      options?.onCheckStart?.(check.name);
       const result = await runCheck(browser, check, config);
+      options?.onCheckDone?.(result);
       results.push(result);
     }
 

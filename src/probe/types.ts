@@ -35,6 +35,7 @@ export interface ProbeResult {
   durationMs: number;
   error?: string;
   screenshotPath?: string;
+  output?: string;   // full stdout/stderr from playwright or DSL runner
 }
 
 export interface ProbeRunReport {
