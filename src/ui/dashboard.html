@@ -3807,8 +3807,9 @@ function openProbeUploadModal() {
 
       <!-- TAB: paste -->
       <div id="tabPasteContent" style="display:none">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Имя файла <span style="color:var(--dim)">(например: my-test.spec.ts)</span></label>
-        <input id="probeUploadPasteName" type="text" placeholder="my-test.spec.ts" style="${inputStyle};margin-bottom:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Имя файла <span style="color:var(--dim)">(например: auth-login.spec.ts)</span></label>
+        <input id="probeUploadPasteName" type="text" placeholder="my-test.spec.ts" style="${inputStyle}">
+        <div id="probeUploadNamePreview" style="margin-top:5px;margin-bottom:12px;font-size:11px;color:var(--dim);min-height:16px"></div>
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Код теста</label>
         <textarea id="probeUploadPasteCode" placeholder="Вставьте содержимое .spec.ts файла…"
           style="${inputStyle};height:240px;resize:vertical;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre"></textarea>
@@ -3855,6 +3856,27 @@ function openProbeUploadModal() {
     setSubmitReady(true);
   }
 
+  function sanitizeUploadName(raw) {
+    let s = raw.replace(/[\\/]/g, '').replace(/[*?"<>|:\0]/g, '').replace(/\s+/g, '-').replace(/^\.+/, '').trim();
+    if (!s) return '';
+    if (!s.endsWith('.ts')) s += '.ts';
+    if (s.length > 200) s = s.slice(0, 196) + '.ts';
+    return s;
+  }
+
+  function updateNamePreview() {
+    const raw = (document.getElementById('probeUploadPasteName')?.value || '');
+    const preview = document.getElementById('probeUploadNamePreview');
+    if (!preview) return;
+    const safe = sanitizeUploadName(raw);
+    if (!raw.trim()) { preview.textContent = ''; return; }
+    if (safe !== raw.trim()) {
+      preview.innerHTML = `→ будет сохранён как: <code style="color:var(--blue)">${escapeHtml(safe)}</code>`;
+    } else {
+      preview.innerHTML = `→ <code style="color:var(--green)">${escapeHtml(safe)}</code>`;
+    }
+  }
+
   // Paste tab — enable button when both fields filled
   function checkPasteReady() {
     const name = (document.getElementById('probeUploadPasteName')?.value || '').trim();
@@ -3862,7 +3884,7 @@ function openProbeUploadModal() {
     const tabVisible = document.getElementById('tabPasteContent')?.style.display !== 'none';
     if (tabVisible) setSubmitReady(!!(name && code));
   }
-  document.getElementById('probeUploadPasteName').addEventListener('input', checkPasteReady);
+  document.getElementById('probeUploadPasteName').addEventListener('input', () => { updateNamePreview(); checkPasteReady(); });
   document.getElementById('probeUploadPasteCode').addEventListener('input', checkPasteReady);
 
   // Auto-detect filename from `test(` or filename line in pasted code

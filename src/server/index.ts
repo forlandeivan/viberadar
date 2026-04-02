@@ -4945,11 +4945,16 @@ a{color:var(--blue)}
             if (!filename || !content) {
               res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'filename and content required' })); return;
             }
-            // Sanitize filename: allow only .ts files, strip path separators
-            const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '-');
-            if (!safeName.endsWith('.ts')) {
-              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Only .ts files are allowed' })); return;
-            }
+            // Sanitize filename: strip path traversal and dangerous chars, preserve Unicode (Cyrillic etc.)
+            let safeName = path.basename(filename)
+              .replace(/[\\/]/g, '')        // no path separators
+              .replace(/[*?"<>|:\0]/g, '')  // no Windows-forbidden / null chars
+              .replace(/\s+/g, '-')         // spaces → hyphens
+              .replace(/^\.+/, '')          // no leading dots
+              .trim();
+            if (!safeName) safeName = 'test.spec.ts';
+            if (!safeName.endsWith('.ts')) safeName += '.ts';
+            if (safeName.length > 200) safeName = safeName.slice(0, 196) + '.ts';
             const e2eDir = path.join(projectRoot, 'e2e');
             if (!fs.existsSync(e2eDir)) fs.mkdirSync(e2eDir, { recursive: true });
             const filePath = path.join(e2eDir, safeName);
