@@ -1619,6 +1619,15 @@
   .probe-screenshot-thumb .probe-screenshot-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.65); font-size: 10px; color: var(--muted); padding: 3px 6px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .probe-screenshot-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 99999; cursor: zoom-out; }
   .probe-screenshot-lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
+  .probe-kebab-wrap { position: relative; flex-shrink: 0; }
+  .probe-kebab-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 8px; cursor: pointer; transition: background 0.1s, color 0.1s; }
+  .probe-kebab-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .probe-kebab-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; min-width: 170px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 1000; overflow: hidden; }
+  .probe-kebab-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 13px; color: var(--text); cursor: pointer; transition: background 0.1s; white-space: nowrap; }
+  .probe-kebab-item:hover { background: var(--bg-hover); }
+  .probe-kebab-item.danger { color: var(--red); }
+  .probe-kebab-item.danger:hover { background: rgba(248,81,73,0.08); }
+  .probe-kebab-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
   </style>
 </head>
@@ -3596,9 +3605,14 @@ function renderProbeDetail(c) {
             ${result ? `<span style="color:var(--muted)">${new Date().toLocaleTimeString()}</span>` : ''}
           </div>
         </div>
-        <button class="probe-btn probe-btn-run" style="flex-shrink:0" onclick="probeRunOne(${escapeHtml(JSON.stringify(ch.name))})" ${isRunning ? 'disabled' : ''}>
-          ${isRunning ? '<span class="probe-spin">⏳</span> Выполняется…' : '▶ Run'}
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+          <button class="probe-btn probe-btn-run" onclick="probeRunOne(${escapeHtml(JSON.stringify(ch.name))})" ${isRunning ? 'disabled' : ''}>
+            ${isRunning ? '<span class="probe-spin">⏳</span> Выполняется…' : '▶ Run'}
+          </button>
+          <div class="probe-kebab-wrap" id="probeKebabWrap">
+            <button class="probe-kebab-btn" onclick="probeToggleKebab(event, ${escapeHtml(JSON.stringify(ch.name))}, ${escapeHtml(JSON.stringify(ch.file || ''))})">⋯</button>
+          </div>
+        </div>
       </div>
 
       ${stepsHtml}
@@ -3607,6 +3621,107 @@ function renderProbeDetail(c) {
       ${outputHtml}
       ${errorHtml}
     </div>`;
+}
+
+function probeToggleKebab(event, checkName, checkFile) {
+  event.stopPropagation();
+  const wrap = document.getElementById('probeKebabWrap');
+  if (!wrap) return;
+  const existing = wrap.querySelector('.probe-kebab-menu');
+  if (existing) { existing.remove(); return; }
+  const menu = document.createElement('div');
+  menu.className = 'probe-kebab-menu';
+  const fileItem = checkFile
+    ? `<div class="probe-kebab-item" onclick="probeKebabCopyPath(${JSON.stringify(checkFile)})">📋 Скопировать путь</div>
+       <div class="probe-kebab-sep"></div>`
+    : '';
+  menu.innerHTML = `
+    <div class="probe-kebab-item" onclick="probeKebabRename(${JSON.stringify(checkName)})">✏️ Переименовать</div>
+    ${fileItem}
+    <div class="probe-kebab-item danger" onclick="probeKebabDelete(${JSON.stringify(checkName)}, ${JSON.stringify(checkFile)})">🗑️ Удалить</div>`;
+  wrap.appendChild(menu);
+  const close = (e) => { if (!wrap.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function probeKebabCopyPath(filePath) {
+  navigator.clipboard?.writeText(filePath).catch(() => {});
+  document.querySelector('.probe-kebab-menu')?.remove();
+}
+
+function probeKebabRename(checkName) {
+  document.querySelector('.probe-kebab-menu')?.remove();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:420px;max-width:90vw">
+      <h3 style="margin:0 0 16px;font-size:15px">✏️ Переименовать проверку</h3>
+      <input id="probeRenameInput" type="text" value="${escapeHtml(checkName)}"
+        style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      <div id="probeRenameErr" style="display:none;margin-top:8px;color:var(--red);font-size:12px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button onclick="this.closest('[style]').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
+        <button id="probeRenameOk" style="padding:6px 16px;border-radius:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:13px">Сохранить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#probeRenameInput');
+  input.focus(); input.select();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#probeRenameOk').addEventListener('click', async () => {
+    const newName = input.value.trim();
+    const errEl = overlay.querySelector('#probeRenameErr');
+    if (!newName || newName === checkName) { overlay.remove(); return; }
+    const btn = overlay.querySelector('#probeRenameOk');
+    btn.disabled = true; btn.textContent = 'Сохраняю…';
+    try {
+      const r = await fetch('/api/probe/rename-check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ oldName: checkName, newName }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Ошибка');
+      overlay.remove();
+      probeDetailCheck = newName;
+      await loadProbeData();
+      renderContent();
+    } catch(e) { errEl.style.display = 'block'; errEl.textContent = e.message; btn.disabled = false; btn.textContent = 'Сохранить'; }
+  });
+}
+
+function probeKebabDelete(checkName, checkFile) {
+  document.querySelector('.probe-kebab-menu')?.remove();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+  const fileNote = checkFile
+    ? `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer">
+         <input type="checkbox" id="probeDeleteFile" checked> Удалить файл <code>${escapeHtml(checkFile)}</code>
+       </label>` : '';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw">
+      <h3 style="margin:0 0 8px;font-size:15px;color:var(--red)">🗑️ Удалить проверку</h3>
+      <div style="font-size:13px;color:var(--muted)">Удалить <strong style="color:var(--text)">${escapeHtml(checkName)}</strong> из probe.config.yml?</div>
+      ${fileNote}
+      <div id="probeDeleteErr" style="display:none;margin-top:8px;color:var(--red);font-size:12px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button onclick="this.closest('[style]').remove()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-size:13px">Отмена</button>
+        <button id="probeDeleteOk" style="padding:6px 16px;border-radius:6px;border:1px solid var(--red);background:var(--red);color:#fff;cursor:pointer;font-size:13px">Удалить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#probeDeleteOk').addEventListener('click', async () => {
+    const btn = overlay.querySelector('#probeDeleteOk');
+    const errEl = overlay.querySelector('#probeDeleteErr');
+    const deleteFile = overlay.querySelector('#probeDeleteFile')?.checked ?? false;
+    btn.disabled = true; btn.textContent = 'Удаляю…';
+    try {
+      const r = await fetch('/api/probe/delete-check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ checkName, deleteFile }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Ошибка');
+      overlay.remove();
+      probeDetailCheck = null;
+      await loadProbeData();
+      renderContent();
+    } catch(e) { errEl.style.display = 'block'; errEl.textContent = e.message; btn.disabled = false; btn.textContent = 'Удалить'; }
+  });
 }
 
 function probeShowScreenshot(url) {

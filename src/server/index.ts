@@ -4988,6 +4988,78 @@ a{color:var(--blue)}
         return;
       }
 
+      if (url === '/api/probe/rename-check' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          try {
+            const { oldName, newName } = JSON.parse(body);
+            if (!oldName || !newName || !newName.trim()) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'oldName and newName required' })); return;
+            }
+            const configPath = path.join(projectRoot, 'probe.config.yml');
+            if (!fs.existsSync(configPath)) {
+              res.writeHead(404, jsonH); res.end(JSON.stringify({ error: 'probe.config.yml not found' })); return;
+            }
+            let yaml = fs.readFileSync(configPath, 'utf-8');
+            // Replace `name: <oldName>` with `name: <newName>` (only exact match on a line)
+            const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(`(^|\\n)(\\s*- name:\\s*)${escaped}(\\s*$)`, 'm');
+            if (!re.test(yaml)) {
+              res.writeHead(404, jsonH); res.end(JSON.stringify({ error: `Check "${oldName}" not found in config` })); return;
+            }
+            yaml = yaml.replace(re, `$1$2${newName.trim()}$3`);
+            fs.writeFileSync(configPath, yaml, 'utf-8');
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true, newName: newName.trim() }));
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (url === '/api/probe/delete-check' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (d: Buffer) => { body += d; });
+        req.on('end', () => {
+          try {
+            const { checkName, deleteFile } = JSON.parse(body);
+            if (!checkName) {
+              res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'checkName required' })); return;
+            }
+            const configPath = path.join(projectRoot, 'probe.config.yml');
+            if (!fs.existsSync(configPath)) {
+              res.writeHead(404, jsonH); res.end(JSON.stringify({ error: 'probe.config.yml not found' })); return;
+            }
+            const config = loadProbeConfig(configPath);
+            if (!config) {
+              res.writeHead(500, jsonH); res.end(JSON.stringify({ error: 'Failed to parse probe.config.yml' })); return;
+            }
+            const check = config.checks.find(c => c.name === checkName);
+            if (!check) {
+              res.writeHead(404, jsonH); res.end(JSON.stringify({ error: `Check "${checkName}" not found` })); return;
+            }
+            // Remove the check block from YAML (from `- name: <checkName>` until next `- name:` or end)
+            let yaml = fs.readFileSync(configPath, 'utf-8');
+            const escaped = checkName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Match a list item starting with `- name: <checkName>` and all its indented lines
+            const re = new RegExp(`\\n?[ \\t]*- name: ${escaped}[\\s\\S]*?(?=\\n[ \\t]*- name:|$)`, 'm');
+            yaml = yaml.replace(re, '');
+            fs.writeFileSync(configPath, yaml, 'utf-8');
+            // Optionally delete the test file
+            let fileDeleted = false;
+            if (deleteFile && check.file) {
+              const filePath = path.resolve(projectRoot, check.file);
+              if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); fileDeleted = true; }
+            }
+            res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true, fileDeleted }));
+          } catch (err: any) {
+            res.writeHead(500, jsonH); res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
       res.writeHead(404);
       res.end('Not found');
     });
