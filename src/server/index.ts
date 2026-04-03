@@ -2161,6 +2161,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       telegram?: { botToken: string; chatId: string };
       e2eEmail?: string;
       e2ePassword?: string;
+      e2eAdminEmail?: string;
+      e2eAdminPassword?: string;
     }
 
     function loadProbeSettings(): ProbeSettings {
@@ -2200,6 +2202,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         if (settings.telegram) effectiveConfig.notify = { telegram: settings.telegram };
         if (settings.e2eEmail) effectiveConfig.e2eEmail = settings.e2eEmail;
         if (settings.e2ePassword) effectiveConfig.e2ePassword = settings.e2ePassword;
+        if (settings.e2eAdminEmail) effectiveConfig.e2eAdminEmail = settings.e2eAdminEmail;
+        if (settings.e2eAdminPassword) effectiveConfig.e2eAdminPassword = settings.e2eAdminPassword;
         const notifyCfg = effectiveConfig.notify;
         const report = await runProbeChecks(effectiveConfig, {
           checkNames,
@@ -4912,6 +4916,8 @@ a{color:var(--blue)}
           telegram: masked,
           e2eEmail: s.e2eEmail || '',
           e2ePasswordSet: !!s.e2ePassword,
+          e2eAdminEmail: s.e2eAdminEmail || '',
+          e2eAdminPasswordSet: !!s.e2eAdminPassword,
         }));
         return;
       }
@@ -4921,7 +4927,7 @@ a{color:var(--blue)}
         req.on('data', (d: Buffer) => { body += d; });
         req.on('end', () => {
           try {
-            const { target, botToken, chatId, e2eEmail, e2ePassword } = JSON.parse(body);
+            const { target, botToken, chatId, e2eEmail, e2ePassword, e2eAdminEmail, e2eAdminPassword } = JSON.parse(body);
             const current = loadProbeSettings();
             const updated: ProbeSettings = { ...current };
             if (target !== undefined) updated.target = target || undefined;
@@ -4930,6 +4936,9 @@ a{color:var(--blue)}
             if (e2eEmail !== undefined) updated.e2eEmail = e2eEmail || undefined;
             if (e2ePassword) updated.e2ePassword = e2ePassword;
             else if (e2ePassword === '') delete updated.e2ePassword;
+            if (e2eAdminEmail !== undefined) updated.e2eAdminEmail = e2eAdminEmail || undefined;
+            if (e2eAdminPassword) updated.e2eAdminPassword = e2eAdminPassword;
+            else if (e2eAdminPassword === '') delete updated.e2eAdminPassword;
             saveProbeSettings(updated);
             res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {
@@ -4960,7 +4969,11 @@ a{color:var(--blue)}
             if (!safeName.endsWith('.ts')) safeName += '.spec.ts';
             else if (!safeName.endsWith('.spec.ts')) safeName = safeName.replace(/\.ts$/, '.spec.ts');
             if (safeName.length > 200) safeName = safeName.slice(0, 196) + '.spec.ts';
-            const e2eDir = path.join(projectRoot, 'e2e');
+            // Save to e2e-external/ if playwright.external.config.ts exists, else e2e/
+            const hasExternalConfig = fs.existsSync(path.join(projectRoot, 'playwright.external.config.ts'))
+              || fs.existsSync(path.join(projectRoot, 'playwright.external.config.js'));
+            const e2eSubdir = hasExternalConfig ? 'e2e-external' : 'e2e';
+            const e2eDir = path.join(projectRoot, e2eSubdir);
             if (!fs.existsSync(e2eDir)) fs.mkdirSync(e2eDir, { recursive: true });
             const filePath = path.join(e2eDir, safeName);
             fs.writeFileSync(filePath, content, 'utf-8');
@@ -4968,7 +4981,7 @@ a{color:var(--blue)}
             // Append to probe.config.yml
             const configPath = path.join(projectRoot, 'probe.config.yml');
             const checkName = safeName.replace(/\.spec\.ts$|\.ts$/, '').replace(/[-_]/g, ' ');
-            const relPath = `e2e/${safeName}`;
+            const relPath = `${e2eSubdir}/${safeName}`;
             let yaml = '';
             if (fs.existsSync(configPath)) {
               yaml = fs.readFileSync(configPath, 'utf-8');

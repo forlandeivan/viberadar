@@ -70,7 +70,13 @@ async function executeStep(page: any, step: ProbeStep, target: string, timeout: 
 function findPlaywrightConfig(filePath: string): { configFile: string; projectRoot: string } | null {
   let dir = path.dirname(filePath);
   for (let i = 0; i < 8; i++) {
-    for (const name of ['playwright.config.ts', 'playwright.config.js']) {
+    // Prefer external config when found — it's scoped to remote-only runs
+    for (const name of [
+      'playwright.external.config.ts',
+      'playwright.external.config.js',
+      'playwright.config.ts',
+      'playwright.config.js',
+    ]) {
       const candidate = path.join(dir, name);
       if (fs.existsSync(candidate)) return { configFile: candidate, projectRoot: dir };
     }
@@ -116,14 +122,24 @@ async function runPlaywrightFile(check: ProbeCheck, target: string, timeout: num
       PLAYWRIGHT_BASE_URL: target,
       PLAYWRIGHT_USE_WEBSERVER: '0',
       PLAYWRIGHT_BROWSERS: 'chromium',
+      // External e2e vars — used by playwright.external.config.ts
+      EXTERNAL_E2E_BASE_URL: target,
     };
     if (config.e2eEmail) {
       env.E2E_USER_EMAIL = config.e2eEmail;
       env.E2E_EMAIL = config.e2eEmail;
+      env.EXTERNAL_E2E_USER_EMAIL = config.e2eEmail;
     }
     if (config.e2ePassword) {
       env.E2E_USER_PASSWORD = config.e2ePassword;
       env.E2E_PASSWORD = config.e2ePassword;
+      env.EXTERNAL_E2E_USER_PASSWORD = config.e2ePassword;
+    }
+    if (config.e2eAdminEmail) {
+      env.EXTERNAL_E2E_ADMIN_EMAIL = config.e2eAdminEmail;
+    }
+    if (config.e2eAdminPassword) {
+      env.EXTERNAL_E2E_ADMIN_PASSWORD = config.e2eAdminPassword;
     }
     const proc = child_process.spawn('npx', [
       'playwright', 'test', relFilePath,

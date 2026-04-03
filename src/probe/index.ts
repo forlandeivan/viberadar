@@ -50,9 +50,11 @@ export async function runProbe(argv: string[]): Promise<void> {
   if (fs.existsSync(settingsPath)) {
     try {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      if (settings.target)      config.target      = settings.target;
-      if (settings.e2eEmail)    config.e2eEmail    = settings.e2eEmail;
-      if (settings.e2ePassword) config.e2ePassword = settings.e2ePassword;
+      if (settings.target)           config.target           = settings.target;
+      if (settings.e2eEmail)         config.e2eEmail         = settings.e2eEmail;
+      if (settings.e2ePassword)      config.e2ePassword      = settings.e2ePassword;
+      if (settings.e2eAdminEmail)    config.e2eAdminEmail    = settings.e2eAdminEmail;
+      if (settings.e2eAdminPassword) config.e2eAdminPassword = settings.e2eAdminPassword;
     } catch {}
   }
   const notifiers = createNotifiers(config.notify);
