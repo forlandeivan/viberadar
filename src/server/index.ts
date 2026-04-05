@@ -5065,8 +5065,9 @@ a{color:var(--blue)}
             // Remove the check block from YAML (from `- name: <checkName>` until next `- name:` or end)
             let yaml = fs.readFileSync(configPath, 'utf-8');
             const escaped = checkName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Match a list item starting with `- name: <checkName>` and all its indented lines
-            const re = new RegExp(`\\n?[ \\t]*- name: ${escaped}[\\s\\S]*?(?=\\n[ \\t]*- name:|$)`, 'm');
+            // Match a list item starting with `- name: <checkName>` and all its indented lines.
+            // No 'm' flag — $ must match end of entire string, not end of line.
+            const re = new RegExp(`\\n?[ \\t]*- name: ${escaped}[\\s\\S]*?(?=\\n[ \\t]*- name:|$)`);
             yaml = yaml.replace(re, '');
             fs.writeFileSync(configPath, yaml, 'utf-8');
             // Optionally delete the test file
