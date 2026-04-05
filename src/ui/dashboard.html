@@ -3637,13 +3637,13 @@ function probeToggleKebab(event, checkName, checkFile) {
   const menu = document.createElement('div');
   menu.className = 'probe-kebab-menu';
   const fileItem = checkFile
-    ? `<div class="probe-kebab-item" onclick="probeKebabCopyPath(${JSON.stringify(checkFile)})">📋 Скопировать путь</div>
+    ? `<div class="probe-kebab-item" onclick="probeKebabCopyPath(${escapeHtml(JSON.stringify(checkFile))})">📋 Скопировать путь</div>
        <div class="probe-kebab-sep"></div>`
     : '';
   menu.innerHTML = `
-    <div class="probe-kebab-item" onclick="probeKebabRename(${JSON.stringify(checkName)})">✏️ Переименовать</div>
+    <div class="probe-kebab-item" onclick="probeKebabRename(${escapeHtml(JSON.stringify(checkName))})">✏️ Переименовать</div>
     ${fileItem}
-    <div class="probe-kebab-item danger" onclick="probeKebabDelete(${JSON.stringify(checkName)}, ${JSON.stringify(checkFile)})">🗑️ Удалить</div>`;
+    <div class="probe-kebab-item danger" onclick="probeKebabDelete(${escapeHtml(JSON.stringify(checkName))}, ${escapeHtml(JSON.stringify(checkFile))})">🗑️ Удалить</div>`;
   wrap.appendChild(menu);
   const close = (e) => { if (!wrap.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); } };
   setTimeout(() => document.addEventListener('click', close), 0);
