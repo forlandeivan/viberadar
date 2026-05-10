@@ -141,6 +141,10 @@ export interface ObservabilityInsightItem {
   count: number;
   priority: 'high' | 'medium' | 'low';
   recommendation: 'suppress' | 'downgrade level' | 'enrich fields' | 'add event';
+  confidence?: 'high' | 'medium' | 'review';
+  safety?: 'safe_auto' | 'needs_review' | 'manual_only';
+  reasonHints?: string[];
+  moduleCount?: number;
 }
 
 export type ModuleRiskTier = 'critical' | 'important' | 'normal';
@@ -690,6 +694,17 @@ function detectFailurePoints(content: string): FailurePoint[] {
     return raw.length > 80 ? raw.slice(0, 77) + '...' : raw;
   }
 
+  function isIntentionalSilentCatch(line: string): boolean {
+    return /\.catch\s*\(\s*(?:\(\s*\)|\w+)\s*=>\s*(?:null|undefined|\{\s*\}|void\s+0)\s*\)/.test(line);
+  }
+
+  function isExpectedDomainThrow(line: string): boolean {
+    const expectedHttpStatus = /\bthrow\s+new\s+HttpError\s*\(\s*(400|401|403|404|409|422)\b/.test(line);
+    const expectedErrorClass = /\bthrow\s+new\s+\w*(?:Validation|NotFound|Conflict|Forbidden|Unauthorized|Domain)Error\b/.test(line);
+    const expectedMessage = /\bthrow\s+new\s+\w*Error\s*\([^)]*(not found|не найден|не найдена|validation|invalid|required|обязател|forbidden|unauthorized|conflict|already exists|уже существует|cannot be deleted|не может быть удал|not specified|не указан)/i.test(line);
+    return expectedHttpStatus || expectedErrorClass || expectedMessage;
+  }
+
   // Build a per-line "inside try-block" map by tracking brace depth at try-open positions.
   // This lets rule 4/5 correctly detect fetch/axios that are wrapped in a distant try {}.
   const tryOpenDepths: number[] = []; // brace depths where a try-block opened
@@ -724,7 +739,7 @@ function detectFailurePoints(content: string): FailurePoint[] {
     }
 
     // 2. catch without logging
-    if (/\bcatch\s*\(/.test(trimmed)) {
+    if (/\bcatch\s*\(/.test(trimmed) && !/\.catch\s*\(/.test(trimmed)) {
       if (!hasLogInRange(i, Math.min(i + 40, lines.length))) {
         points.push({ type: 'catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
@@ -732,7 +747,7 @@ function detectFailurePoints(content: string): FailurePoint[] {
 
     // 3. .catch() without logging
     if (/\.catch\s*\(/.test(trimmed) && !/(?:console|logger|log)\.\w+\s*\(/.test(trimmed)) {
-      if (!hasLogInRange(i, Math.min(i + 25, lines.length))) {
+      if (!isIntentionalSilentCatch(trimmed) && !hasLogInRange(i, Math.min(i + 25, lines.length))) {
         points.push({ type: 'promise-catch-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
@@ -768,7 +783,7 @@ function detectFailurePoints(content: string): FailurePoint[] {
     // 6. throw without preceding logger.error
     // 35-line lookback: structured logger.error({ ...context }, "msg") can span 20–30 lines.
     if (/\bthrow\s+new\s+\w*Error/.test(trimmed)) {
-      if (!hasLogInRange(Math.max(0, i - 35), i + 1)) {
+      if (!isExpectedDomainThrow(trimmed) && !hasLogInRange(Math.max(0, i - 35), i + 1)) {
         points.push({ type: 'throw-no-log', lineApprox: i + 1, snippet: snip(i) });
       }
     }
@@ -838,6 +853,46 @@ function bucketFrequency(count: number): 'low' | 'medium' | 'high' {
   if (count >= 8) return 'high';
   if (count >= 3) return 'medium';
   return 'low';
+}
+
+function assessNoisePatternConfidence(
+  pattern: string,
+  count: number,
+  relatedModules: ObservabilityCatalogItem[],
+): Pick<ObservabilityInsightItem, 'confidence' | 'safety' | 'reasonHints' | 'moduleCount'> {
+  const reasonHints: string[] = [];
+  const lifecycle = /\b(todo|temp|debug|test|ping|heartbeat|started|done|ok|loaded|ready)\b/i.test(pattern);
+  const shortMessage = pattern.trim().length > 0 && pattern.trim().length < 12;
+  const multiModule = relatedModules.length > 1;
+  const mostlyUnstructured = relatedModules.length > 0 &&
+    relatedModules.filter(m => m.format !== 'structured').length >= Math.ceil(relatedModules.length / 2);
+  const criticalWords = /\b(auth|payment|billing|security|audit|webhook|order|invoice|admin|permission|token|user|db|queue|worker)\b/i.test(pattern);
+  const structuredDiagnostic = /\b(trace_?id|request_?id|event_?name|outcome|error_?code|user_?id)\b/i.test(pattern);
+
+  if (count >= 3) reasonHints.push('повторяется несколько раз');
+  if (multiModule) reasonHints.push('встречается в нескольких модулях');
+  if (lifecycle) reasonHints.push('похож на lifecycle/debug сообщение');
+  if (shortMessage) reasonHints.push('очень короткое сообщение');
+  if (mostlyUnstructured) reasonHints.push('в основном неструктурированные логи');
+  if (criticalWords) reasonHints.push('есть доменные/критичные слова');
+  if (structuredDiagnostic) reasonHints.push('похож на диагностически полезный structured-контекст');
+
+  const confidenceScore =
+    (count >= 3 ? 2 : count >= 2 ? 1 : 0) +
+    (multiModule ? 1 : 0) +
+    (lifecycle ? 2 : 0) +
+    (shortMessage ? 1 : 0) +
+    (mostlyUnstructured ? 1 : 0) -
+    (criticalWords ? 2 : 0) -
+    (structuredDiagnostic ? 2 : 0);
+
+  if (criticalWords || structuredDiagnostic || confidenceScore <= 1) {
+    return { confidence: 'review', safety: 'needs_review', reasonHints, moduleCount: relatedModules.length };
+  }
+  if (confidenceScore >= 4) {
+    return { confidence: 'high', safety: 'safe_auto', reasonHints, moduleCount: relatedModules.length };
+  }
+  return { confidence: 'medium', safety: 'needs_review', reasonHints, moduleCount: relatedModules.length };
 }
 
 function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, configFeatures?: Record<string, { label: string; color: string; include: string[] }>): ObservabilityReport {
@@ -1044,12 +1099,18 @@ function computeObservabilityReport(modules: ModuleInfo[], projectRoot: string, 
   const topNoisyPatterns: ObservabilityInsightItem[] = Array.from(noisyMap.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
-    .map(([pattern, count], i) => ({
-      pattern,
-      count,
-      priority: i < 3 ? 'high' : i < 6 ? 'medium' : 'low',
-      recommendation: count >= 3 ? 'suppress' : 'downgrade level',
-    }));
+    .map(([pattern, count], i) => {
+      const relatedModules = catalog.filter(c =>
+        (c.noisyMessages || []).some(m => m && (m === pattern || m.startsWith(pattern) || pattern.startsWith(m)))
+      );
+      return {
+        pattern,
+        count,
+        priority: i < 3 ? 'high' : i < 6 ? 'medium' : 'low',
+        recommendation: count >= 3 ? 'suppress' : 'downgrade level',
+        ...assessNoisePatternConfidence(pattern, count, relatedModules),
+      };
+    });
 
   const missingCriticalLogs: ObservabilityInsightItem[] = sourceModules
     .filter(m => !criticalCoverage.has(m.relativePath))

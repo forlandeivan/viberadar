@@ -1,10 +1,10 @@
 {
   "name": "viberadar",
-  "version": "0.3.199",
+  "version": "0.3.231",
   "description": "Live module map with test coverage for vibecoding projects",
   "main": "./dist/cli.js",
   "bin": {
-    "viberadar": "./viberadar.js"
+    "viberadar": "viberadar.js"
   },
   "scripts": {
     "build": "tsc && node scripts/bundle-ui.js",

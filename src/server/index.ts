@@ -11,6 +11,16 @@ import { loadProbeConfig } from '../probe/config';
 import { runProbeChecks } from '../probe/runner';
 import { createNotifiers, notifyAll } from '../probe/notify';
 import { ProbeNotifyConfig, ProbeResult } from '../probe/types';
+import {
+  TRACKER_FILE_NAME,
+  TrackerValidationError,
+  archiveTrackerTask,
+  buildTrackerTaskPrompt,
+  createTrackerTask,
+  importTrackerTasks,
+  readTrackerFile,
+  updateTrackerTask,
+} from '../tracker';
 
 interface ServerOptions {
   data: ScanResult;
@@ -1272,24 +1282,226 @@ function buildObsSuppressPatternPrompt(pattern: string, recommendation: string, 
     .slice(0, 15);
 
   return [
-    `Убери шумные лог-вызовы уровня INFO/DEBUG/TRACE.`,
+    `Проведи ревизию шумных лог-вызовов уровня INFO/DEBUG/TRACE. Не применяй рекомендации VibeRadar автоматически.`,
     ``,
     SUPPRESS_GUARD,
     ``,
     `Конкретный паттерн для поиска: "${pattern}"`,
+    recommendation ? `Рекомендация радара: ${recommendation}. Считай её гипотезой, а не командой.` : '',
     ``,
     relatedModules.length > 0
       ? `Модули где встречается шум (с примерами сообщений):\n${relatedModules.join('\n')}`
       : '',
     ``,
-    `Что сделать с каждым найденным вызовом logger.info/debug/trace, порождающим этот паттерн:`,
-    `- УДАЛИ полностью, если это lifecycle-мусор: "started", "done", "ok", "loaded", "ready", "ping"`,
-    `- СТРУКТУРИРУЙ в logger.debug({ service, event_name, outcome, ...данные }), если несёт диагностическую ценность`,
+    `Сначала классифицируй каждый найденный logger.info/debug/trace:`,
+    `- safe_to_remove — lifecycle-мусор без бизнес-смысла: "started", "done", "ok", "loaded", "ready", "ping"`,
+    `- safe_to_downgrade — полезно только для локальной диагностики, можно перевести в debug`,
+    `- keep — audit/security/payment/auth/business-event, reconciliation, user action или важный lifecycle flow`,
+    `- needs_human_review — контекст спорный или уверенность ниже высокой`,
+    ``,
+    `Меняй код только для safe_to_remove/safe_to_downgrade:`,
+    `- УДАЛИ полностью только очевидный lifecycle-мусор без диагностической ценности`,
+    `- СТРУКТУРИРУЙ в logger.debug({ service, event_name, outcome, ...данные }), если лог несёт диагностическую ценность`,
+    `- ОСТАВЬ как есть, если это бизнес-событие, аудит, безопасность, платежи, авторизация, интеграция, очередь или reconciliation`,
     `- НЕ ТРОГАЙ, если это logger.warn / logger.error / logger.fatal — даже если сообщение похоже на шум`,
+    `- Перед изменениями выведи краткий список решений: файл, паттерн/строка, действие, причина`,
     ``,
     `⛔ НЕ ЗАПУСКАЙ npm test / vitest / playwright — это лог-правка, не изменение логики. Единственная нужная проверка: \`npm run check\` (tsc).`,
     ``,
     `\n${LOGGING_STANDARD_INLINE}`,
+  ].filter(Boolean).join('\n');
+}
+
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  const part = token.split('.')[1];
+  if (!part) return null;
+  try {
+    const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function loadCodexAccountInfo(): { email: string | null; name: string | null; accountId: string | null; raw: string } {
+  const result = { email: null as string | null, name: null as string | null, accountId: null as string | null, raw: '' };
+  try {
+    const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+    const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+    const payload = typeof auth?.tokens?.id_token === 'string'
+      ? decodeJwtPayload(auth.tokens.id_token)
+      : null;
+    result.email = payload?.email || payload?.https?.email || null;
+    result.name = payload?.name || payload?.nickname || payload?.preferred_username || null;
+    result.accountId = auth?.tokens?.account_id || payload?.sub || null;
+    result.raw = result.email || result.name || result.accountId || '';
+  } catch {}
+  return result;
+}
+
+function buildObsPromptForTask(task: string, meta: Record<string, any> | undefined, obs: NonNullable<ScanResult['observability']>): string | null {
+  if (task === 'obs-suppress-pattern') {
+    if (!meta?.pattern) return null;
+    return buildObsSuppressPatternPrompt(meta.pattern, meta.recommendation || 'suppress', obs.catalog);
+  }
+  if (task === 'obs-add-critical-logs') {
+    if (!meta?.modulePath) return null;
+    const v2Item = (obs.missingCriticalLogsV2 || []).find(
+      (m: MissingCriticalLogItem) => m.modulePath === meta.modulePath
+    );
+    return v2Item
+      ? buildObsAddCriticalLogsPromptV2(v2Item, obs.catalog)
+      : buildObsAddCriticalLogsPrompt(meta.modulePath, obs.catalog);
+  }
+  if (task === 'obs-enrich-field') {
+    if (!meta?.fieldName) return null;
+    return buildObsEnrichFieldPrompt(meta.fieldName, obs.catalog);
+  }
+  if (task === 'obs-batch-recommendation') {
+    if (!meta?.recommendationType) return null;
+    return buildObsBatchRecommendationPrompt(meta.recommendationType, obs.catalog);
+  }
+  if (task === 'obs-fix-module') {
+    const modulePath = meta?.modulePath;
+    const catalogItem = modulePath ? obs.catalog.find(c => c.modulePath === modulePath) : null;
+    return catalogItem ? buildObsFixModulePrompt(catalogItem.modulePath, catalogItem) : null;
+  }
+  if (task === 'obs-fix-selected') {
+    const missingLogIndices: number[] = Array.isArray(meta?.missingLogIndices) ? meta.missingLogIndices : [];
+    const indices: number[] = Array.isArray(meta?.catalogIndices) ? meta.catalogIndices : [];
+    if (missingLogIndices.length > 0) {
+      const selectedV2 = missingLogIndices.map(i => obs.missingCriticalLogsV2[i]).filter(Boolean);
+      return selectedV2.length > 0 ? buildObsBatchAddCriticalLogsPrompt(selectedV2, obs.catalog) : null;
+    }
+    const paths: string[] = Array.isArray(meta?.catalogPaths) ? meta.catalogPaths : [];
+    const selectedItems = paths.length > 0
+      ? paths.map(p => obs.catalog.find(c => c.modulePath === p)).filter(Boolean) as ObservabilityCatalogItem[]
+      : indices.map(i => obs.catalog[i]).filter(Boolean);
+    return selectedItems.length > 0 ? buildObsFixSelectedPrompt(selectedItems, meta || {}) : null;
+  }
+  return null;
+}
+
+function buildObsFeatureReviewPrompt(featureKey: string, data: ScanResult): string | null {
+  const obs = data.observability;
+  if (!obs) return null;
+
+  const isUnmapped = featureKey === '__unmapped__';
+  const feature = isUnmapped ? null : data.features?.find(f => f.key === featureKey);
+  const featureLabel = isUnmapped ? 'Unmapped' : (feature?.label || featureKey);
+  const featureModules = data.modules
+    .filter(m => m.type !== 'test' && !m.isInfra)
+    .filter(m => isUnmapped ? (!m.featureKeys || m.featureKeys.length === 0) : (m.featureKeys || []).includes(featureKey))
+    .map(m => m.relativePath.replace(/\\/g, '/'))
+    .sort();
+
+  if (featureModules.length === 0) return null;
+  const featureModuleSet = new Set(featureModules);
+  const catalog = obs.catalog.filter(c => featureModuleSet.has(c.modulePath.replace(/\\/g, '/')));
+  const missing = (obs.missingCriticalLogsV2 || []).filter(m => featureModuleSet.has(m.modulePath.replace(/\\/g, '/')));
+
+  const fieldGapCounts: Record<string, number> = {};
+  for (const c of catalog) {
+    for (const field of c.missingFields || []) fieldGapCounts[field] = (fieldGapCounts[field] || 0) + 1;
+  }
+  const fieldGapLines = Object.entries(fieldGapCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([field, count]) => `- ${field}: ${count} лог-вызовов/модулей требуют проверки`)
+    .slice(0, 12);
+
+  const noisyMap = new Map<string, { count: number; modules: Set<string> }>();
+  for (const c of catalog) {
+    for (const msg of c.noisyMessages || []) {
+      if (!noisyMap.has(msg)) noisyMap.set(msg, { count: 0, modules: new Set() });
+      const item = noisyMap.get(msg)!;
+      item.count += 1;
+      item.modules.add(c.modulePath);
+    }
+  }
+  const noisyLines = Array.from(noisyMap.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 12)
+    .map(([pattern, info]) => `- "${pattern}" · x${info.count}, модулей: ${info.modules.size}`);
+
+  const missingLines = missing
+    .slice(0, 25)
+    .map(item => {
+      const fpLines = (item.failurePoints || [])
+        .slice(0, 5)
+        .map(fp => `    - строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type} — \`${fp.snippet}\``)
+        .join('\n');
+      const coverageState = item.hasAnyWarnError
+        ? 'часть warn/error уже есть, но не все точки покрыты'
+        : 'warn/error покрытия не найдено';
+      return [
+        `- ${item.modulePath} (${item.failurePoints.length} точек отказа; ${coverageState})`,
+        fpLines || `    - Нет warn/error покрытия: найди точки отказа вручную`,
+      ].join('\n');
+    });
+
+  const catalogLines = catalog
+    .filter(c => c.recommendation === 'enrich fields' || c.recommendation === 'suppress' || (c.missingFields || []).length > 0)
+    .slice(0, 35)
+    .map(c => `- ${c.modulePath}: ${c.level}, ${c.format}, missing=[${(c.missingFields || []).join(', ') || 'нет'}], recommendation=${c.recommendation}`);
+
+  const byFeature = !isUnmapped ? obs.byFeature?.find(f => f.key === featureKey) : null;
+  const metrics = byFeature?.metrics || obs.metrics;
+  const metricLines = [
+    `- Шум: ${Math.round(metrics.noise_ratio * 100)}%`,
+    `- Структурированность: ${Math.round(metrics.structured_completeness * 100)}%`,
+    `- Actionable ошибки: ${Math.round(metrics.error_actionability * 100)}%`,
+    `- Покрытие сценариев warn/error: ${Math.round(metrics.coverage_of_key_flows * 100)}%`,
+  ];
+
+  return [
+    `Проведи комплексную ревизию наблюдаемости фичи "${featureLabel}" (${featureKey}).`,
+    ``,
+    `VibeRadar подсветил сигналы статическим анализом. Не применяй их автоматически: сначала прочитай код фичи, пойми сценарии и составь короткий план решений.`,
+    ``,
+    `Цель: улучшить наблюдаемость всей фичи одним проходом:`,
+    `1. Добавить warn/error в реальные точки отказа.`,
+    `2. Обогатить существующие логи недостающими structured-полями.`,
+    `3. Убрать или перевести в debug только очевидный шум INFO/DEBUG/TRACE.`,
+    `4. Оставить business/audit/security/payment/auth/reconciliation логи, даже если они похожи на шум.`,
+    `5. НЕ пытаться любой ценой обнулить счётчик "Добавить": ожидаемые validation/not-found/conflict/domain throws могут остаться без ERROR-лога.`,
+    ``,
+    `Метрики фичи сейчас:`,
+    ...metricLines,
+    ``,
+    `Файлы фичи для анализа (${featureModules.length}):`,
+    ...featureModules.map(p => `- ${p}`),
+    ``,
+    missingLines.length ? `Точки отказа и кандидаты на добавление warn/error:` : `Точки отказа VibeRadar не нашёл, но всё равно проверь catch/throw/http/db в файлах фичи.`,
+    ...missingLines,
+    ``,
+    fieldGapLines.length ? `Поля, которые чаще всего нужно обогатить:` : `Явных пробелов по structured-полям не найдено.`,
+    ...fieldGapLines,
+    ``,
+    noisyLines.length ? `Шумные паттерны, которые нужно проверить, а не удалять вслепую:` : `Шумных паттернов не найдено.`,
+    ...noisyLines,
+    ``,
+    catalogLines.length ? `Каталог лог-источников с проблемами:` : `Каталог проблемных лог-источников пуст.`,
+    ...catalogLines,
+    ``,
+    `Правила принятия решений:`,
+    `- Для каждой точки/лога сначала определи: add_error_log | add_warn_log | enrich_fields | remove_noise | downgrade_to_debug | keep_without_log | keep | needs_human_review.`,
+    `- Никогда не трогай logger.warn/logger.error/logger.fatal как "шум".`,
+    `- Не понижай ERROR/WARN уровни.`,
+    `- Не добавляй ERROR-лог для штатных 400/401/403/404/409/422, validation/not-found/conflict/domain ошибок, если это ожидаемый ответ API.`,
+    `- Не логируй намеренные silent cleanup/json-parse fallbacks вида .catch(() => null/undefined), если они действительно безопасны.`,
+    `- Если лог находится в hot path/loop/polling и не несёт бизнес-смысла — можно удалить или перевести в debug.`,
+    `- Если лог диагностически полезен — оставь как structured logger.debug с event_name, outcome и доступным контекстом.`,
+    `- В payload логгера используй только переменные из текущего scope; не угадывай поля из типов.`,
+    `- Не добавляй process.env в клиентские Vite/React файлы; используй import.meta.env.MODE, если env реально нужен.`,
+    ``,
+    `Перед правками выведи краткий план: файл, действие, причина. Меняй код только для add_error_log/add_warn_log/enrich_fields/remove_noise/downgrade_to_debug. Если уверенность низкая — не меняй код, пометь как needs_human_review.`,
+    ``,
+    `Проверка после изменений:`,
+    `- npm run check -- --pretty false или npm run typecheck, если check отсутствует.`,
+    `- Не запускай полный test suite без необходимости.`,
+    ``,
+    LOGGING_STANDARD_INLINE,
   ].filter(Boolean).join('\n');
 }
 
@@ -1298,17 +1510,26 @@ function buildObsAddCriticalLogsPrompt(modulePath: string, catalog: Observabilit
   const missingFields = moduleItem?.missingFields || [];
 
   return [
-    `Добавь критичные логи (warn/error) в модуль \`${modulePath}\`.`,
+    `Проверь точки отказа и добавь нужные warn/error логи в модуль \`${modulePath}\`.`,
     ``,
-    `Сейчас в модуле нет warn/error событий. При сбоях мы не увидим ошибку в логах.`,
+    `VibeRadar не нашёл достаточного warn/error покрытия. Это статический сигнал, а не приказ логировать всё подряд.`,
     ``,
     moduleItem
       ? `Текущее состояние модуля:\n- Формат: ${moduleItem.format}\n- Уровень: ${moduleItem.level}\n- Пропущенные поля: ${missingFields.length > 0 ? missingFields.join(', ') : 'нет'}`
       : '',
     ``,
+    `Важно: VibeRadar дал кандидатов, а не список обязательных правок.`,
+    `Сначала классифицируй каждую точку:`,
+    `- add_error_log — реальный неожиданный сбой операции, должен быть виден в production`,
+    `- add_warn_log — деградация, retry, graceful fallback или частичный результат`,
+    `- keep_without_log — ожидаемый domain/validation/not-found/conflict/permission ответ, UI validation или intentional fallback`,
+    `- needs_human_review — контекст спорный`,
+    ``,
     `Что сделать:`,
     `- Найди в модуле точки, где может произойти ошибка (catch-блоки, проверки null/undefined, HTTP-ответы с ошибкой, DB-ошибки)`,
-    `- Добавь logger.warn или logger.error с обязательными полями по стандарту`,
+    `- Меняй код только для add_error_log/add_warn_log`,
+    `- НЕ добавляй ERROR-лог для штатных validation/not-found/conflict/domain throws, если это ожидаемый ответ API`,
+    `- НЕ логируй намеренные .catch(() => null/undefined) cleanup/json-parse fallbacks без реального operational риска`,
     `- Каждый лог должен включать: event_name, outcome, error_code (для error)`,
     `- Именование event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
     `- Используй error_code из допустимых кодов в стандарте ниже`,
@@ -1335,9 +1556,8 @@ function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: 
   ).join('\n');
 
   return [
-    `Добавь критичные логи (warn/error) в модуль \`${item.modulePath}\`.`,
+    `Проверь точки отказа и добавь нужные warn/error логи в модуль \`${item.modulePath}\`.`,
     ``,
-    `Роль модуля: ${item.roleHint} (приоритет: ${item.riskTier})`,
     item.hasAnyWarnError
       ? `В модуле есть некоторые warn/error, но обнаружены незакрытые точки отказа.`
       : `В модуле НЕТ ни одного warn/error. При сбоях мы не увидим ошибку в логах.`,
@@ -1349,13 +1569,17 @@ function buildObsAddCriticalLogsPromptV2(item: MissingCriticalLogItem, catalog: 
     `Обнаруженные точки отказа без логирования (${item.failurePoints.length}):`,
     fpDescriptions,
     ``,
+    `Важно: VibeRadar дал кандидатов, а не список обязательных правок.`,
     `Что сделать с каждой точкой:`,
-    `- Пустые catch-блоки: добавь logger.error с контекстом, event_name, error_code, outcome:failure`,
-    `- catch без лога: добавь logger.error/warn рядом с обработкой ошибки`,
-    `- .catch() без лога: добавь logger.error в обработчик промиса`,
-    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
-    `- throw без лога: добавь logger.error ДО throw`,
-    `- if(err) без лога: добавь logger.warn/error в ветку ошибки`,
+    `- Сначала прочитай контекст и реши: add_error_log | add_warn_log | keep_without_log | needs_human_review.`,
+    `- Меняй код только для add_error_log/add_warn_log.`,
+    `- Пустые catch-блоки: добавь logger.error только если ошибка реально теряется и влияет на операцию.`,
+    `- catch без лога: добавь logger.error/warn рядом с обработкой ошибки, если это operational-сбой.`,
+    `- .catch() без лога: добавь лог только если это не намеренный безопасный fallback/cleanup.`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error только при реальном риске потери сбоя.`,
+    `- throw без лога: НЕ добавляй лог для штатных validation/not-found/conflict/domain ошибок.`,
+    `- if(err) без лога: добавь logger.warn/error в ветку ошибки, если ошибка должна быть видна в production.`,
+    `- Для keep_without_log не добавляй лог даже если VibeRadar подсветил точку.`,
     ``,
     `Каждый лог: event_name, outcome, error_code (для error).`,
     `event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
@@ -1376,7 +1600,8 @@ function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], cat
     const fpSummary = item.failurePoints.map(fp =>
       `  - строка ~${fp.lineApprox}: ${FP_TYPE_LABELS[fp.type] || fp.type} — \`${fp.snippet}\``
     ).join('\n');
-    return `### \`${item.modulePath}\` (${item.roleHint}, ${item.riskTier})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
+    const coverageState = item.hasAnyWarnError ? 'частично покрыто warn/error' : 'warn/error не найдено';
+    return `### \`${item.modulePath}\` (${item.failurePoints.length} точек отказа; ${coverageState})\n${fpSummary || '  - Нет warn/error, проверь весь модуль на точки отказа'}`;
   }).join('\n\n');
 
   const testCommands = items
@@ -1387,9 +1612,20 @@ function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], cat
     .join('\n');
 
   return [
-    `Добавь критичные логи в ${items.length} модулей.`,
+    `Проверь точки отказа и добавь нужные warn/error логи в ${items.length} модулей.`,
     ``,
-    `Для каждого модуля: найди точки отказа (указаны ниже) и добавь logger.warn/error с обязательными полями.`,
+    `Для каждого модуля: прочитай контекст точек отказа (указаны ниже) и добавь logger.warn/error только там, где это реальный operational-сбой.`,
+    ``,
+    `Важно: VibeRadar дал список кандидатов, а не список обязательных правок.`,
+    `Перед любым изменением классифицируй каждую точку:`,
+    `- add_error_log — реальный неожиданный сбой операции, должен быть виден в production`,
+    `- add_warn_log — деградация, retry, graceful fallback или частичный результат`,
+    `- keep_without_log — ожидаемый domain/validation/not-found/conflict/permission ответ, UI validation, intentional cleanup или best-effort fallback`,
+    `- needs_human_review — контекст спорный или уверенность низкая`,
+    ``,
+    `Меняй код только для add_error_log/add_warn_log.`,
+    `Для keep_without_log не добавляй лог даже если VibeRadar подсветил точку.`,
+    `В финальном ответе отдельно перечисли: что изменил, что оставил без изменений и почему.`,
     ``,
     moduleBlocks,
     ``,
@@ -1397,8 +1633,9 @@ function buildObsBatchAddCriticalLogsPrompt(items: MissingCriticalLogItem[], cat
     `- event_name: <domain>.<entity>.<action> (lower_snake_case через точку)`,
     `- outcome: failure|partial`,
     `- error_code из словаря (VALIDATION_ERROR, DEPENDENCY_TIMEOUT, INTERNAL_ERROR и т.д.)`,
-    `- Пустые catch: добавь logger.error, не оставляй пустыми`,
-    `- HTTP/DB без обработки: оберни в try/catch с logger.error`,
+    `- Не стремись обнулить все сигналы VibeRadar: validation/not-found/conflict/domain throws и intentional silent fallbacks можно оставить без ERROR-лога`,
+    `- Пустые catch: добавь logger.error только если ошибка теряется и влияет на операцию; intentional cleanup/best-effort fallback можно оставить без error-лога или оформить как debug/warn по контексту`,
+    `- HTTP/DB без обработки: оберни в try/catch с logger.error только если ошибка не обрабатывается выше и должна быть видна в production`,
     `- В payload-объекте логгера используй ТОЛЬКО переменные из текущего скоупа (не угадывай имена полей из типов)`,
     ``,
     `⚠️ ВАЖНО — React / Vite файлы (.tsx):`,
@@ -2117,7 +2354,53 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
     // ── Load test state ─────────────────────────────────────────────────────────
     interface LoadBucket { ts: number; count: number; errors: number; durSum: number; vus: number; }
+    interface LoadRunConfig {
+      vus?: number;
+      duration?: string;
+      baseUrl: string;
+      scriptName?: string;
+      executionMode?: 'cli' | 'script';
+      vusEnvName?: string;
+      durationEnvName?: string;
+      dataDir?: string;
+      resultDir?: string;
+      runDir?: string;
+      workDir?: string;
+      resultPath?: string;
+      dataFilesCopied?: number;
+      envVars?: Record<string, string>;
+    }
+    interface LoadSummary {
+      totalRequests?: number;
+      rps?: number;
+      avgDuration?: number;
+      p90Duration?: number;
+      p95Duration?: number;
+      p99Duration?: number;
+      errorPct?: number;
+      testRunDurationMs?: number;
+      checksPassed?: number;
+      checksFailed?: number;
+      thresholdsPassed?: number;
+      thresholdsFailed?: number;
+      p95ThresholdMs?: number;
+      p99ThresholdMs?: number;
+      endpoints?: LoadEndpointSummary[];
+      exitCode?: number | null;
+    }
+    interface LoadEndpointSummary {
+      endpoint: string;
+      requests: number;
+      failures: number;
+      errorPct?: number;
+      avgDuration?: number;
+      p90Duration?: number;
+      p95Duration?: number;
+      p99Duration?: number;
+      maxDuration?: number;
+    }
     interface LoadState {
+      runId: string | null;
       status: 'idle' | 'running' | 'done' | 'stopped' | 'error';
       startTime: number;
       endTime?: number;
@@ -2126,13 +2409,27 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       totalErrors: number;
       logs: string[];
       script: string;
-      config: Record<string, unknown> | null;
-      summary: Record<string, number> | null;
+      config: LoadRunConfig | null;
+      summary: LoadSummary | null;
+    }
+    interface LoadRunRecord extends LoadState {
+      scriptName?: string;
+      createdAt: string;
+    }
+    interface LoadRunIndexItem {
+      runId: string;
+      scriptName: string;
+      createdAt: string;
+      status: LoadState['status'];
+      startTime: number;
+      endTime?: number;
+      config: LoadRunConfig | null;
+      summary: LoadSummary | null;
     }
     let loadRunning = false;
     let loadProc: ReturnType<typeof spawn> | null = null;
     let loadState: LoadState = {
-      status: 'idle', startTime: 0, buckets: [], totalRequests: 0,
+      runId: null, status: 'idle', startTime: 0, buckets: [], totalRequests: 0,
       totalErrors: 0, logs: [], script: '', config: null, summary: null,
     };
 
@@ -2237,24 +2534,456 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
     }
 
-    function parseK6Dur(s: string): number {
-      let m: RegExpMatchArray | null;
-      if ((m = s.match(/^([\d.]+)µs$/))) return parseFloat(m[1]) / 1000;
-      if ((m = s.match(/^([\d.]+)ms$/))) return parseFloat(m[1]);
-      if ((m = s.match(/^([\d.]+)s$/)))  return parseFloat(m[1]) * 1000;
-      if ((m = s.match(/^(\d+)m([\d.]+)s$/))) return parseInt(m[1]) * 60000 + parseFloat(m[2]) * 1000;
-      return 0;
+    const loadRunsDir = path.join(projectRoot, '.viberadar', 'load-runs');
+    const MAX_LOAD_RUN_HISTORY = 50;
+
+    function sanitizeLoadScriptName(name: unknown): string {
+      const raw = typeof name === 'string' && name.trim() ? name.trim() : 'Без названия';
+      return raw.replace(/[^a-zA-Zа-яА-ЯёЁ0-9_\- .]/g, '_').slice(0, 80);
     }
 
-    function parseK6Summary(text: string): Record<string, number> {
-      const s: Record<string, number> = {};
-      const dur = text.match(/http_req_duration[^:]*:\s+avg=([\w.µ]+)[^\n]*p\(90\)=([\w.µ]+)[^\n]*p\(95\)=([\w.µ]+)/);
-      if (dur) { s.avgDuration = parseK6Dur(dur[1]); s.p90Duration = parseK6Dur(dur[2]); s.p95Duration = parseK6Dur(dur[3]); }
-      const reqs = text.match(/\bhttp_reqs[^:]*:\s+(\d+)\s+([\d.]+)\/s/);
-      if (reqs) { s.totalRequests = parseInt(reqs[1]); s.rps = parseFloat(reqs[2]); }
-      const fail = text.match(/http_req_failed[^:]*:\s+([\d.]+)%/);
-      if (fail) s.errorPct = parseFloat(fail[1]);
-      return s;
+    function normalizeLoadDuration(value: unknown): string {
+      const raw = typeof value === 'string' && value.trim() ? value.trim() : '30s';
+      if (!/^(\d+(ms|s|m|h))+$/.test(raw)) return '30s';
+      return raw;
+    }
+
+    function normalizeLoadVus(value: unknown): number {
+      const n = typeof value === 'number' ? value : parseInt(String(value || '10'), 10);
+      if (!Number.isFinite(n) || n < 1) return 10;
+      return Math.min(Math.floor(n), 10000);
+    }
+
+    function sanitizeLoadEnvVars(value: unknown): Record<string, string> {
+      if (!value || typeof value !== 'object') return {};
+      const out: Record<string, string> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        const envKey = key.trim();
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(envKey)) continue;
+        if (val == null) continue;
+        out[envKey] = String(val);
+      }
+      return out;
+    }
+
+    function sanitizeLoadEnvName(value: unknown, fallback: string): string {
+      const raw = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+      return /^[A-Za-z_][A-Za-z0-9_]*$/.test(raw) ? raw : fallback;
+    }
+
+    function detectK6Scenarios(script: string): boolean {
+      return /\bscenarios\s*:/.test(script) || /export\s+const\s+options[\s\S]*\bscenarios\b/.test(script);
+    }
+
+    function redactLoadEnvVars(envVars: Record<string, string>): Record<string, string> {
+      const out: Record<string, string> = {};
+      for (const key of Object.keys(envVars)) {
+        out[key] = /token|secret|password|key|account|credential|login/i.test(key) ? '***' : envVars[key];
+      }
+      return out;
+    }
+
+    function resolveLoadLocalPath(value: unknown): string | undefined {
+      if (typeof value !== 'string' || !value.trim()) return undefined;
+      const raw = value.trim();
+      return path.resolve(path.isAbsolute(raw) ? raw : path.join(projectRoot, raw));
+    }
+
+    function copyLoadDataFiles(sourcePath: string | undefined, workDir: string): number {
+      if (!sourcePath || !fs.existsSync(sourcePath)) return 0;
+      const stat = fs.statSync(sourcePath);
+      let copied = 0;
+      const copyOne = (src: string, dst: string) => {
+        const st = fs.statSync(src);
+        if (st.isDirectory()) {
+          fs.mkdirSync(dst, { recursive: true });
+          for (const name of fs.readdirSync(src)) {
+            if (name === '.git' || name === 'node_modules' || name === 'dist') continue;
+            copyOne(path.join(src, name), path.join(dst, name));
+          }
+          return;
+        }
+        if (!st.isFile()) return;
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(src, dst);
+        copied++;
+      };
+      if (stat.isDirectory()) {
+        for (const name of fs.readdirSync(sourcePath)) {
+          if (name === '.git' || name === 'node_modules' || name === 'dist') continue;
+          copyOne(path.join(sourcePath, name), path.join(workDir, name));
+        }
+      } else if (stat.isFile()) {
+        copyOne(sourcePath, path.join(workDir, path.basename(sourcePath)));
+      }
+      return copied;
+    }
+
+    function buildLoadConfig(
+      cfg: Record<string, unknown>,
+      paths?: { runDir?: string; workDir?: string; resultPath?: string; dataFilesCopied?: number },
+    ): { config: LoadRunConfig; envVars: Record<string, string>; dataDir?: string; resultDir?: string } {
+      const envVars = sanitizeLoadEnvVars(cfg.envVars);
+      const baseUrl = typeof cfg.baseUrl === 'string' && cfg.baseUrl.trim() ? cfg.baseUrl.trim() : 'http://localhost:5000';
+      const dataDir = resolveLoadLocalPath(cfg.dataDir);
+      const resultDir = resolveLoadLocalPath(cfg.resultDir);
+      const executionMode = cfg.executionMode === 'script' ? 'script' : 'cli';
+      const vusEnvName = sanitizeLoadEnvName(cfg.vusEnvName, 'LOAD_VUS');
+      const durationEnvName = sanitizeLoadEnvName(cfg.durationEnvName, 'LOAD_DURATION');
+      const hasVus = cfg.vus !== undefined && cfg.vus !== null && String(cfg.vus).trim() !== '';
+      const hasDuration = cfg.duration !== undefined && cfg.duration !== null && String(cfg.duration).trim() !== '';
+      envVars.BASE_URL = baseUrl;
+      const config: LoadRunConfig = {
+        vus: hasVus ? normalizeLoadVus(cfg.vus) : undefined,
+        duration: hasDuration ? normalizeLoadDuration(cfg.duration) : undefined,
+        baseUrl,
+        scriptName: sanitizeLoadScriptName(cfg.scriptName),
+        executionMode,
+        vusEnvName,
+        durationEnvName,
+        dataDir,
+        resultDir,
+        runDir: paths?.runDir,
+        workDir: paths?.workDir,
+        resultPath: paths?.resultPath,
+        dataFilesCopied: paths?.dataFilesCopied,
+        envVars: redactLoadEnvVars(envVars),
+      };
+      if (executionMode === 'script') {
+        if (hasVus && config.vus != null) {
+          const vusValue = String(config.vus);
+          envVars[vusEnvName] = vusValue;
+          if (!envVars.LOAD_VUS) envVars.LOAD_VUS = vusValue;
+          if (!envVars.SMOKE_VUS) envVars.SMOKE_VUS = vusValue;
+          if (!envVars.AUTH_VUS) envVars.AUTH_VUS = vusValue;
+        }
+        if (hasDuration && config.duration) {
+          envVars[durationEnvName] = config.duration;
+          if (!envVars.LOAD_DURATION) envVars.LOAD_DURATION = config.duration;
+          if (!envVars.SMOKE_DURATION) envVars.SMOKE_DURATION = config.duration;
+          if (!envVars.AUTH_DURATION) envVars.AUTH_DURATION = config.duration;
+        }
+        config.envVars = redactLoadEnvVars(envVars);
+      }
+      return { config, envVars, dataDir, resultDir };
+    }
+
+    function k6CollectionValues(value: any): any[] {
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === 'object') return Object.values(value);
+      return [];
+    }
+
+    function flattenK6Checks(group: any): { passes: number; fails: number } {
+      let passes = 0;
+      let fails = 0;
+      for (const check of k6CollectionValues(group?.checks)) {
+        passes += Number(check.passes || 0);
+        fails += Number(check.fails || 0);
+      }
+      for (const child of k6CollectionValues(group?.groups)) {
+        const nested = flattenK6Checks(child);
+        passes += nested.passes;
+        fails += nested.fails;
+      }
+      return { passes, fails };
+    }
+
+    function parseK6ThresholdMs(thresholds: unknown, percentile: '95' | '99'): number | undefined {
+      if (!thresholds || (typeof thresholds !== 'object' && !Array.isArray(thresholds))) return undefined;
+      const expressions = Array.isArray(thresholds)
+        ? thresholds.map((item) => String(item))
+        : Object.keys(thresholds as Record<string, unknown>);
+      for (const expression of expressions) {
+        const escaped = percentile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = expression.match(new RegExp(`p\\(${escaped}\\)\\s*<\\s*(\\d+(?:\\.\\d+)?)`));
+        if (match) {
+          const value = Number(match[1]);
+          if (Number.isFinite(value)) return value;
+        }
+      }
+      return undefined;
+    }
+
+    function k6MetricValues(metric: any): Record<string, any> {
+      if (!metric || typeof metric !== 'object') return {};
+      return metric.values && typeof metric.values === 'object' ? metric.values : metric;
+    }
+
+    function normalizeK6EndpointTag(tags: unknown): string | null {
+      if (!tags || typeof tags !== 'object') return null;
+      const record = tags as Record<string, unknown>;
+      const candidates = [record.endpoint, record.name, record.url];
+      for (const candidate of candidates) {
+        if (typeof candidate !== 'string') continue;
+        const value = candidate.trim();
+        if (!value) continue;
+        return value.replace(/^https?:\/\/[^/]+/i, '').slice(0, 180);
+      }
+      return null;
+    }
+
+    function percentile(values: number[], p: number): number | undefined {
+      if (values.length === 0) return undefined;
+      const sorted = values.slice().sort((a, b) => a - b);
+      const rank = (sorted.length - 1) * p;
+      const lower = Math.floor(rank);
+      const upper = Math.ceil(rank);
+      if (lower === upper) return sorted[lower];
+      const weight = rank - lower;
+      return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+    }
+
+    function parseK6EndpointMetrics(metricsPath: string): LoadEndpointSummary[] {
+      if (!fs.existsSync(metricsPath)) return [];
+      const acc = new Map<string, { requests: number; failures: number; durations: number[]; durationSum: number }>();
+      const getBucket = (endpoint: string) => {
+        let bucket = acc.get(endpoint);
+        if (!bucket) {
+          bucket = { requests: 0, failures: 0, durations: [], durationSum: 0 };
+          acc.set(endpoint, bucket);
+        }
+        return bucket;
+      };
+
+      const fd = fs.openSync(metricsPath, 'r');
+      const buffer = Buffer.alloc(1024 * 1024);
+      let remainder = '';
+      try {
+        while (true) {
+          const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+          if (bytesRead <= 0) break;
+          const text = remainder + buffer.subarray(0, bytesRead).toString('utf-8');
+          const lines = text.split(/\r?\n/);
+          remainder = lines.pop() || '';
+          for (const line of lines) processK6MetricLine(line);
+        }
+        if (remainder.trim()) processK6MetricLine(remainder);
+      } finally {
+        fs.closeSync(fd);
+      }
+
+      function processK6MetricLine(line: string): void {
+        if (!line.trim()) return;
+        let point: any;
+        try { point = JSON.parse(line); } catch { return; }
+        if (point?.type !== 'Point') return;
+        const data = point.data;
+        if (!data || typeof data.value !== 'number') return;
+        const endpoint = normalizeK6EndpointTag(data.tags);
+        if (!endpoint) return;
+        const bucket = getBucket(endpoint);
+        if (point.metric === 'http_reqs') {
+          bucket.requests += data.value;
+        } else if (point.metric === 'http_req_failed') {
+          if (data.value > 0) bucket.failures += data.value;
+        } else if (point.metric === 'http_req_duration') {
+          bucket.durations.push(data.value);
+          bucket.durationSum += data.value;
+        }
+      }
+
+      return Array.from(acc.entries())
+        .map(([endpoint, bucket]) => {
+          const requests = Math.round(bucket.requests || bucket.durations.length);
+          const failures = Math.round(bucket.failures);
+          const avgDuration = bucket.durations.length > 0 ? bucket.durationSum / bucket.durations.length : undefined;
+          return {
+            endpoint,
+            requests,
+            failures,
+            errorPct: requests > 0 ? (failures / requests) * 100 : undefined,
+            avgDuration,
+            p90Duration: percentile(bucket.durations, 0.90),
+            p95Duration: percentile(bucket.durations, 0.95),
+            p99Duration: percentile(bucket.durations, 0.99),
+            maxDuration: bucket.durations.length ? bucket.durations.reduce((max, value) => Math.max(max, value), 0) : undefined,
+          };
+        })
+        .filter((endpoint) => endpoint.requests > 0 || endpoint.avgDuration != null)
+        .sort((a, b) => (b.p95Duration || 0) - (a.p95Duration || 0) || b.requests - a.requests)
+        .slice(0, 100);
+    }
+
+    function normalizeK6Summary(raw: any, exitCode: number | null, metricsPath?: string): LoadSummary {
+      const metrics = raw?.metrics || {};
+      const duration = k6MetricValues(metrics.http_req_duration);
+      const reqs = k6MetricValues(metrics.http_reqs);
+      const failed = k6MetricValues(metrics.http_req_failed);
+      const checks = flattenK6Checks(raw?.root_group);
+      let thresholdsPassed = 0;
+      let thresholdsFailed = 0;
+      for (const metric of Object.values(metrics) as any[]) {
+        for (const threshold of Object.values(metric?.thresholds || {}) as any[]) {
+          if (threshold?.ok === false) thresholdsFailed++;
+          else if (threshold?.ok === true) thresholdsPassed++;
+        }
+      }
+      const endpoints = metricsPath ? parseK6EndpointMetrics(metricsPath) : [];
+      const p95ThresholdMs = parseK6ThresholdMs(metrics.http_req_duration?.thresholds, '95');
+      const p99ThresholdMs = parseK6ThresholdMs(metrics.http_req_duration?.thresholds, '99');
+      return {
+        totalRequests: typeof reqs.count === 'number' ? reqs.count : undefined,
+        rps: typeof reqs.rate === 'number' ? reqs.rate : undefined,
+        avgDuration: typeof duration.avg === 'number' ? duration.avg : undefined,
+        p90Duration: typeof duration['p(90)'] === 'number' ? duration['p(90)'] : undefined,
+        p95Duration: typeof duration['p(95)'] === 'number' ? duration['p(95)'] : undefined,
+        p99Duration: typeof duration['p(99)'] === 'number' ? duration['p(99)'] : undefined,
+        errorPct: typeof failed.rate === 'number' ? failed.rate * 100 : undefined,
+        testRunDurationMs: typeof raw?.state?.testRunDurationMs === 'number' ? raw.state.testRunDurationMs : undefined,
+        checksPassed: checks.passes,
+        checksFailed: checks.fails,
+        thresholdsPassed,
+        thresholdsFailed,
+        p95ThresholdMs,
+        p99ThresholdMs,
+        endpoints,
+        exitCode,
+      };
+    }
+
+    function readK6Summary(summaryPath: string, exitCode: number | null, metricsPath?: string): LoadSummary | null {
+      try {
+        if (!fs.existsSync(summaryPath)) return { exitCode };
+        return normalizeK6Summary(JSON.parse(fs.readFileSync(summaryPath, 'utf-8')), exitCode, metricsPath);
+      } catch {
+        return { exitCode };
+      }
+    }
+
+    function readLoadRunIndex(): LoadRunIndexItem[] {
+      try {
+        const p = path.join(loadRunsDir, 'index.json');
+        const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function writeLoadRunIndex(items: LoadRunIndexItem[]): void {
+      fs.mkdirSync(loadRunsDir, { recursive: true });
+      fs.writeFileSync(path.join(loadRunsDir, 'index.json'), JSON.stringify(items, null, 2), 'utf-8');
+    }
+
+    function saveLoadRun(): void {
+      if (!loadState.runId) return;
+      fs.mkdirSync(loadRunsDir, { recursive: true });
+      const record: LoadRunRecord = {
+        ...loadState,
+        scriptName: loadState.config?.scriptName,
+        createdAt: new Date(loadState.startTime || Date.now()).toISOString(),
+      };
+      fs.writeFileSync(path.join(loadRunsDir, `${loadState.runId}.json`), JSON.stringify(record, null, 2), 'utf-8');
+      const index = readLoadRunIndex().filter(i => i.runId !== loadState.runId);
+      index.unshift({
+        runId: loadState.runId,
+        scriptName: loadState.config?.scriptName || 'Без названия',
+        createdAt: record.createdAt,
+        status: loadState.status,
+        startTime: loadState.startTime,
+        endTime: loadState.endTime,
+        config: loadState.config,
+        summary: loadState.summary,
+      });
+      const compact = index.slice(0, MAX_LOAD_RUN_HISTORY);
+      writeLoadRunIndex(compact);
+      for (const old of index.slice(MAX_LOAD_RUN_HISTORY)) {
+        try { fs.unlinkSync(path.join(loadRunsDir, `${old.runId}.json`)); } catch {}
+        try { fs.rmSync(path.join(loadRunsDir, old.runId), { recursive: true, force: true }); } catch {}
+      }
+    }
+
+    function enrichLoadRunRecord(record: LoadRunRecord): { record: LoadRunRecord; changed: boolean } {
+      if (Array.isArray(record.summary?.endpoints) && record.summary.endpoints.length > 0) {
+        return { record, changed: false };
+      }
+      const resultPath = record.config?.resultPath;
+      if (!resultPath || typeof resultPath !== 'string') {
+        return { record, changed: false };
+      }
+      const summaryPath = path.join(resultPath, 'summary.json');
+      const metricsPath = path.join(resultPath, 'metrics.ndjson');
+      const summary = readK6Summary(summaryPath, record.summary?.exitCode ?? null, metricsPath);
+      if (!summary || !Array.isArray(summary.endpoints) || summary.endpoints.length === 0) {
+        return { record, changed: false };
+      }
+      const next: LoadRunRecord = {
+        ...record,
+        summary: { ...(record.summary || {}), ...summary },
+      };
+      if (summary.totalRequests != null) next.totalRequests = summary.totalRequests;
+      if (summary.errorPct != null && summary.totalRequests != null) {
+        next.totalErrors = Math.round(summary.totalRequests * (summary.errorPct / 100));
+      }
+      return { record: next, changed: true };
+    }
+
+    function loadLastRunIntoState(): void {
+      const latest = readLoadRunIndex()[0];
+      if (!latest) return;
+      try {
+        const runPath = path.join(loadRunsDir, `${latest.runId}.json`);
+        const parsed = JSON.parse(fs.readFileSync(runPath, 'utf-8'));
+        if (parsed && typeof parsed === 'object') {
+          const { record, changed } = enrichLoadRunRecord(parsed as LoadRunRecord);
+          loadState = record as LoadState;
+          if (changed) {
+            try { fs.writeFileSync(runPath, JSON.stringify(record, null, 2), 'utf-8'); } catch {}
+            try {
+              const index = readLoadRunIndex();
+              const item = index.find((i) => i.runId === latest.runId);
+              if (item) {
+                item.summary = record.summary;
+                item.status = record.status;
+                item.endTime = record.endTime;
+                writeLoadRunIndex(index);
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    loadLastRunIntoState();
+
+    function sendJson(res: http.ServerResponse, statusCode: number, payload: unknown): void {
+      res.writeHead(statusCode, jsonH);
+      res.end(JSON.stringify(payload));
+    }
+
+    function readJsonBody(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<unknown> {
+      return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString('utf-8');
+          if (Buffer.byteLength(body, 'utf-8') > maxBytes) {
+            reject(new Error('Request body is too large'));
+            req.destroy();
+          }
+        });
+        req.on('end', () => {
+          if (!body.trim()) {
+            resolve({});
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (err: any) {
+            reject(new TrackerValidationError([{ field: 'body', message: err.message || 'invalid JSON' }]));
+          }
+        });
+        req.on('error', reject);
+      });
+    }
+
+    function sendTrackerError(res: http.ServerResponse, err: unknown): void {
+      if (err instanceof TrackerValidationError) {
+        const notFound = err.issues.some((issue) => issue.field === 'id' && issue.message.includes('не найдена'));
+        sendJson(res, notFound ? 404 : 400, { ok: false, error: err.message, issues: err.issues });
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, { ok: false, error: message });
     }
 
     // ── SSE clients ────────────────────────────────────────────────────────────
@@ -2547,9 +3276,24 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         runId, task, featureKey, filePath, selectedFilePaths, title, agent, savedErrors, savedFailedFiles, savedTestType,
         autoFixAttempt = 0, autoFixSourceTask,
       } = item;
+      const trackerTaskId = typeof item.meta?.taskId === 'string' ? item.meta.taskId : null;
       const normalizeRelPath = (p: string) => p.replace(/\\/g, '/');
       const emitOutput = (line: string, isError = false, isDim = false) => {
         broadcast('agent-output', { runId, line, isError, isDim });
+      };
+      const updateTrackedTaskFromRun = (phase: RunPhase) => {
+        if (!trackerTaskId) return;
+        try {
+          const patch = phase === 'completed'
+            ? { status: 'done', lastRunId: runId }
+            : phase === 'failed'
+              ? { status: 'review', lastRunId: runId }
+              : { lastRunId: runId };
+          updateTrackerTask(projectRoot, trackerTaskId, patch);
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, taskId: trackerTaskId, runId, phase });
+        } catch (err: any) {
+          emitOutput(`⚠️ Не удалось обновить задачу трекера ${trackerTaskId}: ${err.message || err}`, true, true);
+        }
       };
       const targetSourcePaths = (() => {
         if (task === 'write-tests-file' && filePath) {
@@ -2575,6 +3319,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
 
       function failBeforeStart(message: string) {
         setRunPhase(runId, 'failed', { error: message, targetSourcePaths });
+        updateTrackedTaskFromRun('failed');
         broadcast('agent-error', { runId, message });
         agentRunning = false;
         processNextInQueue();
@@ -2689,6 +3434,12 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         } else {
           failBeforeStart('Нет данных observability или модули не выбраны'); return;
         }
+      } else if (task === 'obs-feature-review') {
+        const requestedFeatureKey = item.meta?.featureKey || item.featureKey;
+        if (!requestedFeatureKey) { failBeforeStart('Фича не указана'); return; }
+        const builtPrompt = buildObsFeatureReviewPrompt(requestedFeatureKey, currentData);
+        if (builtPrompt === null) { failBeforeStart(`Не удалось собрать prompt по наблюдаемости фичи ${requestedFeatureKey}`); return; }
+        prompt = builtPrompt;
       } else if (task === 'actualize-docs') {
         if (!featureKey || !currentData.features) { failBeforeStart('Фича не найдена'); return; }
         const feat = currentData.features.find(f => f.key === featureKey);
@@ -3187,11 +3938,13 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             validationStats: finalValidationStats,
             error: finalError,
           });
+          updateTrackedTaskFromRun(finalPhase);
           processNextInQueue(true);
         } else if (code === 255) {
           process.stdout.write(`   ❌ Agent auth error (exit code 255)\n`);
           const message = `${agent === 'claude' ? 'Claude Code' : 'Codex'} не авторизован. Нажми 🔑 Перелогиниться в меню агента.`;
           setRunPhase(runId, 'failed', { targetSourcePaths, error: message });
+          updateTrackedTaskFromRun('failed');
           broadcast('agent-error', {
             runId,
             message,
@@ -3203,6 +3956,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           process.stdout.write(`   ❌ Agent failed (exit code ${code})\n`);
           const message = `Агент завершился с кодом ${code}`;
           setRunPhase(runId, 'failed', { targetSourcePaths, error: message });
+          updateTrackedTaskFromRun('failed');
           broadcast('agent-error', { runId, message });
           if (queueBlockSignal === 403 || queueBlockSignal === 429) {
             stopQueuedTasks(`пойман ${queueBlockSignal} от ${agent === 'claude' ? 'Claude Code' : 'Codex'}`);
@@ -3225,6 +3979,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
           : `Не удалось запустить ${agent}: ${err.message}`;
         process.stdout.write('   ❌ Agent spawn error: ' + err.message + '\n');
         setRunPhase(runId, 'failed', { targetSourcePaths, error: msg });
+        updateTrackedTaskFromRun('failed');
         broadcast('agent-error', { runId, message: msg, notInstalled: isNotFound, agent });
         processNextInQueue(true);
       });
@@ -3301,7 +4056,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         title = `${agentLabel} — исправить шумный паттерн "${String(pattern).slice(0, 40)}"`;
       } else if (task === 'obs-add-critical-logs') {
         const modulePath = meta?.modulePath || 'unknown';
-        title = `${agentLabel} — добавить критичные логи в "${modulePath}"`;
+        title = `${agentLabel} — добавить логи точек отказа в "${modulePath}"`;
       } else if (task === 'obs-enrich-field') {
         const fieldName = meta?.fieldName || 'unknown';
         title = `${agentLabel} — обогатить поле "${fieldName}"`;
@@ -3315,6 +4070,15 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const count = Array.isArray(meta?.catalogPaths) ? meta.catalogPaths.length : Array.isArray(meta?.catalogIndices) ? meta.catalogIndices.length : 0;
         const label = meta?.fieldName ? `поле ${meta.fieldName}` : meta?.recommendationType || 'логи';
         title = `${agentLabel} — ${label} (${count} модулей)`;
+      } else if (task === 'obs-feature-review') {
+        const requestedFeatureKey = meta?.featureKey || featureKey;
+        const isUnmapped = requestedFeatureKey === '__unmapped__';
+        const feat = !isUnmapped ? currentData.features?.find(f => f.key === requestedFeatureKey) : null;
+        if (!requestedFeatureKey || (!isUnmapped && !feat)) {
+          broadcast('agent-error', { message: `Фича не найдена: ${requestedFeatureKey || 'не указана'}` });
+          return null;
+        }
+        title = `${agentLabel} — наблюдаемость фичи "${isUnmapped ? 'Unmapped' : feat!.label}"`;
       } else if (task === 'actualize-docs') {
         const feat = currentData.features?.find(f => f.key === featureKey);
         title = feat ? `${agentLabel} — документация "${feat.label}"` : `${agentLabel} — документация`;
@@ -3329,6 +4093,8 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         const feat = currentData.features?.find(f => f.key === featureKey);
         if (!feat) { broadcast('agent-error', { message: `Фича не найдена: ${featureKey}` }); return null; }
         title = `${agentLabel} — пайплайны для "${feat.label}"`;
+      } else if (task === 'custom-prompt') {
+        title = `${agentLabel} — ${meta?.title || 'задача трекера'}`;
       } else if (task === 'classify-orphan-tests') {
         const orphanCount = getOrphanTests(currentData.modules).noFeature.length;
         if (orphanCount === 0) {
@@ -3421,6 +4187,15 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       .on('change', f => scheduleRescan(path.join(projectRoot, f)))
       .on('unlink', f => scheduleRescan(path.join(projectRoot, f)));
 
+    chokidar.watch([TRACKER_FILE_NAME], {
+      cwd: projectRoot,
+      ignoreInitial: true,
+      persistent: true,
+    })
+      .on('add',    () => broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME }))
+      .on('change', () => broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME }))
+      .on('unlink', () => broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, deleted: true }));
+
     // ── HTTP server ────────────────────────────────────────────────────────────
     const server = http.createServer((req, res) => {
       const rawUrl = req.url ?? '/';
@@ -3461,6 +4236,36 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ...currentData, testErrors, hasPlaywright: hasPlaywright(projectRoot), e2ePlansExist, agentRuntime }));
+        return;
+      }
+
+      if (url === '/api/obs-build-prompt' && req.method === 'POST') {
+        let body = '';
+        req.on('data', d => body += d);
+        req.on('end', () => {
+          try {
+            const { task, meta } = JSON.parse(body || '{}');
+            const obs = currentData.observability;
+            if (!obs) {
+              res.writeHead(400, jsonH);
+              res.end(JSON.stringify({ error: 'Нет данных observability' }));
+              return;
+            }
+            const prompt = task === 'obs-feature-review'
+              ? buildObsFeatureReviewPrompt(meta?.featureKey, currentData)
+              : buildObsPromptForTask(task, meta || {}, obs);
+            if (!prompt) {
+              res.writeHead(400, jsonH);
+              res.end(JSON.stringify({ error: 'Не удалось собрать prompt для выбранной рекомендации' }));
+              return;
+            }
+            res.writeHead(200, jsonH);
+            res.end(JSON.stringify({ ok: true, prompt }));
+          } catch (err: any) {
+            res.writeHead(400, jsonH);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
         return;
       }
 
@@ -3566,6 +4371,86 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       if (url === '/api/agent/state' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(buildAgentStateSnapshot()));
+        return;
+      }
+
+      if (url === '/api/tasks' && req.method === 'GET') {
+        try {
+          sendJson(res, 200, { ...readTrackerFile(projectRoot), filePath: TRACKER_FILE_NAME });
+        } catch (err) {
+          sendTrackerError(res, err);
+        }
+        return;
+      }
+
+      if (url === '/api/tasks' && req.method === 'POST') {
+        readJsonBody(req).then((payload: any) => {
+          const task = createTrackerTask(projectRoot, payload?.task ?? payload);
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, taskId: task.id });
+          sendJson(res, 201, { ok: true, task, file: readTrackerFile(projectRoot) });
+        }).catch((err) => sendTrackerError(res, err));
+        return;
+      }
+
+      if (url === '/api/tasks/import' && req.method === 'POST') {
+        readJsonBody(req, 2 * 1024 * 1024).then((payload) => {
+          const result = importTrackerTasks(projectRoot, payload);
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, imported: result.imported });
+          sendJson(res, 200, { ok: true, imported: result.imported, file: result.file });
+        }).catch((err) => sendTrackerError(res, err));
+        return;
+      }
+
+      const taskRunMatch = url.match(/^\/api\/tasks\/([^/]+)\/run$/);
+      if (taskRunMatch && req.method === 'POST') {
+        const taskId = decodeURIComponent(taskRunMatch[1]);
+        try {
+          const file = readTrackerFile(projectRoot);
+          const task = file.tasks.find((item) => item.id === taskId);
+          if (!task) {
+            sendJson(res, 404, { ok: false, error: `Задача не найдена: ${taskId}` });
+            return;
+          }
+          const prompt = buildTrackerTaskPrompt(task);
+          const runId = runAgent('custom-prompt', undefined, undefined, undefined, {
+            prompt,
+            title: `задача "${task.title}"`,
+            taskId: task.id,
+          });
+          if (!runId) {
+            sendJson(res, 409, { ok: false, error: 'Не удалось поставить задачу в очередь агента' });
+            return;
+          }
+          const updatedTask = updateTrackerTask(projectRoot, task.id, { status: 'in-progress', lastRunId: runId });
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, taskId: task.id, runId });
+          sendJson(res, 200, { ok: true, runId, task: updatedTask });
+        } catch (err) {
+          sendTrackerError(res, err);
+        }
+        return;
+      }
+
+      const taskArchiveMatch = url.match(/^\/api\/tasks\/([^/]+)\/archive$/);
+      if (taskArchiveMatch && req.method === 'POST') {
+        const taskId = decodeURIComponent(taskArchiveMatch[1]);
+        try {
+          const task = archiveTrackerTask(projectRoot, taskId);
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, taskId });
+          sendJson(res, 200, { ok: true, task });
+        } catch (err) {
+          sendTrackerError(res, err);
+        }
+        return;
+      }
+
+      const taskPatchMatch = url.match(/^\/api\/tasks\/([^/]+)$/);
+      if (taskPatchMatch && req.method === 'PATCH') {
+        const taskId = decodeURIComponent(taskPatchMatch[1]);
+        readJsonBody(req).then((payload) => {
+          const task = updateTrackerTask(projectRoot, taskId, payload);
+          broadcast('tasks-updated', { filePath: TRACKER_FILE_NAME, taskId });
+          sendJson(res, 200, { ok: true, task, file: readTrackerFile(projectRoot) });
+        }).catch((err) => sendTrackerError(res, err));
         return;
       }
 
@@ -3802,6 +4687,28 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
       }
 
       if (url === '/api/agent-whoami' && req.method === 'GET') {
+        const requestedAgent = parsedUrl.searchParams.get('agent') || currentData.agent || 'claude';
+        if (requestedAgent === 'codex') {
+          const cmd = WIN ? 'codex.cmd login status' : 'codex login status';
+          let out = '';
+          const proc = spawn(cmd, [], { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+          proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+          proc.stderr?.on('data', (d: Buffer) => { out += d.toString(); });
+          proc.on('close', () => {
+            const account = loadCodexAccountInfo();
+            res.writeHead(200, jsonH);
+            res.end(JSON.stringify({
+              agent: 'codex',
+              loggedIn: /logged in/i.test(out),
+              email: account.email,
+              name: account.name,
+              accountId: account.accountId,
+              raw: account.raw || out.trim().slice(0, 300),
+            }));
+          });
+          return;
+        }
+
         const cmd = WIN ? 'claude.cmd auth status' : 'claude auth status';
         let out = '';
         const proc = spawn(cmd, [], { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -3814,7 +4721,7 @@ export function startServer({ data: initialData, port, projectRoot }: ServerOpti
             || out.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
           const email = match ? match[1] : null;
           res.writeHead(200, jsonH);
-          res.end(JSON.stringify({ email, raw: out.trim().slice(0, 300) }));
+          res.end(JSON.stringify({ agent: 'claude', email, raw: out.trim().slice(0, 300) }));
         });
         return;
       }
@@ -4623,13 +5530,30 @@ a{color:var(--blue)}
         req.on('data', (d: Buffer) => { body += d; });
         req.on('end', () => {
           try {
-            const { name, script } = JSON.parse(body);
+            const { name, script, vus, duration, baseUrl, dataDir, resultDir, accountsJson, accounts, envVars, executionMode, vusEnvName, durationEnvName } = JSON.parse(body);
             if (!name || !script) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'name and script required' })); return; }
             fs.mkdirSync(scriptsDir, { recursive: true });
             const safeName = name.replace(/[^a-zA-Zа-яА-ЯёЁ0-9_\- ]/g, '_').slice(0, 80);
             const date = new Date().toISOString().slice(0, 16).replace('T', ' ');
             const fileName = `${Date.now()}-${safeName.replace(/\s+/g, '_')}.json`;
-            const entry = { name: safeName, date, script, fileName };
+            const entry = {
+              name: safeName,
+              date,
+              script,
+              fileName,
+              baseUrl: typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.trim() : 'http://localhost:5000',
+              executionMode: executionMode === 'script' ? 'script' : 'cli',
+              vus: vus !== undefined && vus !== null && String(vus).trim() !== '' ? normalizeLoadVus(vus) : undefined,
+              duration: duration !== undefined && duration !== null && String(duration).trim() !== '' ? normalizeLoadDuration(duration) : undefined,
+              vusEnvName: sanitizeLoadEnvName(vusEnvName, 'LOAD_VUS'),
+              durationEnvName: sanitizeLoadEnvName(durationEnvName, 'LOAD_DURATION'),
+              dataDir: resolveLoadLocalPath(dataDir),
+              resultDir: resolveLoadLocalPath(resultDir),
+              accountsJson: typeof accountsJson === 'string' && accountsJson.trim()
+                ? accountsJson.trim()
+                : (accounts !== undefined ? JSON.stringify(accounts) : undefined),
+              envVars: sanitizeLoadEnvVars(envVars),
+            };
             // overwrite if same name exists
             const existing = fs.readdirSync(scriptsDir).find(f => {
               try { return JSON.parse(fs.readFileSync(path.join(scriptsDir, f), 'utf-8')).name === safeName; } catch { return false; }
@@ -4697,10 +5621,46 @@ a{color:var(--blue)}
         return;
       }
 
+      if (url === '/api/load/runs' && req.method === 'GET') {
+        res.writeHead(200, jsonH);
+        res.end(JSON.stringify(readLoadRunIndex()));
+        return;
+      }
+
+      const loadRunMatch = url.match(/^\/api\/load\/runs\/([^/]+)$/);
+      if (loadRunMatch && req.method === 'GET') {
+        try {
+          const runId = decodeURIComponent(loadRunMatch[1]);
+          if (!/^[a-zA-Z0-9_-]+$/.test(runId)) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'Bad run id' })); return; }
+          const runPath = path.join(loadRunsDir, `${runId}.json`);
+          const parsed = JSON.parse(fs.readFileSync(runPath, 'utf-8'));
+          const { record, changed } = enrichLoadRunRecord(parsed as LoadRunRecord);
+          if (changed) {
+            try { fs.writeFileSync(runPath, JSON.stringify(record, null, 2), 'utf-8'); } catch {}
+            try {
+              const index = readLoadRunIndex();
+              const item = index.find((i) => i.runId === runId);
+              if (item) {
+                item.summary = record.summary;
+                item.status = record.status;
+                item.endTime = record.endTime;
+                writeLoadRunIndex(index);
+              }
+            } catch {}
+          }
+          res.writeHead(200, jsonH);
+          res.end(JSON.stringify(record));
+        } catch {
+          res.writeHead(404, jsonH);
+          res.end(JSON.stringify({ error: 'Run not found' }));
+        }
+        return;
+      }
+
       if (url === '/api/load/stop' && req.method === 'POST') {
         if (loadProc) { try { loadProc.kill('SIGTERM'); } catch {} loadProc = null; }
         if (loadRunning) { loadRunning = false; loadState.status = 'stopped'; loadState.endTime = Date.now(); }
-        broadcast('load-done', { status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
+        broadcast('load-done', { runId: loadState.runId, status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
         res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -4717,31 +5677,59 @@ a{color:var(--blue)}
           const script = (cfg.script as string) || '';
           if (!script.trim()) { res.writeHead(400, jsonH); res.end(JSON.stringify({ error: 'No script provided' })); return; }
 
-          const scriptPath  = path.join(os.tmpdir(), `viberadar-k6-${Date.now()}.js`);
-          const jsonOutPath = path.join(os.tmpdir(), `viberadar-k6-out-${Date.now()}.ndjson`);
-          try { fs.writeFileSync(scriptPath, script, 'utf-8'); } catch (e: any) {
+          const runId = `load-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const runDir = path.join(loadRunsDir, runId);
+          const workDir = path.join(runDir, 'work');
+          const defaultResultDir = path.join(runDir, 'results');
+          const effectiveCfg = { ...cfg };
+          if (!effectiveCfg.executionMode) {
+            effectiveCfg.executionMode = detectK6Scenarios(script) ? 'script' : 'cli';
+          }
+          const initial = buildLoadConfig(effectiveCfg);
+          const resultPath = initial.resultDir ? path.join(initial.resultDir, runId) : defaultResultDir;
+          const scriptPath = path.join(workDir, 'script.js');
+          const jsonOutPath = path.join(resultPath, 'metrics.ndjson');
+          const summaryPath = path.join(resultPath, 'summary.json');
+          let dataFilesCopied = 0;
+          try {
+            fs.mkdirSync(workDir, { recursive: true });
+            fs.mkdirSync(resultPath, { recursive: true });
+            dataFilesCopied = copyLoadDataFiles(initial.dataDir, workDir);
+            fs.writeFileSync(scriptPath, script, 'utf-8');
+          } catch (e: any) {
             res.writeHead(500, jsonH); res.end(JSON.stringify({ error: e.message })); return;
           }
+          const { config: loadConfig, envVars } = buildLoadConfig(effectiveCfg, {
+            runDir,
+            workDir,
+            resultPath,
+            dataFilesCopied,
+          });
 
           loadRunning = true;
           loadState = {
-            status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0,
-            totalErrors: 0, logs: [], script, config: cfg, summary: null,
+            runId, status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0,
+            totalErrors: 0, logs: [], script, config: loadConfig, summary: null,
           };
-          broadcast('load-started', { config: cfg } as Record<string, unknown>);
-          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true }));
+          broadcast('load-started', { runId, config: loadConfig } as Record<string, unknown>);
+          res.writeHead(200, jsonH); res.end(JSON.stringify({ ok: true, runId }));
 
-          // Build --env flags from cfg.envVars (e.g. { TOKEN: 'abc', BASE_URL: '...' })
-          const envVars: Record<string, string> = (typeof cfg.envVars === 'object' && cfg.envVars !== null)
-            ? cfg.envVars as Record<string, string>
-            : {};
-          const envFlags: string[] = [];
+          const childEnv: NodeJS.ProcessEnv = { ...process.env };
           for (const [k, v] of Object.entries(envVars)) {
-            if (k && v !== undefined && v !== '') envFlags.push('--env', `${k}=${v}`);
+            if (k && v !== undefined && v !== '') childEnv[k] = v;
           }
 
-          loadProc = spawn('k6', ['run', ...envFlags, '--out', `json=${jsonOutPath}`, scriptPath], {
-            cwd: projectRoot, env: { ...process.env }, shell: WIN, stdio: 'pipe',
+          const args = ['run'];
+          if (loadConfig.executionMode !== 'script') {
+            args.push('--vus', String(loadConfig.vus || 10), '--duration', loadConfig.duration || '30s');
+          }
+          args.push(
+            '--summary-export', summaryPath,
+            '--out', `json=${jsonOutPath}`,
+            scriptPath,
+          );
+          loadProc = spawn('k6', args, {
+            cwd: workDir, env: childEnv, shell: WIN, stdio: 'pipe',
           });
 
           const addLog = (line: string) => {
@@ -4758,23 +5746,49 @@ a{color:var(--blue)}
           });
 
           let jsonPos = 0;
-          const watchInterval = setInterval(() => {
+          let jsonRemainder = '';
+          const flushLoadMetrics = (force = false) => {
             if (!loadRunning) { clearInterval(watchInterval); return; }
             try {
-              if (!fs.existsSync(jsonOutPath)) return;
+              if (!fs.existsSync(jsonOutPath)) {
+                if (force) {
+                  broadcast('load-progress', { runId: loadState.runId, buckets: loadState.buckets.slice(-60), total: loadState.totalRequests, errors: loadState.totalErrors } as Record<string, unknown>);
+                }
+                return;
+              }
               const stat = fs.statSync(jsonOutPath);
-              if (stat.size <= jsonPos) return;
-              const buf = Buffer.alloc(stat.size - jsonPos);
-              const fd = fs.openSync(jsonOutPath, 'r');
-              fs.readSync(fd, buf, 0, buf.length, jsonPos);
-              fs.closeSync(fd);
-              jsonPos = stat.size;
+              let text = '';
+              if (stat.size > jsonPos) {
+                const buf = Buffer.alloc(stat.size - jsonPos);
+                const fd = fs.openSync(jsonOutPath, 'r');
+                fs.readSync(fd, buf, 0, buf.length, jsonPos);
+                fs.closeSync(fd);
+                jsonPos = stat.size;
+                text = jsonRemainder + buf.toString();
+              } else if (force && jsonRemainder) {
+                text = jsonRemainder;
+              } else {
+                if (force) {
+                  broadcast('load-progress', { runId: loadState.runId, buckets: loadState.buckets.slice(-60), total: loadState.totalRequests, errors: loadState.totalErrors } as Record<string, unknown>);
+                }
+                return;
+              }
+              const lines = text.split(/\r?\n/);
+              jsonRemainder = force ? '' : (lines.pop() || '');
+              if (!force && jsonRemainder.trim()) {
+                try {
+                  JSON.parse(jsonRemainder);
+                  lines.push(jsonRemainder);
+                  jsonRemainder = '';
+                } catch {}
+              }
               let changed = false;
-              for (const ln of buf.toString().split(/\r?\n/)) {
+              for (const ln of lines) {
                 if (!ln.trim()) continue;
                 try {
                   const obj = JSON.parse(ln);
                   if (obj.type !== 'Point') continue;
+                  if (!obj.data || !obj.data.time || typeof obj.data.value !== 'number') continue;
                   const bucketTs = Math.floor((new Date(obj.data.time).getTime() - loadState.startTime) / 2000) * 2000;
                   let bkt = loadState.buckets.find(b => b.ts === bucketTs);
                   if (!bkt) {
@@ -4788,25 +5802,32 @@ a{color:var(--blue)}
                   if (obj.metric === 'vus')               { bkt.vus = obj.data.value; changed = true; }
                 } catch {}
               }
-              if (changed) {
-                const slice = loadState.buckets.slice(-30);
-                broadcast('load-progress', { buckets: slice, total: loadState.totalRequests, errors: loadState.totalErrors } as Record<string, unknown>);
+              if (changed || force) {
+                const slice = loadState.buckets.slice(-60);
+                broadcast('load-progress', { runId: loadState.runId, buckets: slice, total: loadState.totalRequests, errors: loadState.totalErrors } as Record<string, unknown>);
               }
             } catch {}
-          }, 2000);
+          };
+          const watchInterval = setInterval(() => flushLoadMetrics(false), 1000);
 
           loadProc.on('close', (code: number | null) => {
+            flushLoadMetrics(true);
             clearInterval(watchInterval);
             loadRunning = false;
             loadProc = null;
             if (loadState.status === 'running') {
-              loadState.status = (code === 0 || code === null) ? 'done' : 'done';
+              loadState.status = code === 0 ? 'done' : 'error';
             }
             loadState.endTime = Date.now();
-            loadState.summary = parseK6Summary(loadState.logs.join('\n'));
-            broadcast('load-done', { status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
-            try { fs.unlinkSync(scriptPath); } catch {}
-            try { fs.unlinkSync(jsonOutPath); } catch {}
+            loadState.summary = readK6Summary(summaryPath, code, jsonOutPath);
+            if (loadState.summary?.totalRequests != null) loadState.totalRequests = loadState.summary.totalRequests;
+            if (loadState.summary?.errorPct != null && loadState.summary.totalRequests != null) {
+              loadState.totalErrors = Math.round(loadState.summary.totalRequests * (loadState.summary.errorPct / 100));
+            }
+            saveLoadRun();
+            broadcast('load-done', { runId: loadState.runId, status: loadState.status, summary: loadState.summary } as Record<string, unknown>);
+            try { fs.writeFileSync(path.join(resultPath, 'k6.log'), loadState.logs.join('\n'), 'utf-8'); } catch {}
+            try { fs.writeFileSync(path.join(resultPath, 'config.json'), JSON.stringify(loadState.config, null, 2), 'utf-8'); } catch {}
           });
 
           loadProc.on('error', (err: Error) => {
@@ -4816,8 +5837,11 @@ a{color:var(--blue)}
             loadState.status = 'error';
             loadState.endTime = Date.now();
             addLog(`❌ k6 не запустился: ${err.message}`);
-            broadcast('load-done', { status: 'error', summary: null } as Record<string, unknown>);
-            try { fs.unlinkSync(scriptPath); } catch {}
+            loadState.summary = { exitCode: null };
+            saveLoadRun();
+            broadcast('load-done', { runId: loadState.runId, status: 'error', summary: loadState.summary } as Record<string, unknown>);
+            try { fs.writeFileSync(path.join(resultPath, 'k6.log'), loadState.logs.join('\n'), 'utf-8'); } catch {}
+            try { fs.writeFileSync(path.join(resultPath, 'config.json'), JSON.stringify(loadState.config, null, 2), 'utf-8'); } catch {}
           });
         });
         return;

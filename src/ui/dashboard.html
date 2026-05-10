@@ -389,6 +389,157 @@
     .feature-progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
     .feature-progress-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
+    /* ── Task tracker ────────────────────────────────────────────────────────── */
+    .task-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .task-toolbar-title { font-size: 18px; font-weight: 700; margin-right: auto; }
+    .task-action-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .task-action-btn:hover { background: var(--bg-hover); border-color: var(--blue); }
+    .task-action-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .task-form-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .task-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .task-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .task-field input,
+    .task-field select,
+    .task-field textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    .task-field textarea { min-height: 76px; resize: vertical; }
+    .task-board {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(220px, 1fr));
+      gap: 12px;
+      align-items: start;
+      min-width: 980px;
+    }
+    .task-column {
+      background: rgba(22,27,34,0.66);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 220px;
+      padding: 10px;
+    }
+    .task-column.drag-over { border-color: var(--blue); background: rgba(88,166,255,0.08); }
+    .task-column-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .task-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      cursor: grab;
+    }
+    .task-card:hover { background: var(--bg-hover); border-color: #30363d; }
+    .task-card-title { font-size: 13px; font-weight: 700; line-height: 1.35; margin-bottom: 6px; }
+    .task-card-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .task-meta-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+    .task-pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 10px;
+      color: var(--muted);
+      background: var(--bg);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-priority-urgent { color: var(--red); border-color: rgba(248,81,73,0.45); }
+    .task-priority-high { color: var(--yellow); border-color: rgba(227,179,65,0.45); }
+    .task-priority-medium { color: var(--blue); }
+    .task-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .task-card-actions button {
+      padding: 3px 7px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .task-card-actions button:hover { color: var(--text); border-color: var(--blue); }
+    .task-list {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .task-list-row {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) 100px 90px 110px 130px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .task-list-row:last-child { border-bottom: none; }
+    .task-list-row.head { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px; }
+    .task-detail {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .task-import-result { font-size: 12px; margin-top: 8px; color: var(--muted); white-space: pre-wrap; }
+    @media (max-width: 1100px) {
+      .task-board-wrap { overflow-x: auto; padding-bottom: 8px; }
+      .task-list-row { grid-template-columns: 1fr; gap: 5px; }
+      .task-list-row.head { display: none; }
+    }
+
     /* ── Documentation screen ────────────────────────────────────────────────── */
     .doc-kpi-strip {
       display: flex; gap: 24px; padding: 12px 16px; margin-bottom: 16px;
@@ -815,10 +966,6 @@
     .obs-copy-btn:disabled { opacity:0.35; cursor:not-allowed; }
     .obs-select-all { font-size:12px; color:var(--dim); cursor:pointer; background:none; border:none; padding:4px 8px; }
     .obs-select-all:hover { color:var(--accent); }
-    .obs-tier-badge { display:inline-block; padding:3px 8px; border-radius:3px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
-    .obs-tier-critical { background:rgba(248,81,73,0.2); color:var(--red); }
-    .obs-tier-important { background:rgba(227,179,65,0.2); color:var(--yellow); }
-    .obs-tier-normal { background:rgba(139,148,158,0.15); color:var(--muted); }
     .obs-fp-list { font-size:11px; color:var(--muted); margin:4px 0 0 18px; }
     .obs-fp-item { display:flex; gap:6px; padding:1px 0; align-items:baseline; }
     .obs-noisy-detail { display:none; padding:6px 0 2px 0; border-top:1px dashed var(--border); margin-top:4px; }
@@ -1505,6 +1652,24 @@
   .load-library-card-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .load-library-card-meta { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
   .load-library-card-actions { display: flex; gap: 6px; }
+  .load-run-list { display: flex; flex-direction: column; gap: 6px; }
+  .load-run-item {
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; cursor: pointer; font-size: 12px;
+  }
+  .load-run-item:hover { border-color: var(--blue); }
+  .load-run-main { min-width: 0; }
+  .load-run-name { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .load-run-meta { color: var(--muted); font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .load-run-kpi { color: var(--muted); font-size: 11px; white-space: nowrap; text-align: right; }
+  .load-config-hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  .load-accounts-json {
+    width: 100%; min-height: 74px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-family: 'Cascadia Code', Consolas, monospace;
+    font-size: 12px; padding: 8px 10px; resize: vertical; outline: none; line-height: 1.45;
+  }
+  .load-accounts-json:focus { border-color: var(--blue); }
   .load-library-empty {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 60px 20px; text-align: center; color: var(--dim);
@@ -1541,14 +1706,45 @@
     background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
   }
   .load-script-del-btn:hover { border-color: var(--red); color: var(--red); }
+  .load-live-shell { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 14px; align-items: stretch; }
+  .load-progress-card {
+    background: linear-gradient(180deg, rgba(88,166,255,0.10), rgba(13,17,23,0));
+    border: 1px solid rgba(88,166,255,0.28); border-radius: 8px; padding: 16px;
+    display: flex; flex-direction: column; justify-content: space-between; min-height: 170px;
+  }
+  .load-progress-value { font-size: 52px; line-height: 1; font-weight: 800; color: var(--text); letter-spacing: 0; }
+  .load-progress-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px; }
+  .load-progress-bar { height: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: 14px; }
+  .load-progress-fill { height: 100%; background: var(--blue); border-radius: inherit; transition: width 0.25s ease; }
+  .load-live-kpis { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .load-live-kpi { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; min-width: 0; }
+  .load-live-kpi-val { font-size: 20px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .load-live-kpi-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
   .load-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .load-chart-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
-  .load-chart-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-  .load-chart-box canvas { display: block; width: 100%; height: 100px; }
+  .load-chart-box { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 10px; min-width: 0; }
+  .load-chart-label { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .load-chart-value { color: var(--text); font-weight: 700; }
+  .load-chart-box canvas { display: block; width: 100%; height: 128px; }
+  .load-chart-empty { height:128px; display:flex; align-items:center; justify-content:center; color:var(--dim); font-size:12px; border:1px dashed var(--border); border-radius:6px; }
+  @media (max-width: 760px) {
+    .load-live-shell { grid-template-columns: 1fr; }
+    .load-live-kpis { grid-template-columns: 1fr 1fr; }
+    .load-charts { grid-template-columns: 1fr; }
+  }
   .load-summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
   .load-kpi { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; text-align: center; }
   .load-kpi-val { font-size: 20px; font-weight: 700; }
   .load-kpi-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .load-endpoint-panel { margin-top: 12px; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--bg); }
+  .load-endpoint-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .load-endpoint-title { color: var(--text); font-weight: 700; font-size: 13px; }
+  .load-endpoint-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .load-endpoint-table th, .load-endpoint-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+  .load-endpoint-table th:first-child, .load-endpoint-table td:first-child { text-align: left; white-space: normal; min-width: 180px; }
+  .load-endpoint-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+  .load-endpoint-table tr:last-child td { border-bottom: none; }
+  .load-endpoint-table tr.slowest td:first-child { color: var(--yellow); font-weight: 700; }
+  .load-endpoint-empty { margin-top: 12px; border: 1px dashed var(--border); border-radius: 7px; padding: 12px; color: var(--muted); font-size: 12px; line-height: 1.45; background: var(--bg); }
   .load-log { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; height: 200px; overflow-y: auto; padding: 8px; font-family: 'Cascadia Code', Consolas, monospace; font-size: 11px; }
   .load-log-line { padding: 1px 0; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
   .load-status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
@@ -1771,8 +1967,30 @@ let loadScriptDraft = '';     // editable k6 script
 let loadAiPromptDraft = '';    // AI prompt textarea draft
 let loadAiGenerating  = false; // waiting for agent to produce script
 let loadSavedScripts  = [];    // [{ name, date, script }]
+let loadRuns          = [];    // saved k6 run history
 let loadScriptNameDraft = '';  // save name input draft
+let loadBaseUrlDraft = 'http://localhost:5000';
+let loadVusDraft = 10;
+let loadDurationDraft = '1m';
+let loadDataDirDraft = '';
+let loadResultDirDraft = '';
+let loadAccountsJsonDraft = '';
+let loadImportedEnvVarsDraft = {};
+let loadLiveUiTimer = null;
 let loadView = 'library';     // 'library' | 'editor'
+let taskTracker = { version: 1, updatedAt: null, tasks: [] };
+let taskTrackerError = '';
+let taskView = 'board';       // 'board' | 'list'
+let taskStatusFilter = 'active';
+let taskTypeFilter = 'all';
+let taskPriorityFilter = 'all';
+let taskFeatureFilter = 'all';
+let taskFormOpen = false;
+let taskImportOpen = false;
+let taskImportDraft = '';
+let taskImportResult = '';
+let taskSelectedId = null;
+let taskEditMode = false;
 
 function toggleObsHint(id) {
   document.getElementById(id).classList.toggle('open');
@@ -1795,6 +2013,7 @@ const modeStore = {
   services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
   load:     { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   probe:    { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  tasks:    { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
 };
 
 function getModeFromPath(pathname = window.location.pathname) {
@@ -1803,6 +2022,7 @@ function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/services')) return 'services';
   if (pathname.startsWith('/radar/load')) return 'load';
   if (pathname.startsWith('/radar/probe')) return 'probe';
+  if (pathname.startsWith('/radar/tasks')) return 'tasks';
   return 'qa';
 }
 
@@ -1812,6 +2032,7 @@ function routePathForMode(mode) {
   if (mode === 'services') return '/radar/services';
   if (mode === 'load') return '/radar/load';
   if (mode === 'probe') return '/radar/probe';
+  if (mode === 'tasks') return '/radar/tasks';
   return '/radar/qa';
 }
 
@@ -1855,7 +2076,7 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load' || contextMode === 'probe') {
+  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load' || contextMode === 'probe' || contextMode === 'tasks') {
     view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
@@ -1863,9 +2084,12 @@ function switchMode(nextMode) {
     clearFeatureHash();
   }
   if (contextMode === 'probe') { loadProbeData(); }
+  if (contextMode === 'tasks') { loadTasks(); }
   if (contextMode === 'load' && loadK6Available === null) { checkK6(); }
   if (contextMode === 'load') {
     loadRefreshScripts();
+    loadRefreshRuns();
+    loadFetchResults();
     // reset to library view when switching to load tab (unless test is running)
     const isRunning = loadState && loadState.status === 'running';
     if (!isRunning) loadView = 'library';
@@ -2701,8 +2925,21 @@ function updateAgentRightsInfo() {
   const approval = runtime.approvalPolicy || 'never';
 
   if (D.agent === 'codex') {
-    el.textContent = `🔐 Codex: ${sandbox}, approval: ${approval}`;
-    el.title = 'Права/режим выполнения Codex';
+    const cached = window._codexAccount;
+    const account = cached ? ` · ${cached}` : '';
+    el.textContent = `🔐 Codex${account}: ${sandbox}, approval: ${approval}`;
+    el.title = cached
+      ? `Codex аккаунт: ${cached}. Права: ${sandbox}, approval: ${approval}`
+      : 'Загружаю аккаунт Codex…';
+    if (!cached) {
+      fetch('/api/agent-whoami?agent=codex').then(r => r.json()).then(d => {
+        window._codexAccount = d.email || d.name || d.accountId || d.raw || 'неизвестно';
+        updateAgentRightsInfo();
+      }).catch(() => {
+        window._codexAccount = 'неизвестно';
+        updateAgentRightsInfo();
+      });
+    }
     return;
   }
   if (D.agent === 'claude') {
@@ -2710,7 +2947,7 @@ function updateAgentRightsInfo() {
     el.textContent = cached ? `🔐 ${cached}` : '🔐 Claude';
     el.title = cached ? `Claude аккаунт: ${cached}` : 'Загружаю аккаунт…';
     if (!cached) {
-      fetch('/api/agent-whoami').then(r => r.json()).then(d => {
+      fetch('/api/agent-whoami?agent=claude').then(r => r.json()).then(d => {
         window._claudeAccount = d.email || d.raw?.split('\n')[0] || 'неизвестно';
         updateAgentRightsInfo();
       }).catch(() => {});
@@ -3006,7 +3243,7 @@ function showObsCopyToast() {
     t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:8px 20px;border-radius:8px;font-size:13px;z-index:9999;pointer-events:none;transition:opacity 0.3s';
     document.body.appendChild(t);
   }
-  t.textContent = '📋 Промпт скопирован — вставь в IDE';
+  t.textContent = '📋 Prompt для ревизии скопирован';
   t.style.opacity = '1';
   clearTimeout(t._to);
   t._to = setTimeout(() => { t.style.opacity = '0'; }, 2500);
@@ -3138,6 +3375,8 @@ async function init() {
 
     document.getElementById('loading').style.display = 'none';
     if (contextMode === 'probe') { await loadProbeData(); }
+    if (contextMode === 'tasks') { await loadTasks(); }
+    if (contextMode === 'load') { await Promise.all([loadRefreshScripts(), loadRefreshRuns(), loadFetchResults(), checkK6()]); }
     renderStats();
     renderSidebar();
     renderContent();
@@ -3180,6 +3419,18 @@ function renderStats() {
         { v: '—', l: 'Шумных паттернов' },
       ];
     }
+  } else if (contextMode === 'tasks') {
+    const tasks = taskTracker.tasks || [];
+    const active = tasks.filter(t => t.status !== 'archived');
+    const done = tasks.filter(t => t.status === 'done').length;
+    const urgent = active.filter(t => t.priority === 'urgent').length;
+    items = [
+      { v: active.length, l: 'Задач' },
+      { v: active.filter(t => t.status === 'backlog').length, l: 'В беклоге' },
+      { v: active.filter(t => t.status === 'in-progress').length, l: 'В работе', c: '#e3b341' },
+      { v: done, l: 'Готово', c: '#3fb950' },
+      urgent > 0 ? { v: urgent, l: 'Срочных', c: '#f85149' } : null,
+    ].filter(Boolean);
   } else if (contextMode === 'services') {
     const sm = D.serviceMap;
     if (sm) {
@@ -3235,6 +3486,7 @@ function renderModeSwitch() {
     { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
     { key: 'load', label: 'Нагрузка', hint: 'k6: метрики, сценарии, AI-анализ' },
     { key: 'probe', label: 'Probe', hint: 'Synthetic monitoring, E2E на стенде' },
+    { key: 'tasks', label: 'Задачи', hint: 'Беклог, канбан, запуск агента' },
   ];
   root.innerHTML = modes.map(m => `
     <button class="mode-switch-btn ${contextMode === m.key ? 'active' : ''}" data-mode="${m.key}">
@@ -3305,11 +3557,12 @@ function renderSidebar() {
     extra.innerHTML = `
       <div class="sidebar-label">Нагрузочное тестирование</div>
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45;margin-bottom:12px">
-        k6-сценарии для API и фич. Живые графики, AI-анализ результатов.
+        k6-сценарии для API и фич. Живые графики, история запусков, AI-анализ результатов.
       </div>
       <div style="padding:0 6px;font-size:12px">
         <div style="color:var(--dim);margin-bottom:4px">Статус</div>
         <div style="color:${statusColor};font-weight:600">${statusLabel}</div>
+        <div style="color:var(--dim);margin-top:8px">История: <span style="color:var(--text)">${loadRuns.length}</span></div>
       </div>
       ${ls && ls.status !== 'idle' ? `
         <div style="padding:8px 6px 0;font-size:12px;color:var(--muted)">
@@ -3317,7 +3570,7 @@ function renderSidebar() {
           <div>Ошибок: <span style="color:${(ls.totalErrors||0)>0?'var(--red)':'var(--text)'}">${ls.totalErrors || 0}</span></div>
           ${ls.summary ? `<div>RPS: <span style="color:var(--text)">${(ls.summary.rps||0).toFixed(1)}</span></div>
           <div>avg: <span style="color:var(--text)">${Math.round(ls.summary.avgDuration||0)}ms</span></div>
-          <div>p90: <span style="color:var(--text)">${Math.round(ls.summary.p90Duration||0)}ms</span></div>` : ''}
+          <div>p95: <span style="color:var(--text)">${Math.round(ls.summary.p95Duration||0)}ms</span></div>` : ''}
         </div>` : ''}
       ${loadK6Available === false ? `<div style="padding:8px 6px;font-size:11px;color:var(--red)">⚠ k6 не найден.<br>Установите: <code>choco install k6</code></div>` : ''}`;
     return;
@@ -3343,6 +3596,62 @@ function renderSidebar() {
         renderContent();
       };
     });
+    return;
+  }
+
+  if (contextMode === 'tasks') {
+    tabs.style.display = 'none';
+    const tasks = taskTracker.tasks || [];
+    const active = tasks.filter(t => t.status !== 'archived');
+    const features = D.features || [];
+    extra.innerHTML = `
+      <div class="sidebar-label">Task tracker</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45;margin-bottom:12px">
+        Проектный беклог из <code>viberadar.tasks.json</code>. Запуск агента только по кнопке.
+      </div>
+      <div style="padding:0 6px;display:flex;flex-direction:column;gap:8px">
+        <label class="sidebar-label" style="padding:0">Вид</label>
+        <select id="taskViewSelect" class="search-input">
+          <option value="board" ${taskView === 'board' ? 'selected' : ''}>Канбан</option>
+          <option value="list" ${taskView === 'list' ? 'selected' : ''}>Список</option>
+        </select>
+        <label class="sidebar-label" style="padding:0">Статус</label>
+        <select id="taskStatusFilter" class="search-input">
+          <option value="active" ${taskStatusFilter === 'active' ? 'selected' : ''}>Активные</option>
+          <option value="all" ${taskStatusFilter === 'all' ? 'selected' : ''}>Все</option>
+          <option value="backlog" ${taskStatusFilter === 'backlog' ? 'selected' : ''}>Беклог</option>
+          <option value="todo" ${taskStatusFilter === 'todo' ? 'selected' : ''}>К работе</option>
+          <option value="in-progress" ${taskStatusFilter === 'in-progress' ? 'selected' : ''}>В работе</option>
+          <option value="review" ${taskStatusFilter === 'review' ? 'selected' : ''}>Проверка</option>
+          <option value="done" ${taskStatusFilter === 'done' ? 'selected' : ''}>Готово</option>
+          <option value="archived" ${taskStatusFilter === 'archived' ? 'selected' : ''}>Архив</option>
+        </select>
+        <label class="sidebar-label" style="padding:0">Тип</label>
+        <select id="taskTypeFilter" class="search-input">
+          <option value="all" ${taskTypeFilter === 'all' ? 'selected' : ''}>Все типы</option>
+          ${['bug','feature','test','docs','observability','refactor','chore'].map(t => `<option value="${t}" ${taskTypeFilter === t ? 'selected' : ''}>${taskTypeLabel(t)}</option>`).join('')}
+        </select>
+        <label class="sidebar-label" style="padding:0">Приоритет</label>
+        <select id="taskPriorityFilter" class="search-input">
+          <option value="all" ${taskPriorityFilter === 'all' ? 'selected' : ''}>Любой</option>
+          ${['urgent','high','medium','low'].map(p => `<option value="${p}" ${taskPriorityFilter === p ? 'selected' : ''}>${taskPriorityLabel(p)}</option>`).join('')}
+        </select>
+        <label class="sidebar-label" style="padding:0">Фича</label>
+        <select id="taskFeatureFilter" class="search-input">
+          <option value="all" ${taskFeatureFilter === 'all' ? 'selected' : ''}>Все фичи</option>
+          <option value="none" ${taskFeatureFilter === 'none' ? 'selected' : ''}>Без фичи</option>
+          ${features.map(f => `<option value="${escapeHtml(f.key)}" ${taskFeatureFilter === f.key ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">
+          Активных: <span style="color:var(--text)">${active.length}</span><br>
+          Всего: <span style="color:var(--text)">${tasks.length}</span>
+        </div>
+      </div>`;
+    document.getElementById('taskViewSelect').onchange = (e) => { taskView = e.target.value; renderContent(); };
+    document.getElementById('taskStatusFilter').onchange = (e) => { taskStatusFilter = e.target.value; renderStats(); renderContent(); };
+    document.getElementById('taskTypeFilter').onchange = (e) => { taskTypeFilter = e.target.value; renderContent(); };
+    document.getElementById('taskPriorityFilter').onchange = (e) => { taskPriorityFilter = e.target.value; renderContent(); };
+    document.getElementById('taskFeatureFilter').onchange = (e) => { taskFeatureFilter = e.target.value; renderContent(); };
     return;
   }
 
@@ -3413,6 +3722,11 @@ function renderContent() {
     return;
   }
 
+  if (contextMode === 'tasks') {
+    renderTasks(c);
+    return;
+  }
+
   if (view === 'features') {
     if (drillFeatureKey === '__unmapped__') renderUnmappedDetail(c);
     else if (drillFeatureKey) renderFeatureDetail(c);
@@ -3422,6 +3736,440 @@ function renderContent() {
   } else {
     renderModuleGrid(c);
   }
+}
+
+// ─── Task tracker ────────────────────────────────────────────────────────────
+const TASK_COLUMNS = [
+  { key: 'backlog', label: 'Беклог' },
+  { key: 'todo', label: 'К работе' },
+  { key: 'in-progress', label: 'В работе' },
+  { key: 'review', label: 'Проверка' },
+  { key: 'done', label: 'Готово' },
+];
+
+const TASK_STATUS_LABELS = {
+  backlog: 'Беклог',
+  todo: 'К работе',
+  'in-progress': 'В работе',
+  review: 'Проверка',
+  done: 'Готово',
+  archived: 'Архив',
+};
+const TASK_PRIORITY_LABELS = { urgent: 'Срочно', high: 'Высокий', medium: 'Средний', low: 'Низкий' };
+const TASK_TYPE_LABELS = {
+  bug: 'Ошибка',
+  feature: 'Фича',
+  test: 'Тесты',
+  docs: 'Документация',
+  observability: 'Наблюдаемость',
+  refactor: 'Рефакторинг',
+  chore: 'Поддержка',
+};
+const TASK_SOURCE_LABELS = {
+  manual: 'Вручную',
+  'review-import': 'Ревизия',
+  'agent-run': 'Агент',
+  'scan-finding': 'Сканирование',
+};
+
+function taskStatusLabel(value) { return TASK_STATUS_LABELS[value] || value || '—'; }
+function taskPriorityLabel(value) { return TASK_PRIORITY_LABELS[value] || value || '—'; }
+function taskTypeLabel(value) { return TASK_TYPE_LABELS[value] || value || '—'; }
+function taskSourceLabel(value) { return TASK_SOURCE_LABELS[value] || value || '—'; }
+
+function taskFeatureLabel(featureKey) {
+  if (!featureKey) return '';
+  const feat = D?.features?.find(f => f.key === featureKey);
+  return feat ? feat.label : featureKey;
+}
+
+function taskFeatureOptions(selected) {
+  const features = D?.features || [];
+  return `<option value="">Без фичи</option>` + features
+    .map(f => `<option value="${escapeHtml(f.key)}" ${selected === f.key ? 'selected' : ''}>${escapeHtml(f.label)}</option>`)
+    .join('');
+}
+
+function taskSelectOptions(values, labels, selected) {
+  return values
+    .map(v => `<option value="${v}" ${selected === v ? 'selected' : ''}>${labels[v] || v}</option>`)
+    .join('');
+}
+
+function linesToArray(value) {
+  return String(value || '')
+    .split(/\r?\n|,/)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+async function loadTasks() {
+  try {
+    const res = await fetch('/api/tasks');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    taskTracker = data;
+    taskTrackerError = '';
+  } catch (err) {
+    taskTrackerError = err.message || String(err);
+  }
+  if (contextMode === 'tasks') {
+    renderStats();
+    renderSidebar();
+    renderContent();
+  }
+}
+
+function getFilteredTasks() {
+  const q = searchQuery.trim().toLowerCase();
+  return (taskTracker.tasks || [])
+    .filter(t => {
+      if (taskStatusFilter === 'active' && t.status === 'archived') return false;
+      if (taskStatusFilter !== 'active' && taskStatusFilter !== 'all' && t.status !== taskStatusFilter) return false;
+      if (taskTypeFilter !== 'all' && t.type !== taskTypeFilter) return false;
+      if (taskPriorityFilter !== 'all' && t.priority !== taskPriorityFilter) return false;
+      if (taskFeatureFilter === 'none' && t.featureKey) return false;
+      if (taskFeatureFilter !== 'all' && taskFeatureFilter !== 'none' && t.featureKey !== taskFeatureFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        t.title,
+        t.description,
+        t.id,
+        t.featureKey,
+        ...(t.filePaths || []),
+        ...(t.tags || []),
+        ...(t.acceptanceCriteria || []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(q);
+    })
+    .sort((a, b) => a.status.localeCompare(b.status) || (a.order || 0) - (b.order || 0) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function renderTaskForm(prefix, task = {}) {
+  return `
+    <div class="task-form-grid">
+      <div class="task-field" style="grid-column:1/-1">
+        <label>Название</label>
+        <input id="${prefix}Title" value="${escapeHtml(task.title || '')}" placeholder="Например: закрыть пробелы после ревизии авторизации" />
+      </div>
+      <div class="task-field">
+        <label>Статус</label>
+        <select id="${prefix}Status">${taskSelectOptions(['backlog','todo','in-progress','review','done'], TASK_STATUS_LABELS, task.status || 'backlog')}</select>
+      </div>
+      <div class="task-field">
+        <label>Приоритет</label>
+        <select id="${prefix}Priority">${taskSelectOptions(['medium','high','urgent','low'], TASK_PRIORITY_LABELS, task.priority || 'medium')}</select>
+      </div>
+      <div class="task-field">
+        <label>Тип</label>
+        <select id="${prefix}Type">${taskSelectOptions(['chore','feature','bug','test','docs','observability','refactor'], TASK_TYPE_LABELS, task.type || 'chore')}</select>
+      </div>
+      <div class="task-field">
+        <label>Фича</label>
+        <select id="${prefix}Feature">${taskFeatureOptions(task.featureKey || '')}</select>
+      </div>
+      <div class="task-field" style="grid-column:1/-1">
+        <label>Описание</label>
+        <textarea id="${prefix}Description" placeholder="Контекст, почему задача появилась и что нужно изменить">${escapeHtml(task.description || '')}</textarea>
+      </div>
+      <div class="task-field" style="grid-column:1/-1">
+        <label>Подготовленный промпт</label>
+        <textarea id="${prefix}Prompt" placeholder="Инструкция агенту: цель, ограничения, файлы, проверки, критерии готовности">${escapeHtml(task.prompt || '')}</textarea>
+      </div>
+      <div class="task-field">
+        <label>Файлы, через строку</label>
+        <textarea id="${prefix}Files" placeholder="src/server/index.ts">${escapeHtml((task.filePaths || []).join('\n'))}</textarea>
+      </div>
+      <div class="task-field">
+        <label>Критерии приемки</label>
+        <textarea id="${prefix}Criteria" placeholder="Проверка проходит\nUI показывает состояние">${escapeHtml((task.acceptanceCriteria || []).join('\n'))}</textarea>
+      </div>
+      <div class="task-field">
+        <label>Теги</label>
+        <textarea id="${prefix}Tags" placeholder="review, unica-b">${escapeHtml((task.tags || []).join(', '))}</textarea>
+      </div>
+    </div>`;
+}
+
+function readTaskForm(prefix) {
+  return {
+    title: document.getElementById(prefix + 'Title').value.trim(),
+    description: document.getElementById(prefix + 'Description').value.trim(),
+    prompt: document.getElementById(prefix + 'Prompt').value.trim(),
+    status: document.getElementById(prefix + 'Status').value,
+    priority: document.getElementById(prefix + 'Priority').value,
+    type: document.getElementById(prefix + 'Type').value,
+    featureKey: document.getElementById(prefix + 'Feature').value || undefined,
+    filePaths: linesToArray(document.getElementById(prefix + 'Files').value),
+    acceptanceCriteria: linesToArray(document.getElementById(prefix + 'Criteria').value),
+    tags: linesToArray(document.getElementById(prefix + 'Tags').value),
+  };
+}
+
+function renderTasks(c) {
+  const tasks = getFilteredTasks();
+  const selected = taskSelectedId ? (taskTracker.tasks || []).find(t => t.id === taskSelectedId) : null;
+  const updated = taskTracker.updatedAt ? new Date(taskTracker.updatedAt).toLocaleString('ru-RU') : '—';
+  c.innerHTML = `
+    <div class="task-toolbar">
+      <div class="task-toolbar-title">Задачи</div>
+      <span style="font-size:12px;color:var(--muted)">Источник: <code>viberadar.tasks.json</code> · обновлено ${escapeHtml(updated)}</span>
+      <button class="task-action-btn" data-task-ui="toggle-create">${taskFormOpen ? 'Скрыть форму' : 'Новая задача'}</button>
+      <button class="task-action-btn" data-task-ui="toggle-import">${taskImportOpen ? 'Скрыть импорт' : 'Импорт ревизии'}</button>
+      <button class="task-action-btn" data-task-ui="refresh">Обновить</button>
+    </div>
+    ${taskTrackerError ? `<div class="task-form-panel" style="border-color:var(--red);color:var(--red)">Ошибка загрузки задач: ${escapeHtml(taskTrackerError)}</div>` : ''}
+    ${taskFormOpen ? `
+      <div class="task-form-panel">
+        <div style="font-size:14px;font-weight:700;margin-bottom:10px">Новая задача</div>
+        ${renderTaskForm('taskCreate')}
+        <div style="display:flex;gap:8px">
+          <button class="task-action-btn primary" data-task-ui="create">Создать</button>
+          <button class="task-action-btn" data-task-ui="toggle-create">Отмена</button>
+        </div>
+      </div>` : ''}
+    ${taskImportOpen ? `
+      <div class="task-form-panel">
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Импорт из ревизии</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Принимается только JSON: массив задач или объект <code>{ "tasks": [...] }</code>.</div>
+        <div class="task-field">
+          <textarea id="taskImportJson" style="min-height:160px" placeholder='{"tasks":[{"title":"...","description":"...","prompt":"...","priority":"high","type":"bug"}]}'>${escapeHtml(taskImportDraft)}</textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="task-action-btn primary" data-task-ui="import">Импортировать</button>
+          <button class="task-action-btn" data-task-ui="toggle-import">Отмена</button>
+        </div>
+        ${taskImportResult ? `<div class="task-import-result">${escapeHtml(taskImportResult)}</div>` : ''}
+      </div>` : ''}
+    ${selected ? renderTaskDetail(selected) : ''}
+    ${tasks.length === 0 ? `<div class="empty">Задач нет по текущим фильтрам</div>` : taskView === 'list' ? renderTaskList(tasks) : renderTaskBoard(tasks)}
+  `;
+  bindTaskUi(c);
+}
+
+function renderTaskDetail(task) {
+  if (taskEditMode) {
+    return `
+      <div class="task-detail">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div style="font-size:14px;font-weight:700;flex:1">Редактирование</div>
+          <button class="task-action-btn" data-task-ui="close-detail">Закрыть</button>
+        </div>
+        ${renderTaskForm('taskEdit', task)}
+        <div style="display:flex;gap:8px">
+          <button class="task-action-btn primary" data-task-ui="save-edit" data-task-id="${escapeHtml(task.id)}">Сохранить</button>
+          <button class="task-action-btn" data-task-ui="view-detail" data-task-id="${escapeHtml(task.id)}">Отмена</button>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="task-detail">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(task.title)}</div>
+          <div class="task-meta-row">
+            <span class="task-pill">${taskStatusLabel(task.status)}</span>
+            <span class="task-pill task-priority-${task.priority}">${taskPriorityLabel(task.priority)}</span>
+            <span class="task-pill">${taskTypeLabel(task.type)}</span>
+            <span class="task-pill">${taskSourceLabel(task.source)}</span>
+            ${task.featureKey ? `<span class="task-pill">${escapeHtml(taskFeatureLabel(task.featureKey))}</span>` : ''}
+            ${task.lastRunId ? `<span class="task-pill">run: ${escapeHtml(task.lastRunId)}</span>` : ''}
+          </div>
+        </div>
+        <button class="task-action-btn" data-task-ui="edit" data-task-id="${escapeHtml(task.id)}">Редактировать</button>
+        <button class="task-action-btn primary" data-task-ui="run" data-task-id="${escapeHtml(task.id)}">Взять в работу</button>
+        <button class="task-action-btn" data-task-ui="close-detail">Закрыть</button>
+      </div>
+      ${task.description ? `<div style="font-size:13px;line-height:1.55;margin:10px 0">${escapeHtml(task.description)}</div>` : ''}
+      ${task.prompt ? `<div style="font-size:12px;color:var(--muted);margin-top:10px">Подготовленный промпт</div><pre style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:12px;line-height:1.5;max-height:220px;overflow:auto">${escapeHtml(task.prompt)}</pre>` : ''}
+      ${task.acceptanceCriteria?.length ? `<div style="font-size:12px;color:var(--muted);margin-top:10px">Критерии приемки</div><ul style="margin:6px 0 0 18px;font-size:13px;line-height:1.55">${task.acceptanceCriteria.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : ''}
+      ${task.filePaths?.length ? `<div style="font-size:12px;color:var(--muted);margin-top:10px">Файлы</div><div class="task-meta-row">${task.filePaths.map(p => `<span class="task-pill">${escapeHtml(p)}</span>`).join('')}</div>` : ''}
+    </div>`;
+}
+
+function renderTaskBoard(tasks) {
+  return `<div class="task-board-wrap"><div class="task-board">
+    ${TASK_COLUMNS.map(col => {
+      const colTasks = tasks.filter(t => t.status === col.key);
+      return `<div class="task-column" data-task-drop-status="${col.key}">
+        <div class="task-column-head"><span>${col.label}</span><span>${colTasks.length}</span></div>
+        ${colTasks.map(renderTaskCard).join('')}
+      </div>`;
+    }).join('')}
+  </div></div>`;
+}
+
+function renderTaskCard(task) {
+  const feature = task.featureKey ? taskFeatureLabel(task.featureKey) : '';
+  return `
+    <div class="task-card" draggable="true" data-task-id="${escapeHtml(task.id)}">
+      <div class="task-card-title">${escapeHtml(task.title)}</div>
+      ${task.description ? `<div class="task-card-desc">${escapeHtml(task.description)}</div>` : ''}
+      <div class="task-meta-row">
+        <span class="task-pill task-priority-${task.priority}">${taskPriorityLabel(task.priority)}</span>
+        <span class="task-pill">${taskTypeLabel(task.type)}</span>
+        ${feature ? `<span class="task-pill">${escapeHtml(feature)}</span>` : ''}
+        ${task.filePaths?.length ? `<span class="task-pill">${task.filePaths.length} файлов</span>` : ''}
+      </div>
+      <div class="task-card-actions">
+        <button data-task-ui="view-detail" data-task-id="${escapeHtml(task.id)}">Открыть</button>
+        <button data-task-ui="edit" data-task-id="${escapeHtml(task.id)}">Ред.</button>
+        <button data-task-ui="run" data-task-id="${escapeHtml(task.id)}">Взять</button>
+        <button data-task-ui="archive" data-task-id="${escapeHtml(task.id)}">Архив</button>
+      </div>
+    </div>`;
+}
+
+function renderTaskList(tasks) {
+  return `<div class="task-list">
+    <div class="task-list-row head"><div>Задача</div><div>Статус</div><div>Тип</div><div>Приоритет</div><div>Действия</div></div>
+    ${tasks.map(task => `
+      <div class="task-list-row">
+        <div>
+          <div style="font-weight:700;margin-bottom:3px">${escapeHtml(task.title)}</div>
+          <div style="color:var(--muted)">${escapeHtml([taskFeatureLabel(task.featureKey), ...(task.filePaths || []).slice(0, 2)].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div>${taskStatusLabel(task.status)}</div>
+        <div>${taskTypeLabel(task.type)}</div>
+        <div><span class="task-pill task-priority-${task.priority}">${taskPriorityLabel(task.priority)}</span></div>
+        <div class="task-card-actions">
+          <button data-task-ui="view-detail" data-task-id="${escapeHtml(task.id)}">Открыть</button>
+          <button data-task-ui="run" data-task-id="${escapeHtml(task.id)}">Взять</button>
+        </div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function bindTaskUi(root) {
+  root.querySelectorAll('[data-task-ui]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      handleTaskAction(el.dataset.taskUi, el.dataset.taskId);
+    };
+  });
+  root.querySelectorAll('.task-card[draggable="true"]').forEach(card => {
+    card.ondragstart = (e) => {
+      e.dataTransfer.setData('text/plain', card.dataset.taskId);
+      e.dataTransfer.effectAllowed = 'move';
+    };
+  });
+  root.querySelectorAll('[data-task-drop-status]').forEach(col => {
+    col.ondragover = (e) => { e.preventDefault(); col.classList.add('drag-over'); };
+    col.ondragleave = () => col.classList.remove('drag-over');
+    col.ondrop = async (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const taskId = e.dataTransfer.getData('text/plain');
+      await moveTaskToStatus(taskId, col.dataset.taskDropStatus);
+    };
+  });
+}
+
+async function handleTaskAction(action, taskId) {
+  if (action === 'toggle-create') { taskFormOpen = !taskFormOpen; renderContent(); return; }
+  if (action === 'toggle-import') { taskImportOpen = !taskImportOpen; taskImportResult = ''; renderContent(); return; }
+  if (action === 'refresh') { await loadTasks(); return; }
+  if (action === 'create') { await createTaskFromForm(); return; }
+  if (action === 'import') { await importTasksFromJson(); return; }
+  if (action === 'view-detail') { taskSelectedId = taskId; taskEditMode = false; renderContent(); return; }
+  if (action === 'edit') { taskSelectedId = taskId; taskEditMode = true; renderContent(); return; }
+  if (action === 'close-detail') { taskSelectedId = null; taskEditMode = false; renderContent(); return; }
+  if (action === 'save-edit') { await saveTaskEdit(taskId); return; }
+  if (action === 'run') { await runTrackedTask(taskId); return; }
+  if (action === 'archive') { await archiveTrackedTask(taskId); return; }
+}
+
+async function createTaskFromForm() {
+  const payload = readTaskForm('taskCreate');
+  if (!payload.title) { alert('Введите название задачи'); return; }
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert('Ошибка создания: ' + (data.error || res.status)); return; }
+  taskFormOpen = false;
+  taskSelectedId = data.task?.id || null;
+  await loadTasks();
+}
+
+async function importTasksFromJson() {
+  const el = document.getElementById('taskImportJson');
+  taskImportDraft = el.value;
+  let payload;
+  try {
+    payload = JSON.parse(taskImportDraft);
+  } catch (err) {
+    taskImportResult = 'JSON не разобран: ' + err.message;
+    renderContent();
+    return;
+  }
+  const res = await fetch('/api/tasks/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const issues = (data.issues || []).map(i => `${i.index != null ? `#${i.index} ` : ''}${i.field}: ${i.message}`).join('\n');
+    taskImportResult = `Импорт отклонён:\n${issues || data.error || res.status}`;
+    renderContent();
+    return;
+  }
+  taskImportDraft = '';
+  taskImportResult = `Импортировано задач: ${data.imported}`;
+  await loadTasks();
+}
+
+async function saveTaskEdit(taskId) {
+  const payload = readTaskForm('taskEdit');
+  if (!payload.title) { alert('Введите название задачи'); return; }
+  const res = await fetch('/api/tasks/' + encodeURIComponent(taskId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert('Ошибка сохранения: ' + (data.error || res.status)); return; }
+  taskEditMode = false;
+  await loadTasks();
+}
+
+async function moveTaskToStatus(taskId, status) {
+  const sameStatus = (taskTracker.tasks || []).filter(t => t.status === status);
+  const nextOrder = sameStatus.reduce((max, t) => Math.max(max, t.order || 0), 0) + 1000;
+  const res = await fetch('/api/tasks/' + encodeURIComponent(taskId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, order: nextOrder }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert('Ошибка перемещения: ' + (data.error || res.status));
+    return;
+  }
+  await loadTasks();
+}
+
+async function runTrackedTask(taskId) {
+  document.getElementById('agentPanel').classList.add('open');
+  document.getElementById('termBtn').classList.add('term-active');
+  const res = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/run', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert('Не удалось запустить агента: ' + (data.error || res.status)); return; }
+  appendTerminalLine(`📋 Задача взята в работу: ${data.runId}`, false);
+  await loadTasks();
+  await loadAgentState();
+}
+
+async function archiveTrackedTask(taskId) {
+  const res = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/archive', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert('Ошибка архивации: ' + (data.error || res.status)); return; }
+  if (taskSelectedId === taskId) taskSelectedId = null;
+  await loadTasks();
 }
 
 // ─── Probe rendering ────────────────────────────────────────────────────────
@@ -4568,16 +5316,9 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   const _blCurrFPs = missingV2.reduce((s, m) => s + (m.failurePoints || []).length, 0);
   const _blCurrNoise = topNoisy.length;
   const _blCurrEnrich = Object.entries(fieldGapsData).filter(([, v]) => v > 0).length;
-  const _blCurrTiers = {};
-  ['critical', 'important', 'normal'].forEach(tier => {
-    const items = missingV2.filter(m => m.riskTier === tier);
-    _blCurrTiers[tier] = { modules: items.length, fps: items.reduce((s, m) => s + (m.failurePoints || []).length, 0) };
-  });
-
   if (!_bl) {
     _bl = { ts: Date.now(), noiseRatio, structPct, actionPct, coveragePct,
-            missing: _blCurrMissing, fps: _blCurrFPs, noise: _blCurrNoise, enrich: _blCurrEnrich,
-            tiers: _blCurrTiers };
+            missing: _blCurrMissing, fps: _blCurrFPs, noise: _blCurrNoise, enrich: _blCurrEnrich };
     try { localStorage.setItem('vr_obs_bl_' + _bsKey, JSON.stringify(_bl)); } catch(e) {}
   }
 
@@ -4617,8 +5358,14 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   // Store catalog for buttons to reference by index (avoids inline JSON in onclick)
   window.__obsCatalog = catalog;
 
-  // Store noisy patterns data for confirmation flow
-  window.__noisyPatterns = topNoisy.map(i => ({ pattern: i.pattern, recommendation: i.recommendation }));
+  // Store noisy patterns data for confirmation/copy flow.
+  window.__noisyPatterns = topNoisy.map(i => ({
+    pattern: i.pattern,
+    recommendation: i.recommendation,
+    confidence: i.confidence || 'review',
+    safety: i.safety || 'needs_review',
+    reasonHints: i.reasonHints || [],
+  }));
 
   const noisyRows = topNoisy.map((i, idx) => {
     // Find related modules from catalog that contain this pattern in noisyMessages.
@@ -4635,14 +5382,17 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     );
     const moduleCount = relatedModules.length;
 
-    const expandBtn = hasAgent
-      ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleNoisyDetail(${idx})">▼</button>`
-      : '';
-    const actionLabel = i.recommendation === 'suppress' ? '\u{1F916} Исправить' : '\u{1F916} Понизить';
+    const expandBtn = `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleNoisyDetail(${idx})">▼</button>`;
+    const confidence = i.confidence || 'review';
+    const confLabels = { high: 'доверие высокое', medium: 'доверие среднее', review: 'спорно' };
+    const confColors = { high: 'var(--green)', medium: 'var(--yellow)', review: 'var(--red)' };
+    const reasonHints = (i.reasonHints || []).slice(0, 4);
+    const confidenceBadge = `<span title="${escapeHtml(reasonHints.join('; ') || 'нужна проверка контекста')}" style="font-size:10px;color:${confColors[confidence] || 'var(--yellow)'};border:1px solid ${confColors[confidence] || 'var(--yellow)'};border-radius:999px;padding:1px 6px;flex-shrink:0">${confLabels[confidence] || 'спорно'}</span>`;
+    const actionLabel = '\u{1F916} Отдать агенту';
     const btn = hasAgent
       ? `<button class="obs-action-btn" onclick="event.stopPropagation();showNoisySuppressConfirm(${idx})">${actionLabel}</button>`
       : '';
-    const copyBtn = `<button class="obs-copy-btn" title="Скопировать промпт" onclick="event.stopPropagation();obsCopyPrompt('obs-suppress-pattern',window.__noisyPatterns[${idx}])">📋</button>`;
+    const copyBtn = `<button class="obs-copy-btn" title="Скопировать промпт для ревизии" onclick="event.stopPropagation();obsCopyPrompt('obs-suppress-pattern',window.__noisyPatterns[${idx}])">📋 Промпт</button>`;
 
     // Module list for detail section
     const moduleRows = relatedModules.map(c => {
@@ -4651,17 +5401,15 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     }).join('');
 
     // Confirmation block
-    const confirmDesc = i.recommendation === 'suppress'
-      ? `Агент удалит lifecycle-мусор и реструктурирует остальное в <code>logger.debug({...})</code> для паттерна «${escapeHtml(i.pattern)}»`
-      : `Агент понизит уровень INFO → DEBUG для паттерна «${escapeHtml(i.pattern)}»`;
+    const confirmDesc = `Агент получит prompt на ревизию паттерна «${escapeHtml(i.pattern)}»: сначала классифицировать каждый лог, затем менять только очевидно безопасные случаи.`;
     const confirmBlock = hasAgent ? `
       <div id="obs-noisy-confirm-${idx}" class="obs-noisy-confirm">
         <p>${confirmDesc}</p>
         <p>Затронуто модулей: <strong>${moduleCount}</strong></p>
-        <div class="obs-confirm-safe">⛔ warn / error / fatal не будут затронуты</div>
+        <div class="obs-confirm-safe">⛔ warn / error / fatal не трогать; спорные INFO оставить на ручную проверку</div>
         <div class="obs-noisy-confirm-btns">
           <button class="obs-noisy-cancel" onclick="event.stopPropagation();hideNoisySuppressConfirm(${idx})">Отмена</button>
-          <button class="obs-noisy-apply" onclick="event.stopPropagation();confirmNoisySuppress(${idx})">Применить</button>
+          <button class="obs-noisy-apply" onclick="event.stopPropagation();confirmNoisySuppress(${idx})">Запустить с prompt</button>
         </div>
       </div>` : '';
 
@@ -4671,6 +5419,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     <div>
       <div class="obs-list-item">
         <span class="obs-priority-${i.priority}" style="flex-shrink:0">[${i.priority}]</span>
+        ${confidenceBadge}
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(i.pattern)}">${escapeHtml(i.pattern)}</span>
         <strong style="flex-shrink:0;color:var(--red)">×${i.count} → ${recLabels[i.recommendation] || i.recommendation}</strong>
         ${moduleLabel}
@@ -4685,9 +5434,10 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     </div>`;
   }).join('') || '<div class="obs-sub">Шумных паттернов не обнаружено</div>';
 
-  // ── Missing critical logs (V2: grouped by risk tier with failure points) ──
+  // ── Missing failure logs (V2: flat list; no heuristic risk tiers in UI) ──
   const v2Data = missingV2.filter(m => m.failurePoints.length > 0);
   window.__obsMissingV2 = v2Data;
+  window.__obsMissingGroupMeta = {};
   const fpTypeLabels = {
     'empty-catch':'пустой catch','catch-no-log':'catch без лога','promise-catch-no-log':'.catch без лога',
     'http-no-error-handling':'HTTP без обработки','db-no-error-handling':'DB без обработки',
@@ -4695,61 +5445,66 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
   };
   let missingSection = '';
   if (v2Data.length > 0) {
-    const tierLabels = { critical:'Критичные', important:'Важные', normal:'Обычные' };
-    const tiers = ['critical','important','normal'];
-    const tierSections = tiers.map(tier => {
-      const items = v2Data.filter(m => m.riskTier === tier);
-      if (!items.length) return '';
-      const groupId = 'missing-' + tier;
-      const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
-      const totalFPs = items.reduce((s,m) => s + m.failurePoints.length, 0);
-      const detailItems = items.map(m => {
-        const globalIdx = (o.missingCriticalLogsV2 || []).indexOf(m); // index in full unfiltered array — must match server's missingCriticalLogsV2
-        const fpCount = m.failurePoints.length;
-        const fpPreview = m.failurePoints.slice(0,3).map(fp =>
-          `<div class="obs-fp-item"><span class="obs-fp-type">${fpTypeLabels[fp.type]||fp.type}</span><span class="obs-fp-line">~${fp.lineApprox}</span></div>`
-        ).join('');
-        const moreCount = fpCount > 3 ? `<div class="obs-fp-item" style="color:var(--dim)">...и ещё ${fpCount-3}</div>` : '';
-        const covBadge = m.hasAnyWarnError ? '<span style="font-size:10px;color:var(--dim)" title="Есть warn/error, но не все точки покрыты">частично</span>' : '';
-        return `<label class="obs-detail-item" style="flex-wrap:wrap">
-          <input type="checkbox" data-missing-idx="${globalIdx}" onchange="obsUpdateSelectedCount('${groupId}')">
-          <span title="${escapeHtml(m.modulePath)}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.modulePath.split('/').slice(-2).join('/'))}</span>
-          <span style="color:var(--dim);flex-shrink:0;font-size:10px">${escapeHtml(m.roleHint)}</span>
-          <span style="color:var(--yellow);flex-shrink:0">${fpCount} точек</span>
-          ${covBadge}
-          ${fpPreview || moreCount ? `<div class="obs-fp-list" style="width:100%">${fpPreview}${moreCount}</div>` : ''}
-        </label>`;
-      }).join('');
-      const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">добавить логи выбранным</button><button class="obs-copy-btn obs-copy-selected" disabled title="Скопировать промпт" onclick="obsCopyMissingSelected('${groupId}')">📋</button>` : '';
-      const detail = hasAgent ? `
-        <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="missing" data-obs-label="${tierLabels[tier]}">
-          <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
-            <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
-          </div>
-          <div class="obs-detail-list">${detailItems}</div>
-          <div class="obs-detail-bar">${addBtn}</div>
-        </div>` : '';
-      const _blTier = _bl?.tiers?.[tier];
-      return `<div class="obs-tier-group">
-        <div class="obs-tier-group-header">
-          <span class="obs-tier-badge obs-tier-${tier}">${tierLabels[tier]}</span>
-          <span>${items.length}${_d(items.length, _blTier?.modules)} модулей, ${totalFPs}${_d(totalFPs, _blTier?.fps)} точек отказа</span>
-          ${expandBtn}
-        </div>
-        ${detail}
-      </div>`;
+    const groupId = 'missing-all';
+    const groupIndices = v2Data
+      .map(m => (o.missingCriticalLogsV2 || []).indexOf(m))
+      .filter(idx => idx >= 0);
+    window.__obsMissingGroupMeta[groupId] = {
+      missingLogIndices: groupIndices,
+      recommendationType: 'add event',
+    };
+    const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
+    const copyGroupBtn = `<button class="obs-copy-btn" title="Скопировать prompt по всем точкам отказа" onclick="event.stopPropagation();obsCopyPrompt('obs-fix-selected',window.__obsMissingGroupMeta['${groupId}'])">📋 Промпт</button>`;
+    const totalFPs = v2Data.reduce((s,m) => s + m.failurePoints.length, 0);
+    const detailItems = v2Data.map(m => {
+      const globalIdx = (o.missingCriticalLogsV2 || []).indexOf(m);
+      const fpCount = m.failurePoints.length;
+      const fpPreview = m.failurePoints.slice(0,3).map(fp =>
+        `<div class="obs-fp-item"><span class="obs-fp-type">${fpTypeLabels[fp.type]||fp.type}</span><span class="obs-fp-line">~${fp.lineApprox}</span></div>`
+      ).join('');
+      const moreCount = fpCount > 3 ? `<div class="obs-fp-item" style="color:var(--dim)">...и ещё ${fpCount-3}</div>` : '';
+      const covBadge = m.hasAnyWarnError ? '<span style="font-size:10px;color:var(--dim)" title="Есть warn/error, но не все точки покрыты">частично</span>' : '';
+      return `<label class="obs-detail-item" style="flex-wrap:wrap">
+        <input type="checkbox" data-missing-idx="${globalIdx}" onchange="obsUpdateSelectedCount('${groupId}')">
+        <span title="${escapeHtml(m.modulePath)}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.modulePath.split('/').slice(-2).join('/'))}</span>
+        <span style="color:var(--yellow);flex-shrink:0">${fpCount} точек</span>
+        ${covBadge}
+        ${fpPreview || moreCount ? `<div class="obs-fp-list" style="width:100%">${fpPreview}${moreCount}</div>` : ''}
+      </label>`;
     }).join('');
-    missingSection = tierSections || '<div class="obs-sub" style="color:var(--green)">Критичные сценарии покрыты</div>';
+    const addBtn = hasAgent ? `<button class="obs-run-selected" disabled onclick="obsMissingRunSelected('${groupId}')">prompt по выбранным</button><button class="obs-copy-btn obs-copy-selected" disabled title="Скопировать промпт" onclick="obsCopyMissingSelected('${groupId}')">📋</button>` : '';
+    const detail = hasAgent ? `
+      <div id="obs-detail-${groupId}" class="obs-detail" data-obs-action="missing" data-obs-label="точки отказа">
+        <div class="obs-detail-bar" style="border-top:none;padding-top:0;margin-bottom:4px">
+          <button class="obs-select-all" onclick="obsToggleAll('${groupId}')">выбрать все / снять</button>
+        </div>
+        <div class="obs-detail-list">${detailItems}</div>
+        <div class="obs-detail-bar">${addBtn}</div>
+      </div>` : '';
+    missingSection = `<div class="obs-tier-group">
+      <div class="obs-tier-group-header">
+        <span>Точки отказа без достаточного логирования: ${v2Data.length}${_d(v2Data.length, _bl?.missing)} модулей, ${totalFPs}${_d(totalFPs, _bl?.fps)} точек</span>
+        ${copyGroupBtn}
+        ${expandBtn}
+      </div>
+      ${detail}
+    </div>`;
   } else {
-    missingSection = '<div class="obs-sub" style="color:var(--green)">Критичные сценарии покрыты</div>';
+    missingSection = '<div class="obs-sub" style="color:var(--green)">Точки отказа покрыты</div>';
   }
 
   const fieldGaps = fieldGapsData;
+  window.__obsFieldGroupMeta = {};
   const fieldGapEntries = Object.entries(fieldGaps).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]);
   const fieldGapRows = fieldGapEntries.map(([name, count]) => {
     const groupId = 'field-' + name.replace(/[^a-z0-9]/gi, '_');
     const affectedItems = catalog.filter(c => (c.missingFields||[]).includes(name));
+    window.__obsFieldGroupMeta[groupId] = {
+      fieldName: name,
+      catalogPaths: affectedItems.map(c => c.modulePath),
+    };
     const expandBtn = hasAgent ? `<button class="obs-expand-btn" onclick="event.stopPropagation();toggleObsDetail('${groupId}')">▼</button>` : '';
+    const copyFieldBtn = `<button class="obs-copy-btn" title="Скопировать prompt для всех модулей с этим полем" onclick="event.stopPropagation();obsCopyPrompt('obs-fix-selected',window.__obsFieldGroupMeta['${groupId}'])">📋 Промпт</button>`;
     const detailItems = affectedItems.map(ci => {
       const catIdx = catalog.indexOf(ci);
       const otherMissing = (ci.missingFields||[]).filter(f => f !== name);
@@ -4770,6 +5525,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
       <div class="obs-list-item">
         <span><code>${escapeHtml(name)}</code></span>
         <strong style="color:${count > 20 ? 'var(--red)' : count > 5 ? 'var(--yellow)' : 'var(--muted)'}">${count} пропусков в ${affectedItems.length} модул${affectedItems.length === 1 ? 'е' : affectedItems.length < 5 ? 'ях' : 'ях'}</strong>
+        ${copyFieldBtn}
         ${expandBtn}
       </div>
       ${detail}
@@ -4830,6 +5586,9 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
     const label = isUnmapped ? 'Unmapped' : (bf ? bf.label : filterFeatureKey);
     const color = isUnmapped ? '#e3b341' : (bf ? bf.color : '#484f58');
     const score = bf ? bf.score : null;
+    const featurePromptMeta = `{featureKey:'${escapeHtml(filterFeatureKey)}'}`;
+    const featurePromptBtn = `<button class="obs-copy-btn" title="Скопировать единый prompt по наблюдаемости фичи" onclick="event.stopPropagation();obsCopyPrompt('obs-feature-review',${featurePromptMeta})">📋 Prompt по фиче</button>`;
+    const featureRunBtn = hasAgent ? `<button class="obs-action-btn" title="Запустить единый prompt по наблюдаемости фичи в терминале VibeRadar" onclick="event.stopPropagation();runAgentTask('obs-feature-review',null,null,null,${featurePromptMeta})">🤖 Запустить</button>` : '';
     return `<div class="feature-detail-header">
       <button class="back-btn" onclick="setFeatureDrill(null)">← Все фичи</button>
       <span class="feature-detail-name">
@@ -4837,6 +5596,8 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
         ${escapeHtml(label)}
       </span>
       ${score != null ? `<span style="font-size:20px;font-weight:700;color:${covColor(score)}">${score}%</span>` : ''}
+      ${featurePromptBtn}
+      ${featureRunBtn}
     </div>`;
   })() : '';
 
@@ -4927,7 +5688,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
           <div class="obs-list">
             <div class="obs-list-item"><span style="color:var(--red)">Мусор (убрать)</span><strong>${o.classification.trash}</strong></div>
             <div class="obs-list-item"><span style="color:var(--green)">Полезные</span><strong>${o.classification.useful}</strong></div>
-            <div class="obs-list-item"><span style="color:var(--blue)">Критичные</span><strong>${o.classification.critical}</strong></div>
+            <div class="obs-list-item"><span style="color:var(--blue)">Actionable warn/error</span><strong>${o.classification.critical}</strong></div>
           </div>
         </div>
         <div class="obs-card">
@@ -4971,11 +5732,11 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
           <span class="obs-hint-chevron">▼</span>
         </button>
         <div class="obs-hint-body">
-          <p>Шумные логи — это строки, которые пишутся при каждом запросе или в цикле и не несут полезной информации. Они создают три реальные проблемы:</p>
+          <p>VibeRadar подсвечивает подозрительные INFO/DEBUG/TRACE логи эвристически. Это не команда на удаление: каждый паттерн нужно проверить в контексте кода и бизнес-сценария.</p>
           <ul style="margin:8px 0 0 16px;display:flex;flex-direction:column;gap:4px">
-            <li><strong style="color:var(--red)">Топят сигнал.</strong> Когда в Kibana 10 000 строк в минуту, реальная ошибка теряется на странице 47.</li>
-            <li><strong style="color:var(--yellow)">Стоят деньги.</strong> Datadog, New Relic, Elastic — тарификация по объёму. Шум = деньги на ветер.</li>
-            <li><strong style="color:var(--muted)">Замедляют дебаг.</strong> Инженер тратит 20 минут, чтобы понять, что «[unknown]» — это просто фоновый краулер.</li>
+            <li><strong style="color:var(--red)">Топят сигнал.</strong> Реальная ошибка теряется среди lifecycle-строк и фоновых сообщений.</li>
+            <li><strong style="color:var(--yellow)">Стоят деньги.</strong> Datadog, New Relic, Elastic и Loki часто тарифицируются по объёму ingest/storage.</li>
+            <li><strong style="color:var(--muted)">Требуют ревизии.</strong> INFO может быть бизнес-событием, аудитом или reconciliation-сигналом, поэтому спорные случаи нельзя удалять автоматически.</li>
           </ul>
           <div class="obs-hint-section">
             <div class="obs-hint-section-title">До / После</div>
@@ -4987,21 +5748,21 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
 <span class="hl-red">logger.info('Using API key from env')   // каждый запрос</span></div>
               </div>
               <div>
-                <div class="obs-hint-label after">СТАЛО — чисто</div>
+                <div class="obs-hint-label after">СТАЛО — после ревизии</div>
                 <div class="obs-hint-code"><span class="hl-green">// строки удалены или понижены до debug</span>
 <span class="hl-dim">// В production debug-логи выключены</span>
-<span class="hl-green">// В мониторинге только важные события</span></div>
+<span class="hl-green">// Спорные бизнес/audit/security логи оставлены</span></div>
               </div>
             </div>
           </div>
           <div class="obs-hint-section">
             <div class="obs-hint-section-title">Как использовать</div>
-            <p>Нажми <strong>«убрать»</strong> рядом с паттерном — агент найдёт все места в коде и либо удалит строку, либо заменит <code>logger.info</code> на <code>logger.debug</code>. Можно обработать несколько паттернов сразу.</p>
+            <p>Используй <strong>«📋 Промпт»</strong> как основной сценарий: VibeRadar отдаёт агенту список паттернов, guardrails и просьбу сначала классифицировать каждый лог. Запуск агентом остаётся вторичным действием.</p>
           </div>
         </div>
       </div>
       <div class="obs-card">
-        <div class="obs-title">Шумные паттерны</div>
+        <div class="obs-title">Шумные паттерны · prompt для ревизии</div>
         <div class="obs-list" style="gap:4px">${noisyRows}</div>
       </div>
     </div>
@@ -5054,12 +5815,12 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
           </div>
           <div class="obs-hint-section">
             <div class="obs-hint-section-title">Как использовать</div>
-            <p>Модули разбиты по уровню риска: <span style="color:var(--red)">Критичные</span> — трогать в первую очередь (платежи, авторизация, запись данных). Раскрой группу, выбери модули и нажми <strong>«добавить логи выбранным»</strong>.</p>
+            <p>Это не шкала критичности и не команда “логировать всё”. VibeRadar показывает найденные точки отказа: скопируй промпт, дай агенту прочитать контекст и добавлять warn/error только там, где это реально operational-сбой.</p>
           </div>
         </div>
       </div>
       <div class="obs-card">
-        <div class="obs-title">Нет критичных логов</div>
+        <div class="obs-title">Точки отказа без достаточного логирования</div>
         <div class="obs-list" style="gap:4px">${missingSection}</div>
       </div>
     </div>
@@ -5140,7 +5901,7 @@ function renderObsGlobalDetail(c, filterFeatureKey) {
 
 <span class="hl-dim">действие</span> suppress       — модуль генерирует шум, логи нужно убрать/понизить.
          enrich fields  — логи есть, но без нужных полей.
-         add event      — нет вообще никаких логов в критичных местах.
+         add event      — найдены точки отказа без достаточного warn/error покрытия.
          downgrade level— используется INFO там, где достаточно DEBUG.</div>
           </div>
           <div class="obs-hint-section">
@@ -5318,15 +6079,14 @@ function renderObservabilityOverview(c) {
   const v2Missing = o.missingCriticalLogsV2 || [];
   let missing;
   if (v2Missing.length) {
-    const tierLabels = { critical: '🔴 крит', important: '🟡 важн', normal: '⚪ обычн' };
     missing = v2Missing.slice(0, 8).map(m =>
-      `<div class="obs-row"><span class="obs-tier-badge obs-tier-${m.riskTier}">${tierLabels[m.riskTier]}</span> ${escapeHtml(m.modulePath)} · ${m.failurePoints.length} точек отказа</div>`
+      `<div class="obs-row">${escapeHtml(m.modulePath)} · ${m.failurePoints.length} точек отказа${m.hasAnyWarnError ? ' · частично покрыто' : ''}</div>`
     ).join('');
     if (v2Missing.length > 8) missing += `<div class="obs-row" style="color:var(--dim)">...и ещё ${v2Missing.length - 8}</div>`;
   } else {
     missing = (o.missingCriticalLogs || []).slice(0, 5).map(i =>
       `<div class="obs-row"><span class="obs-priority-${i.priority}">[${i.priority}]</span> ${escapeHtml(i.pattern)} → <b>${i.recommendation}</b></div>`
-    ).join('') || '<div class="obs-row">Критичные логи покрыты</div>';
+    ).join('') || '<div class="obs-row">Точки отказа покрыты</div>';
   }
 
   const catalogRows = (o.catalog || []).slice(0, 10).map(i =>
@@ -5345,7 +6105,7 @@ function renderObservabilityOverview(c) {
           ${noisy}
         </div>
         <div class="obs-list">
-          <h4>Отсутствующие критичные логи</h4>
+          <h4>Точки отказа без логов</h4>
           ${missing}
         </div>
       </div>
@@ -5355,7 +6115,7 @@ function renderObservabilityOverview(c) {
         ${catalogRows || '<div class="obs-row">Логи не найдены</div>'}
       </div>
       <div class="obs-row" style="margin-top:8px">
-        Классификация: мусор ${o.classification.trash} · полезно ${o.classification.useful} · критично ${o.classification.critical}
+        Классификация логов: шум ${o.classification.trash} · полезно ${o.classification.useful} · actionable warn/error ${o.classification.critical}
       </div>
     </div>`;
 }
@@ -7467,6 +8227,7 @@ window.addEventListener('popstate', () => {
     restoreModeState(contextMode);
   }
   if (contextMode === 'qa') applyHashRoute();
+  if (contextMode === 'tasks') void loadTasks();
   document.getElementById('searchInput').value = searchQuery;
   renderStats();
   renderSidebar();
@@ -7564,22 +8325,24 @@ async function checkK6() {
   } catch { loadK6Available = false; }
   if (contextMode === 'load') {
     renderSidebar(); renderContent();
-    // restore saved token from localStorage
-    const saved = localStorage.getItem('vr_load_token');
-    if (saved) { const el = document.getElementById('loadToken'); if (el) el.value = saved; }
   }
 }
 
 function buildDefaultScript(cfg) {
   const baseUrl = cfg.baseUrl || 'http://localhost:5000';
   const endpoints = (cfg.endpoints || ['/']).filter(Boolean);
-  const endpointLines = endpoints.map(ep =>
-    `  const r = http.get(\`\${BASE_URL}${ep}\`);\n  check(r, { 'status 2xx': (res) => res.status >= 200 && res.status < 300 });`
-  ).join('\n');
+  const endpointLines = endpoints.map(ep => {
+    const endpointName = (ep === '/' ? 'root' : ep.replace(/^\/+/, '').replace(/[^a-zA-Z0-9_-]+/g, '_')) || 'endpoint';
+    return `  const r = http.get(\`\${BASE_URL}${ep}\`, { tags: { endpoint: ${JSON.stringify(endpointName)} } });\n  check(r, { '${endpointName}: status 2xx': (res) => res.status >= 200 && res.status < 300 });`;
+  }).join('\n');
+  const endpointThresholdLines = endpoints.map(ep => {
+    const endpointName = (ep === '/' ? 'root' : ep.replace(/^\/+/, '').replace(/[^a-zA-Z0-9_-]+/g, '_')) || 'endpoint';
+    return `    'http_req_duration{endpoint:${endpointName}}': ['p(95)<2000'],`;
+  }).join('\n');
   return `import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const BASE_URL = '${baseUrl}';
+const BASE_URL = __ENV.BASE_URL || '${baseUrl}';
 
 export const options = {
   vus: ${cfg.vus || 10},
@@ -7587,6 +8350,7 @@ export const options = {
   thresholds: {
     http_req_duration: ['p(95)<2000'],
     http_req_failed:   ['rate<0.05'],
+${endpointThresholdLines}
   },
 };
 
@@ -7605,9 +8369,9 @@ function generateScriptFromFeature(featureKey) {
   const apiMods = mods.filter(m => m.type === 'service' || (m.name && /api|service|controller|handler/i.test(m.name)));
   const endpoints = apiMods.slice(0, 5).map(m => '/' + m.name.replace(/\.(ts|js)$/, '').replace(/\\/g, '/'));
   return buildDefaultScript({
-    baseUrl: 'http://localhost:5000',
-    vus: 10,
-    duration: '30s',
+    baseUrl: loadBaseUrlDraft || 'http://localhost:5000',
+    vus: loadVusDraft || 10,
+    duration: loadDurationDraft || '30s',
     endpoints: endpoints.length ? endpoints : ['/'],
   });
 }
@@ -7620,12 +8384,230 @@ function drawLoadCharts() {
   drawLoadChart('loadChartVus',     loadBuckets, b => b.vus,                        'var(--yellow)', 'VUs');
 }
 
+function parseLoadDurationMs(value) {
+  const text = String(value || '').trim();
+  if (!text) return 0;
+  let total = 0;
+  const re = /(\d+(?:\.\d+)?)\s*(ms|s|m|h)/gi;
+  let match;
+  while ((match = re.exec(text))) {
+    const n = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    total += unit === 'h' ? n * 3600000 : unit === 'm' ? n * 60000 : unit === 's' ? n * 1000 : n;
+  }
+  if (total > 0) return total;
+  const asNum = Number(text);
+  return Number.isFinite(asNum) ? asNum * 1000 : 0;
+}
+
+function durationToMinutesValue(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\d+(?:\.\d+)?$/.test(text)) return text;
+  const ms = parseLoadDurationMs(text);
+  if (!ms) return text;
+  const min = ms / 60000;
+  return Number.isInteger(min) ? String(min) : String(Math.round(min * 100) / 100);
+}
+
+function durationInputToK6(value) {
+  const text = String(value || '').trim();
+  if (!text) return '1m';
+  if (/^\d+(?:\.\d+)?$/.test(text)) return `${text}m`;
+  return text;
+}
+
+function estimateLoadDurationMs(state) {
+  const cfg = state?.config || {};
+  const base = parseLoadDurationMs(cfg.duration || loadDurationDraft);
+  if (!base) return 0;
+  return cfg.executionMode === 'script' ? base + 60000 : base;
+}
+
+function formatLoadTime(ms) {
+  if (!ms || ms < 0) return '0s';
+  const sec = Math.floor(ms / 1000);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+
+function getLoadLiveStats() {
+  const state = loadState || {};
+  const buckets = loadBuckets || [];
+  const last = buckets[buckets.length - 1] || { count: 0, errors: 0, durSum: 0, vus: 0 };
+  const total = state.totalRequests || buckets.reduce((sum, b) => sum + (b.count || 0), 0);
+  const errors = state.totalErrors || buckets.reduce((sum, b) => sum + (b.errors || 0), 0);
+  const recent = buckets.slice(-5);
+  const recentReqs = recent.reduce((sum, b) => sum + (b.count || 0), 0);
+  const recentErrors = recent.reduce((sum, b) => sum + (b.errors || 0), 0);
+  const recentDur = recent.reduce((sum, b) => sum + (b.durSum || 0), 0);
+  const currentRps = last.count ? last.count / 2 : 0;
+  const avgMs = recentReqs > 0 ? recentDur / recentReqs : 0;
+  const errorPct = recentReqs > 0 ? (recentErrors / recentReqs) * 100 : (total > 0 ? (errors / total) * 100 : 0);
+  const start = state.startTime || Date.now();
+  const end = state.endTime || Date.now();
+  const elapsedMs = Math.max(0, end - start);
+  const estimateMs = estimateLoadDurationMs(state);
+  let progressPct = estimateMs > 0 ? Math.min(99, Math.round((elapsedMs / estimateMs) * 100)) : 0;
+  if (state.status === 'done' || state.status === 'stopped' || state.status === 'error') progressPct = 100;
+  return { total, errors, currentRps, avgMs, errorPct, vus: last.vus || 0, elapsedMs, estimateMs, progressPct, hasBuckets: buckets.length > 0 };
+}
+
+function updateLoadLiveStats() {
+  const stats = getLoadLiveStats();
+  const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  setText('loadProgressValue', `${stats.progressPct}%`);
+  setText('loadElapsedValue', stats.estimateMs ? `${formatLoadTime(stats.elapsedMs)} / ${formatLoadTime(stats.estimateMs)}` : formatLoadTime(stats.elapsedMs));
+  setText('loadTotalRequestsValue', String(Math.round(stats.total || 0)));
+  setText('loadRpsValue', stats.currentRps.toFixed(1));
+  setText('loadAvgValue', stats.avgMs ? `${Math.round(stats.avgMs)} ms` : '—');
+  setText('loadErrorValue', `${stats.errorPct.toFixed(2)}%`);
+  setText('loadVuValue', String(Math.round(stats.vus || 0)));
+  setText('loadChartRpsValue', stats.currentRps.toFixed(1));
+  setText('loadChartLatencyValue', stats.avgMs ? `${Math.round(stats.avgMs)} ms` : '—');
+  setText('loadChartErrorsValue', `${stats.errorPct.toFixed(2)}%`);
+  setText('loadChartVusValue', String(Math.round(stats.vus || 0)));
+  const fill = document.getElementById('loadProgressFill');
+  if (fill) fill.style.width = `${stats.progressPct}%`;
+}
+
+function formatLoadMetricMs(value) {
+  return value == null || !Number.isFinite(Number(value)) ? '-' : `${Math.round(Number(value))} ms`;
+}
+
+function numberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatLoadPromptNumber(value, digits = 0, suffix = '') {
+  const n = numberOrNull(value);
+  if (n == null) return '-';
+  return `${digits > 0 ? n.toFixed(digits) : Math.round(n)}${suffix}`;
+}
+
+function getLoadPromptLogs() {
+  if (Array.isArray(loadState?.logs) && loadState.logs.length > 0) return loadState.logs;
+  if (Array.isArray(loadLogLines) && loadLogLines.length > 0) return loadLogLines;
+  return [];
+}
+
+function getLoadPromptAggregate(summary) {
+  const endpoints = Array.isArray(summary?.endpoints) ? summary.endpoints : [];
+  const totalFromEndpoints = endpoints.reduce((sum, endpoint) => sum + Number(endpoint.requests || 0), 0);
+  const weightedAvg = totalFromEndpoints > 0
+    ? endpoints.reduce((sum, endpoint) => sum + Number(endpoint.avgDuration || 0) * Number(endpoint.requests || 0), 0) / totalFromEndpoints
+    : null;
+  const maxEndpoint = (field) => {
+    const values = endpoints.map(endpoint => numberOrNull(endpoint[field])).filter(v => v != null);
+    return values.length ? Math.max(...values) : null;
+  };
+  const totalRequests = numberOrNull(summary?.totalRequests)
+    ?? numberOrNull(loadState?.totalRequests)
+    ?? (totalFromEndpoints || null);
+  return {
+    totalRequests,
+    rps: numberOrNull(summary?.rps),
+    avgDuration: numberOrNull(summary?.avgDuration) ?? weightedAvg,
+    p90Duration: numberOrNull(summary?.p90Duration) ?? maxEndpoint('p90Duration'),
+    p95Duration: numberOrNull(summary?.p95Duration) ?? maxEndpoint('p95Duration'),
+    p99Duration: numberOrNull(summary?.p99Duration) ?? maxEndpoint('p99Duration'),
+    errorPct: numberOrNull(summary?.errorPct) ?? (totalFromEndpoints > 0
+      ? endpoints.reduce((sum, endpoint) => sum + Number(endpoint.failures || 0), 0) / totalFromEndpoints * 100
+      : null),
+  };
+}
+
+function loadEndpointLatencyColor(endpoint, summary) {
+  const p95 = Number(endpoint?.p95Duration || 0);
+  const threshold = Number(summary?.p95ThresholdMs || 0);
+  if (threshold > 0 && p95 >= threshold) return 'var(--red)';
+  if (threshold > 0 && p95 >= threshold * 0.8) return 'var(--yellow)';
+  return 'var(--text)';
+}
+
+function renderLoadEndpointBreakdown(summary) {
+  const endpoints = Array.isArray(summary?.endpoints) ? summary.endpoints : [];
+  if (endpoints.length === 0) {
+    return `<div class="load-endpoint-empty">
+      Разбивка по endpoint пока пустая. Чтобы VibeRadar показал виновника хвоста, добавляй к HTTP-запросам k6 тег <code>{ tags: { endpoint: 'auth_login' } }</code>.
+    </div>`;
+  }
+
+  const slowest = endpoints[0];
+  const thresholdText = summary.p95ThresholdMs ? ` · порог p95 < ${Math.round(summary.p95ThresholdMs)} ms` : '';
+  const rows = endpoints.slice(0, 30).map((endpoint, index) => {
+    const errorPct = endpoint.errorPct == null ? '—' : `${Number(endpoint.errorPct || 0).toFixed(2)}%`;
+    const errorColor = Number(endpoint.errorPct || 0) > 0 ? 'var(--red)' : 'var(--muted)';
+    const latencyColor = loadEndpointLatencyColor(endpoint, summary);
+    return `<tr class="${index === 0 ? 'slowest' : ''}">
+      <td title="${escapeHtml(endpoint.endpoint || '')}">${escapeHtml(endpoint.endpoint || '—')}</td>
+      <td>${Math.round(endpoint.requests || 0)}</td>
+      <td style="color:${errorColor}">${errorPct}</td>
+      <td>${formatLoadMetricMs(endpoint.avgDuration)}</td>
+      <td>${formatLoadMetricMs(endpoint.p90Duration)}</td>
+      <td style="color:${latencyColor};font-weight:700">${formatLoadMetricMs(endpoint.p95Duration)}</td>
+      <td>${formatLoadMetricMs(endpoint.p99Duration)}</td>
+      <td>${formatLoadMetricMs(endpoint.maxDuration)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="load-endpoint-panel">
+    <div class="load-endpoint-head">
+      <div>
+        <div class="load-endpoint-title">Разбивка по endpoint</div>
+        <div>Медленнее всего: <span style="color:var(--yellow)">${escapeHtml(slowest.endpoint || '—')}</span>${thresholdText}</div>
+      </div>
+      <div>${endpoints.length} групп</div>
+    </div>
+    <table class="load-endpoint-table">
+      <thead><tr><th>Endpoint</th><th>Запросы</th><th>Ошибки</th><th>Avg</th><th>p90</th><th>p95</th><th>p99</th><th>Max</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+}
+
+async function copyLoadText(btn, text, fallbackLabel, errorPrefix) {
+  if (!String(text || '').trim()) return;
+  const original = btn ? btn.textContent : '';
+  try {
+    await copyTextToClipboard(text);
+    if (btn) {
+      btn.textContent = 'Скопировано';
+      setTimeout(() => { btn.textContent = original || fallbackLabel; }, 1400);
+    }
+  } catch (e) {
+    alert(errorPrefix + ': ' + e.message);
+  }
+}
+
+async function copyLoadLog(btn) {
+  await copyLoadText(btn, (loadLogLines || []).join('\n'), 'Копировать лог', 'Не удалось скопировать лог');
+}
+
 function drawLoadChart(id, buckets, valFn, color, label) {
   const canvas = document.getElementById(id);
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.offsetWidth || 380;
-  const H = 100;
+  const H = 128;
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
@@ -7693,11 +8675,231 @@ function drawLoadChart(id, buckets, valFn, color, label) {
   });
   ctx.stroke();
 
+  ctx.fillStyle = ctx.strokeStyle;
+  vals.forEach((v, i) => {
+    const x = pad.l + i * step;
+    const y = pad.t + cH * (1 - v / maxVal);
+    ctx.beginPath();
+    ctx.arc(x, y, vals.length === 1 ? 3.5 : 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   // Label
   ctx.fillStyle = 'rgba(125,133,144,0.9)';
   ctx.font = '10px system-ui';
   ctx.textAlign = 'left';
   ctx.fillText(label, pad.l + 2, H - 4);
+}
+
+function formatLoadRunDate(ts) {
+  if (!ts) return '—';
+  try { return new Date(ts).toLocaleString(); } catch { return '—'; }
+}
+
+function loadStatusLabel(status) {
+  return status === 'running' ? 'Запущено'
+    : status === 'done' ? 'Завершено'
+    : status === 'stopped' ? 'Остановлено'
+    : status === 'error' ? 'Ошибка'
+    : '—';
+}
+
+function applyLoadConfigToFields(cfg) {
+  if (!cfg) return;
+  loadBaseUrlDraft = cfg.baseUrl || loadBaseUrlDraft;
+  loadVusDraft = cfg.vus || loadVusDraft;
+  loadDurationDraft = cfg.duration || loadDurationDraft;
+  loadDataDirDraft = cfg.dataDir || loadDataDirDraft;
+  loadResultDirDraft = cfg.resultDir || loadResultDirDraft;
+  if (Object.prototype.hasOwnProperty.call(cfg, 'accountsJson')) {
+    loadAccountsJsonDraft = cfg.accountsJson || '';
+  } else if (Object.prototype.hasOwnProperty.call(cfg, 'accounts')) {
+    loadAccountsJsonDraft = cfg.accounts ? (typeof cfg.accounts === 'string' ? cfg.accounts : JSON.stringify(cfg.accounts, null, 2)) : '';
+  }
+  if (cfg.envVars && typeof cfg.envVars === 'object' && !Array.isArray(cfg.envVars)) {
+    const values = Object.values(cfg.envVars);
+    if (!values.some(v => v === '***')) loadImportedEnvVarsDraft = { ...cfg.envVars };
+  }
+  const baseEl = document.getElementById('loadBaseUrl');
+  const vusEl = document.getElementById('loadVus');
+  const durEl = document.getElementById('loadDuration');
+  const dataEl = document.getElementById('loadDataDir');
+  const resultEl = document.getElementById('loadResultDir');
+  const accountsEl = document.getElementById('loadAccountsJson');
+  if (baseEl) baseEl.value = loadBaseUrlDraft;
+  if (vusEl) vusEl.value = loadVusDraft;
+  if (durEl) durEl.value = durationToMinutesValue(loadDurationDraft);
+  if (dataEl) dataEl.value = loadDataDirDraft;
+  if (resultEl) resultEl.value = loadResultDirDraft;
+  if (accountsEl) accountsEl.value = loadAccountsJsonDraft;
+}
+
+function normalizeAccountsJson(raw) {
+  const text = (raw || '').trim();
+  if (!text) return { text: '', accounts: [], error: null };
+  try {
+    const parsed = JSON.parse(text);
+    const accounts = Array.isArray(parsed) ? parsed : [parsed];
+    const normalized = accounts
+      .map(a => ({
+        email: String(a.email || a.login || a.username || '').trim(),
+        password: String(a.password || '').trim(),
+      }))
+      .filter(a => a.email && a.password);
+    if (!normalized.length) return { text, accounts: [], error: 'Accounts JSON должен содержать email/login и password' };
+    return { text: JSON.stringify(normalized), accounts: normalized, error: null };
+  } catch (e) {
+    return { text, accounts: [], error: 'Accounts JSON невалидный: ' + e.message };
+  }
+}
+
+function normalizeLoadImport(raw, sourceName) {
+  const root = raw && typeof raw === 'object' ? raw : {};
+  const cfg = root.config && typeof root.config === 'object' ? { ...root.config, ...root } : root;
+  const envVars = cfg.envVars && typeof cfg.envVars === 'object' && !Array.isArray(cfg.envVars) ? { ...cfg.envVars } : {};
+  const imported = {
+    scriptName: cfg.scriptName || cfg.name || (sourceName || '').replace(/\.json$/i, '') || '',
+    script: cfg.script || cfg.k6Script || cfg.code || '',
+    baseUrl: cfg.baseUrl || envVars.BASE_URL || '',
+    vus: cfg.vus || cfg.VUs || cfg.users || '',
+    duration: cfg.duration || cfg.testDuration || '',
+    dataDir: cfg.dataDir || cfg.dataPath || '',
+    resultDir: cfg.resultDir || cfg.resultsDir || '',
+    accounts: cfg.accounts || cfg.usersJson || cfg.accountsJson || envVars.TEST_ACCOUNTS_JSON || '',
+    envVars,
+  };
+  delete imported.envVars.BASE_URL;
+  delete imported.envVars.TEST_ACCOUNTS_JSON;
+  delete imported.envVars.TEST_EMAIL;
+  delete imported.envVars.TEST_PASSWORD;
+  return imported;
+}
+
+function applyLoadImport(raw, sourceName) {
+  const imported = normalizeLoadImport(raw, sourceName);
+  if (imported.script) loadScriptDraft = String(imported.script);
+  if (imported.scriptName) loadScriptNameDraft = String(imported.scriptName);
+  if (imported.baseUrl) loadBaseUrlDraft = String(imported.baseUrl);
+  if (imported.vus) loadVusDraft = parseInt(String(imported.vus), 10) || loadVusDraft;
+  if (imported.duration) loadDurationDraft = String(imported.duration);
+  if (imported.dataDir) loadDataDirDraft = String(imported.dataDir);
+  if (imported.resultDir) loadResultDirDraft = String(imported.resultDir);
+  if (imported.accounts) {
+    loadAccountsJsonDraft = typeof imported.accounts === 'string'
+      ? imported.accounts
+      : JSON.stringify(imported.accounts, null, 2);
+  }
+  loadImportedEnvVarsDraft = imported.envVars || {};
+  loadView = 'editor';
+  renderContent();
+}
+
+function loadImportConfigClick() {
+  openLoadImportConfigModal();
+}
+
+function readLoadImportConfigText(text, sourceName) {
+  const raw = JSON.parse(String(text || '{}'));
+  applyLoadImport(raw, sourceName);
+}
+
+function loadImportConfigFile(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      readLoadImportConfigText(reader.result || '{}', file.name);
+      const overlay = document.getElementById('loadImportConfigOverlay');
+      if (overlay) overlay.remove();
+    } catch (e) {
+      alert('Конфиг не импортирован: ' + e.message);
+    }
+  };
+  reader.onerror = () => alert('Не удалось прочитать файл конфига');
+  reader.readAsText(file);
+}
+
+function openLoadImportConfigModal() {
+  let overlay = document.getElementById('loadImportConfigOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'loadImportConfigOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.62);display:flex;align-items:center;justify-content:center;z-index:9999;padding:18px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px;width:720px;max-width:96vw;max-height:92vh;overflow:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--text)">Импорт k6 конфига</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">Вставь JSON из буфера или выбери файл. После импорта поля можно править вручную.</div>
+        </div>
+        <button id="loadImportClose" class="load-btn" style="padding:4px 9px">Закрыть</button>
+      </div>
+      <textarea id="loadImportConfigText" spellcheck="false" placeholder='{"name":"auth-browse","baseUrl":"https://demo.unica.hopper-it.ru","vus":10,"duration":"2m","accounts":[{"email":"user@example.com","password":"pass"}],"script":"import http from ..."}' style="width:100%;min-height:260px;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;padding:10px;outline:none"></textarea>
+      <div id="loadImportStatus" style="min-height:18px;margin-top:8px;font-size:12px;color:var(--muted)">JSON пока не вставлен</div>
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap">
+        <div>
+          <input id="loadConfigImportFile" type="file" accept=".json,application/json" style="display:none" onchange="loadImportConfigFile(this)" />
+          <button class="load-btn" id="loadImportFileBtn">Выбрать JSON-файл</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="load-btn" id="loadImportCancel">Отмена</button>
+          <button class="load-btn load-btn-run" id="loadImportApply" disabled>Импорт</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const textEl = overlay.querySelector('#loadImportConfigText');
+  const statusEl = overlay.querySelector('#loadImportStatus');
+  const applyBtn = overlay.querySelector('#loadImportApply');
+  const close = () => overlay.remove();
+  const validate = () => {
+    const text = textEl.value.trim();
+    if (!text) {
+      statusEl.textContent = 'JSON пока не вставлен';
+      statusEl.style.color = 'var(--muted)';
+      applyBtn.disabled = true;
+      return;
+    }
+    try {
+      const raw = JSON.parse(text);
+      const imported = normalizeLoadImport(raw, 'clipboard');
+      const parts = [];
+      if (imported.scriptName) parts.push(imported.scriptName);
+      if (imported.baseUrl) parts.push(imported.baseUrl);
+      if (imported.vus) parts.push(`${imported.vus} VUs`);
+      if (imported.duration) parts.push(imported.duration);
+      statusEl.textContent = `JSON валидный${parts.length ? ': ' + parts.join(' · ') : ''}`;
+      statusEl.style.color = 'var(--green)';
+      applyBtn.disabled = false;
+    } catch (e) {
+      statusEl.textContent = 'JSON невалидный: ' + e.message;
+      statusEl.style.color = 'var(--red)';
+      applyBtn.disabled = true;
+    }
+  };
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#loadImportClose').addEventListener('click', close);
+  overlay.querySelector('#loadImportCancel').addEventListener('click', close);
+  overlay.querySelector('#loadImportFileBtn').addEventListener('click', () => {
+    const input = overlay.querySelector('#loadConfigImportFile');
+    input.value = '';
+    input.click();
+  });
+  textEl.addEventListener('input', validate);
+  applyBtn.addEventListener('click', () => {
+    try {
+      readLoadImportConfigText(textEl.value, 'clipboard');
+      close();
+    } catch (e) {
+      statusEl.textContent = 'Конфиг не импортирован: ' + e.message;
+      statusEl.style.color = 'var(--red)';
+      applyBtn.disabled = true;
+    }
+  });
+  setTimeout(() => textEl.focus(), 0);
 }
 
 function renderLoad(c) {
@@ -7732,8 +8934,25 @@ function renderLoad(c) {
     const cards = loadSavedScripts.map(s => `
       <div class="load-library-card" data-sname="${escapeHtml(s.name)}">
         <div class="load-library-card-name">${escapeHtml(s.name)}</div>
-        <div class="load-library-card-meta">${escapeHtml(s.date)}</div>
+        <div class="load-library-card-meta">${escapeHtml(s.date)} · ${s.vus || 10} VU · ${escapeHtml(s.duration || '30s')}${s.dataDir ? ' · data: ' + escapeHtml(s.dataDir) : ''}</div>
       </div>`).join('');
+    const runRows = loadRuns.slice(0, 12).map(r => {
+      const summary = r.summary || {};
+      const cfg = r.config || {};
+      const err = summary.errorPct != null ? `${Number(summary.errorPct || 0).toFixed(2)}%` : '—';
+      const slowest = Array.isArray(summary.endpoints) && summary.endpoints.length
+        ? `${summary.endpoints[0].endpoint}: ${Math.round(summary.endpoints[0].p95Duration || 0)}ms`
+        : '';
+      return `<div class="load-run-item" data-run-id="${escapeHtml(r.runId)}">
+        <div class="load-run-main">
+          <div class="load-run-name">${escapeHtml(r.scriptName || 'Без названия')}</div>
+          <div class="load-run-meta">${formatLoadRunDate(r.createdAt || r.startTime)} · ${cfg.vus || '—'} VU · ${escapeHtml(cfg.duration || '—')} · ${escapeHtml(cfg.executionMode || 'auto')} · ${loadStatusLabel(r.status)}${slowest ? ' · медленнее всего ' + escapeHtml(slowest) : ''}</div>
+        </div>
+        <div class="load-run-kpi" title="${escapeHtml(cfg.resultPath || '')}">${summary.rps != null ? Number(summary.rps || 0).toFixed(1) : '—'} RPS</div>
+        <div class="load-run-kpi">p95 ${summary.p95Duration != null ? Math.round(summary.p95Duration || 0) + 'ms' : '—'}</div>
+        <div class="load-run-kpi" style="color:${Number(summary.errorPct || 0) > 5 ? 'var(--red)' : 'var(--muted)'}">${err}</div>
+      </div>`;
+    }).join('');
 
     c.innerHTML = `<div class="load-screen">
       <div class="load-library-header">
@@ -7741,23 +8960,34 @@ function renderLoad(c) {
           <div style="font-size:16px;font-weight:600;color:var(--fg)">Нагрузочные тесты</div>
           <div style="font-size:12px;color:var(--muted);margin-top:2px">${loadK6Version ? escapeHtml(loadK6Version) : ''} · ${loadSavedScripts.length} сохранённых</div>
         </div>
-        <button class="load-btn load-btn-run" style="font-size:13px;padding:8px 20px" onclick="loadNewTest()">＋ Новый тест</button>
+        <div class="load-btns" style="margin:0">
+          <button class="load-btn" style="font-size:13px;padding:8px 14px" onclick="loadImportConfigClick()">Импорт конфига</button>
+          <button class="load-btn load-btn-run" style="font-size:13px;padding:8px 20px" onclick="loadNewTest()">＋ Новый тест</button>
+        </div>
       </div>
 
       ${loadSavedScripts.length === 0
         ? `<div class="load-library-empty">
             <div style="font-size:32px;margin-bottom:12px">📋</div>
             <div style="font-size:14px;font-weight:500;margin-bottom:6px">Нет сохранённых тестов</div>
-            <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Создай первый тест — напиши k6 скрипт или сгенерируй через AI</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Вставь готовый k6-скрипт и укажи папку с data-файлами при необходимости</div>
             <button class="load-btn load-btn-run" onclick="loadNewTest()">＋ Создать первый тест</button>
           </div>`
         : `<div class="load-library-grid">${cards}</div>`
       }
+
+      <div class="load-section" style="margin:0 20px 20px">
+        <div class="load-section-title">История запусков</div>
+        ${runRows ? `<div class="load-run-list">${runRows}</div>` : '<div style="font-size:12px;color:var(--muted)">Запусков пока нет</div>'}
+      </div>
     </div>`;
 
     // Attach click handlers via data attribute — avoids quoting issues
     c.querySelectorAll('.load-library-card[data-sname]').forEach(el => {
       el.addEventListener('click', () => loadOpenScript(el.dataset.sname));
+    });
+    c.querySelectorAll('.load-run-item[data-run-id]').forEach(el => {
+      el.addEventListener('click', () => loadOpenRun(el.dataset.runId));
     });
     return;
   }
@@ -7769,7 +8999,7 @@ function renderLoad(c) {
   ).join('');
 
   if (!loadScriptDraft) {
-    loadScriptDraft = buildDefaultScript({ baseUrl: 'http://localhost:5000', vus: 10, duration: '30s', endpoints: ['/'] });
+    loadScriptDraft = buildDefaultScript({ baseUrl: loadBaseUrlDraft, vus: loadVusDraft, duration: loadDurationDraft, endpoints: ['/'] });
   }
 
   const statusBadge = !loadState || loadState.status === 'idle' ? '' :
@@ -7779,12 +9009,16 @@ function renderLoad(c) {
     '<span class="load-status-badge load-status-error">✗ Ошибка</span>';
 
   const summary = (loadState && loadState.summary) || {};
-  const hasSummary = isDone && summary && Object.keys(summary).length > 0;
+  const hasSummary = (isDone || hasErr) && summary && Object.keys(summary).length > 0;
+  const liveStats = getLoadLiveStats();
+  const elapsedText = liveStats.estimateMs ? `${formatLoadTime(liveStats.elapsedMs)} / ${formatLoadTime(liveStats.estimateMs)}` : formatLoadTime(liveStats.elapsedMs);
+  const chartEmpty = '<div class="load-chart-empty">Жду первые точки k6 metrics.ndjson</div>';
 
   c.innerHTML = `<div class="load-screen">
 
     <div class="load-editor-topbar">
       ${!isRunning ? `<button class="load-back-btn" onclick="loadView='library';renderContent()">← Все тесты</button>` : ''}
+      ${!isRunning ? `<button class="load-btn" style="font-size:12px;padding:5px 10px" onclick="loadImportConfigClick()">Импорт конфига</button>` : ''}
       <span style="font-size:12px;color:var(--muted);margin-left:4px">${statusBadge}</span>
     </div>
 
@@ -7793,45 +9027,39 @@ function renderLoad(c) {
       <div class="load-config-row">
         <div class="load-config-field" style="flex:1;min-width:200px">
           <label>Base URL</label>
-          <input id="loadBaseUrl" type="text" value="http://localhost:5000" placeholder="http://localhost:5000" />
+          <input id="loadBaseUrl" type="text" value="${escapeHtml(loadBaseUrlDraft)}" placeholder="http://localhost:5000" />
         </div>
         <div class="load-config-field">
           <label>VUs</label>
-          <input id="loadVus" type="number" value="10" min="1" max="500" style="width:70px" />
+          <input id="loadVus" type="number" value="${escapeHtml(String(loadVusDraft))}" min="1" max="10000" style="width:80px" />
         </div>
         <div class="load-config-field">
-          <label>Duration</label>
-          <input id="loadDuration" type="text" value="30s" style="width:70px" placeholder="30s" />
+          <label>Duration, min</label>
+          <input id="loadDuration" type="number" value="${escapeHtml(durationToMinutesValue(loadDurationDraft))}" min="0.1" step="0.1" style="width:90px" placeholder="10" />
         </div>
       </div>
+      <div class="load-config-hint">Duration задаётся в минутах: введи <code>10</code>, VibeRadar передаст в k6 <code>10m</code>. Если в скрипте есть <code>options.scenarios</code>, VibeRadar не ломает stages через CLI, а передаёт значения как <code>__ENV.LOAD_VUS</code>/<code>__ENV.LOAD_DURATION</code> и совместимые <code>SMOKE_*</code>/<code>AUTH_*</code>. Если scenarios нет, будут использованы CLI <code>--vus</code>/<code>--duration</code>.</div>
+      <div class="load-config-row" style="margin-top:8px">
+        <div class="load-config-field" style="flex:1;min-width:260px">
+          <label>Data dir / file <span style="color:var(--dim);font-weight:400">(только если скрипт использует <code>open('./file')</code> или локальные imports)</span></label>
+          <input id="loadDataDir" type="text" value="${escapeHtml(loadDataDirDraft)}" placeholder="Оставь пустым, если файлы не нужны" />
+        </div>
+        <div class="load-config-field" style="flex:1;min-width:260px">
+          <label>Results dir <span style="color:var(--dim);font-weight:400">(куда сохранить summary/log/metrics; можно пустым)</span></label>
+          <input id="loadResultDir" type="text" value="${escapeHtml(loadResultDirDraft)}" placeholder="Пусто = .viberadar/load-runs/<runId>/results" />
+        </div>
+      </div>
+      <div class="load-config-hint">Data dir нужен только для локальных файлов: например, если в скрипте есть <code>open('./users.csv')</code>, укажи папку, где лежит <code>users.csv</code>. Results dir можно не заполнять.</div>
       <div class="load-config-row" style="margin-top:8px">
         <div class="load-config-field" style="flex:1;min-width:300px">
-          <label>Bearer Token <span style="color:var(--dim);font-weight:400;font-size:11px">(→ <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">__ENV.TOKEN</code>)</span></label>
-          <input id="loadToken" type="password" placeholder="Вставь Bearer-токен (необязательно)" style="font-family:monospace;font-size:12px" oninput="localStorage.setItem('vr_load_token', this.value)" />
+          <label>Accounts JSON <span style="color:var(--dim);font-weight:400">→ <code>__ENV.TEST_ACCOUNTS_JSON</code>, первая учётка также в <code>TEST_EMAIL/TEST_PASSWORD</code></span></label>
+          <textarea class="load-accounts-json" id="loadAccountsJson" spellcheck="false" placeholder='[{"email":"user1@example.com","password":"pass1"},{"email":"user2@example.com","password":"pass2"}]'>${escapeHtml(loadAccountsJsonDraft)}</textarea>
         </div>
-        ${featureOptions ? `<div class="load-config-field">
-          <label>Фича (шаблон)</label>
-          <select id="loadFeature" style="width:150px">
-            <option value="">— выбрать —</option>
-            ${featureOptions}
-          </select>
-        </div>` : ''}
       </div>
       <div class="load-btns">
-        <button class="load-btn" onclick="loadGenerateScript()">⚙ Сгенерировать скрипт</button>
         <button class="load-btn load-btn-run" id="loadRunBtn" onclick="runLoadTest()" ${isRunning ? 'disabled' : ''}>▶ Запустить</button>
         <button class="load-btn load-btn-stop" id="loadStopBtn" onclick="stopLoadTest()" ${!isRunning ? 'disabled' : ''}>■ Стоп</button>
       </div>
-    </div>
-
-    <div class="load-section">
-      <div class="load-section-title">🤖 AI генерация скрипта</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Опиши сценарий — агент найдёт эндпоинты в коде и сгенерирует k6-скрипт</div>
-      <div class="load-ai-prompt-wrap">
-        <textarea class="load-ai-prompt" id="loadAiPrompt" placeholder="Например: загрузка аудио .mp3 на /api/transcribe с полем language=ru, нужна авторизация Bearer-токеном, тестировать 20 VU 1 минуту&#10;&#10;Или: чат с RAG — POST /api/chat с body {message, knowledge_base_id, workspace_id}, stream:false">${escapeHtml(loadAiPromptDraft)}</textarea>
-        <button class="load-btn load-btn-ai" id="loadAiGenBtn" onclick="loadAiGenerateScript()" ${agentRunning ? 'disabled' : ''}>🤖 Сгенерировать<br>через AI</button>
-      </div>
-      <div class="load-ai-status" id="loadAiStatus">${loadAiGenerating ? '⏳ Агент генерирует скрипт… следи в терминале ↓' : ''}</div>
     </div>
 
     <div class="load-section">
@@ -7845,11 +9073,36 @@ function renderLoad(c) {
 
     ${(isRunning || isDone || hasErr) ? `<div class="load-section">
       <div class="load-section-title">Живые метрики</div>
-      <div class="load-charts">
-        <div class="load-chart-box"><div class="load-chart-label">Запросов/сек (RPS)</div><canvas id="loadChartRps"></canvas></div>
-        <div class="load-chart-box"><div class="load-chart-label">Среднее время ответа (мс)</div><canvas id="loadChartLatency"></canvas></div>
-        <div class="load-chart-box"><div class="load-chart-label">Процент ошибок (%)</div><canvas id="loadChartErrors"></canvas></div>
-        <div class="load-chart-box"><div class="load-chart-label">Активных VUs</div><canvas id="loadChartVus"></canvas></div>
+      <div class="load-live-shell">
+        <div class="load-progress-card">
+          <div>
+            <div class="load-progress-value" id="loadProgressValue">${liveStats.progressPct}%</div>
+            <div class="load-progress-label">Выполнение прогона</div>
+            <div class="load-progress-bar"><div class="load-progress-fill" id="loadProgressFill" style="width:${liveStats.progressPct}%"></div></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="load-live-kpi-lbl">Время</div>
+            <div class="load-live-kpi-val" id="loadElapsedValue" style="font-size:18px">${escapeHtml(elapsedText)}</div>
+          </div>
+        </div>
+        <div>
+          <div class="load-live-kpis">
+            <div class="load-live-kpi"><div class="load-live-kpi-val" id="loadTotalRequestsValue">${Math.round(liveStats.total || 0)}</div><div class="load-live-kpi-lbl">Запросов</div></div>
+            <div class="load-live-kpi"><div class="load-live-kpi-val" id="loadRpsValue">${liveStats.currentRps.toFixed(1)}</div><div class="load-live-kpi-lbl">RPS сейчас</div></div>
+            <div class="load-live-kpi"><div class="load-live-kpi-val" id="loadAvgValue">${liveStats.avgMs ? `${Math.round(liveStats.avgMs)} ms` : '—'}</div><div class="load-live-kpi-lbl">Avg latency</div></div>
+            <div class="load-live-kpi"><div class="load-live-kpi-val" id="loadErrorValue" style="color:${liveStats.errorPct > 2 ? 'var(--red)' : 'var(--text)'}">${liveStats.errorPct.toFixed(2)}%</div><div class="load-live-kpi-lbl">Ошибок</div></div>
+          </div>
+          <div class="load-live-kpi" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+            <div><div class="load-live-kpi-lbl">Активные VUs</div><div class="load-live-kpi-val" id="loadVuValue">${Math.round(liveStats.vus || 0)}</div></div>
+            <div style="font-size:12px;color:var(--muted);text-align:right">Данные обновляются из <code>metrics.ndjson</code></div>
+          </div>
+        </div>
+      </div>
+      <div class="load-charts" style="margin-top:12px">
+        <div class="load-chart-box"><div class="load-chart-label"><span>Запросов/сек</span><span class="load-chart-value" id="loadChartRpsValue">${liveStats.currentRps.toFixed(1)}</span></div>${liveStats.hasBuckets ? '<canvas id="loadChartRps"></canvas>' : chartEmpty}</div>
+        <div class="load-chart-box"><div class="load-chart-label"><span>Среднее время ответа</span><span class="load-chart-value" id="loadChartLatencyValue">${liveStats.avgMs ? `${Math.round(liveStats.avgMs)} ms` : '—'}</span></div>${liveStats.hasBuckets ? '<canvas id="loadChartLatency"></canvas>' : chartEmpty}</div>
+        <div class="load-chart-box"><div class="load-chart-label"><span>Ошибки</span><span class="load-chart-value" id="loadChartErrorsValue">${liveStats.errorPct.toFixed(2)}%</span></div>${liveStats.hasBuckets ? '<canvas id="loadChartErrors"></canvas>' : chartEmpty}</div>
+        <div class="load-chart-box"><div class="load-chart-label"><span>Активные VUs</span><span class="load-chart-value" id="loadChartVusValue">${Math.round(liveStats.vus || 0)}</span></div>${liveStats.hasBuckets ? '<canvas id="loadChartVus"></canvas>' : chartEmpty}</div>
       </div>
     </div>` : ''}
 
@@ -7860,16 +9113,23 @@ function renderLoad(c) {
         ${summary.avgDuration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.avgDuration||0)}</div><div class="load-kpi-lbl">avg ms</div></div>` : ''}
         ${summary.p90Duration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.p90Duration||0)}</div><div class="load-kpi-lbl">p90 ms</div></div>` : ''}
         ${summary.p95Duration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.p95Duration||0)}</div><div class="load-kpi-lbl">p95 ms</div></div>` : ''}
+        ${summary.p99Duration != null ? `<div class="load-kpi"><div class="load-kpi-val">${Math.round(summary.p99Duration||0)}</div><div class="load-kpi-lbl">p99 ms</div></div>` : ''}
         ${summary.totalRequests != null ? `<div class="load-kpi"><div class="load-kpi-val">${summary.totalRequests||0}</div><div class="load-kpi-lbl">Запросов</div></div>` : ''}
         ${summary.errorPct != null ? `<div class="load-kpi"><div class="load-kpi-val" style="color:${(summary.errorPct||0)>5?'var(--red)':'var(--green)'}">${(summary.errorPct||0).toFixed(2)}%</div><div class="load-kpi-lbl">Ошибок</div></div>` : ''}
+        ${summary.checksFailed != null ? `<div class="load-kpi"><div class="load-kpi-val" style="color:${(summary.checksFailed||0)>0?'var(--red)':'var(--green)'}">${summary.checksFailed||0}</div><div class="load-kpi-lbl">check fails</div></div>` : ''}
       </div>
+      ${renderLoadEndpointBreakdown(summary)}
       <div class="load-btns" style="margin-top:12px">
+        <button class="load-btn" onclick="copyLoadAnalysisPrompt(this)">Копировать отчёт для агента</button>
         <button class="load-btn" style="background:#1a2a3a;border-color:var(--blue);color:var(--blue)" onclick="loadAiAnalysis()">🤖 AI-анализ результатов</button>
       </div>
     </div>` : ''}
 
     <div class="load-section">
-      <div class="load-section-title">Лог k6</div>
+      <div class="load-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span>Лог k6</span>
+        <button class="load-btn" style="padding:4px 10px;text-transform:none;letter-spacing:0;font-weight:500" onclick="copyLoadLog(this)" ${loadLogLines.length ? '' : 'disabled'}>Копировать лог</button>
+      </div>
       <div class="load-log" id="loadLogContent">
         ${loadLogLines.map(l => `<div class="load-log-line">${escapeHtml(l)}</div>`).join('')}
       </div>
@@ -7881,28 +9141,21 @@ function renderLoad(c) {
   const logEl = document.getElementById('loadLogContent');
   if (logEl) logEl.scrollTop = logEl.scrollHeight;
 
-  // Restore token
-  const savedToken = localStorage.getItem('vr_load_token');
-  if (savedToken) { const el = document.getElementById('loadToken'); if (el) el.value = savedToken; }
-
   // Sync textarea with draft
   const ta = document.getElementById('loadScriptEditor');
   if (ta) { ta.addEventListener('input', () => { loadScriptDraft = ta.value; }); }
-
-  // Feature selector auto-generates script
-  const featSel = document.getElementById('loadFeature');
-  if (featSel) {
-    featSel.addEventListener('change', () => {
-      const fk = featSel.value;
-      if (!fk) return;
-      const script = generateScriptFromFeature(fk);
-      if (script) {
-        loadScriptDraft = script;
-        const ta2 = document.getElementById('loadScriptEditor');
-        if (ta2) ta2.value = script;
-      }
-    });
-  }
+  const baseInput = document.getElementById('loadBaseUrl');
+  const vusInput = document.getElementById('loadVus');
+  const durationInput = document.getElementById('loadDuration');
+  const dataInput = document.getElementById('loadDataDir');
+  const resultInput = document.getElementById('loadResultDir');
+  const accountsInput = document.getElementById('loadAccountsJson');
+  if (baseInput) baseInput.addEventListener('input', () => { loadBaseUrlDraft = baseInput.value || 'http://localhost:5000'; });
+  if (vusInput) vusInput.addEventListener('input', () => { loadVusDraft = parseInt(vusInput.value || '10', 10) || 10; });
+  if (durationInput) durationInput.addEventListener('input', () => { loadDurationDraft = durationInputToK6(durationInput.value || '1'); });
+  if (dataInput) dataInput.addEventListener('input', () => { loadDataDirDraft = dataInput.value || ''; });
+  if (resultInput) resultInput.addEventListener('input', () => { loadResultDirDraft = resultInput.value || ''; });
+  if (accountsInput) accountsInput.addEventListener('input', () => { loadAccountsJsonDraft = accountsInput.value || ''; });
 
   // Draw charts if we have data
   if (loadBuckets && loadBuckets.length > 0) {
@@ -7913,6 +9166,7 @@ function renderLoad(c) {
 function loadNewTest() {
   loadScriptDraft = '';
   loadScriptNameDraft = '';
+  loadImportedEnvVarsDraft = {};
   loadView = 'editor';
   renderContent();
 }
@@ -7922,6 +9176,8 @@ function loadOpenScript(name) {
   if (!s) return;
   loadScriptDraft = s.script;
   loadScriptNameDraft = s.name;
+  loadImportedEnvVarsDraft = {};
+  applyLoadConfigToFields(s);
   loadView = 'editor';
   renderContent();
 }
@@ -7929,7 +9185,7 @@ function loadOpenScript(name) {
 function loadGenerateScript() {
   const baseUrl  = document.getElementById('loadBaseUrl')?.value || 'http://localhost:5000';
   const vus      = parseInt(document.getElementById('loadVus')?.value || '10');
-  const duration = document.getElementById('loadDuration')?.value || '30s';
+  const duration = durationInputToK6(document.getElementById('loadDuration')?.value || '1');
   const featKey  = document.getElementById('loadFeature')?.value || '';
   let script;
   if (featKey) {
@@ -7946,18 +9202,38 @@ async function runLoadTest() {
   const ta = document.getElementById('loadScriptEditor');
   const script = ta ? ta.value : loadScriptDraft;
   if (!script.trim()) { alert('Скрипт пустой — сначала сгенерируйте или напишите k6-скрипт'); return; }
+  const baseUrl = (document.getElementById('loadBaseUrl')?.value || loadBaseUrlDraft || 'http://localhost:5000').trim();
+  const vus = parseInt(document.getElementById('loadVus')?.value || String(loadVusDraft || 10), 10) || 10;
+  const duration = durationInputToK6(document.getElementById('loadDuration')?.value || loadDurationDraft || '1');
+  const scriptName = (document.getElementById('loadScriptName')?.value || loadScriptNameDraft || 'Новый тест').trim();
+  const dataDir = (document.getElementById('loadDataDir')?.value || loadDataDirDraft || '').trim();
+  const resultDir = (document.getElementById('loadResultDir')?.value || loadResultDirDraft || '').trim();
+  const accountsRaw = document.getElementById('loadAccountsJson')?.value || loadAccountsJsonDraft || '';
+  const accountsInfo = normalizeAccountsJson(accountsRaw);
+  if (accountsInfo.error) { alert(accountsInfo.error); return; }
+  loadBaseUrlDraft = baseUrl;
+  loadVusDraft = vus;
+  loadDurationDraft = duration;
+  loadScriptNameDraft = scriptName;
+  loadDataDirDraft = dataDir;
+  loadResultDirDraft = resultDir;
+  loadAccountsJsonDraft = accountsRaw;
 
   loadLogLines = [];
   loadBuckets  = [];
 
   try {
-    const tokenVal = (document.getElementById('loadToken')?.value || localStorage.getItem('vr_load_token') || '').trim();
-    const envVars = tokenVal ? { TOKEN: tokenVal } : {};
+    const envVars = { ...(loadImportedEnvVarsDraft || {}) };
+    if (accountsInfo.accounts.length > 0) {
+      envVars.TEST_ACCOUNTS_JSON = accountsInfo.text;
+      envVars.TEST_EMAIL = accountsInfo.accounts[0].email;
+      envVars.TEST_PASSWORD = accountsInfo.accounts[0].password;
+    }
 
     const r = await fetch('/api/load/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script, envVars }),
+      body: JSON.stringify({ script, vus, duration, baseUrl, scriptName, dataDir, resultDir, envVars }),
     });
     const d = await r.json();
     if (!r.ok) { alert('Ошибка запуска: ' + (d.error || r.status)); return; }
@@ -7970,23 +9246,63 @@ async function stopLoadTest() {
   try { await fetch('/api/load/stop', { method: 'POST' }); } catch {}
 }
 
-async function loadAiAnalysis() {
-  if (!loadState || !loadState.summary) return;
+function buildLoadAnalysisPrompt() {
+  if (!loadState || !loadState.summary) return '';
   const summary = loadState.summary;
-  const logs = loadState.logs || [];
-  const prompt = `Проанализируй результаты нагрузочного тестирования k6:
+  const logs = getLoadPromptLogs();
+  const aggregate = getLoadPromptAggregate(summary);
+  const totalRequests = Number(aggregate.totalRequests || 0);
+  if (totalRequests <= 0 && logs.length === 0) {
+    return '';
+  }
+  const endpointLines = Array.isArray(summary.endpoints) && summary.endpoints.length
+    ? summary.endpoints.slice(0, 30).map(endpoint =>
+        `- ${endpoint.endpoint}: requests=${Math.round(endpoint.requests || 0)}, errors=${endpoint.errorPct == null ? '-' : Number(endpoint.errorPct || 0).toFixed(2) + '%'}, avg=${Math.round(endpoint.avgDuration || 0)}ms, p90=${Math.round(endpoint.p90Duration || 0)}ms, p95=${Math.round(endpoint.p95Duration || 0)}ms, p99=${Math.round(endpoint.p99Duration || 0)}ms, max=${Math.round(endpoint.maxDuration || 0)}ms`
+      ).join('\n')
+    : '(нет разбивки: в k6-скрипте нет тега endpoint или metrics.ndjson недоступен)';
+  return `Проанализируй результаты нагрузочного тестирования k6:
 
-RPS: ${(summary.rps||0).toFixed(2)}
-avg latency: ${Math.round(summary.avgDuration||0)}ms
-p90 latency: ${Math.round(summary.p90Duration||0)}ms
-p95 latency: ${Math.round(summary.p95Duration||0)}ms
-Total requests: ${summary.totalRequests||0}
-Error rate: ${(summary.errorPct||0).toFixed(2)}%
+Run ID: ${loadState.runId || '-'}
+Status: ${loadState.status || '-'}
+Result path: ${loadState.config?.resultPath || '-'}
+Script: ${loadState.config?.scriptName || '-'}
+VUs: ${loadState.config?.vus || '-'}
+Duration: ${loadState.config?.duration || '-'}
+
+RPS: ${formatLoadPromptNumber(aggregate.rps, 2)}
+avg latency: ${formatLoadPromptNumber(aggregate.avgDuration, 0, 'ms')}
+p90 latency: ${formatLoadPromptNumber(aggregate.p90Duration, 0, 'ms')}
+p95 latency: ${formatLoadPromptNumber(aggregate.p95Duration, 0, 'ms')}
+p99 latency: ${formatLoadPromptNumber(aggregate.p99Duration, 0, 'ms')}
+Total requests: ${aggregate.totalRequests ?? '-'}
+Error rate: ${formatLoadPromptNumber(aggregate.errorPct, 2, '%')}
+Checks failed: ${summary.checksFailed ?? '-'}
+Exit code: ${summary.exitCode ?? '-'}
+
+Разбивка по endpoint:
+${endpointLines}
 
 Лог k6:
-${logs.slice(-50).join('\n')}
+${logs.slice(-120).join('\n') || '(лог пустой)'}
 
 Оцени: производительность, узкие места, рекомендации по оптимизации.`;
+}
+
+async function copyLoadAnalysisPrompt(btn) {
+  const prompt = buildLoadAnalysisPrompt();
+  if (!prompt) {
+    alert('Для копирования нет данных: в выбранном прогоне 0 запросов и пустой лог k6. Открой завершённый run с результатами или скопируй лог ошибки вручную.');
+    return;
+  }
+  await copyLoadText(btn, prompt, 'Копировать отчёт для агента', 'Не удалось скопировать отчёт');
+}
+
+async function loadAiAnalysis() {
+  const prompt = buildLoadAnalysisPrompt();
+  if (!prompt) {
+    alert('Для AI-анализа нет данных: в выбранном прогоне 0 запросов и пустой лог k6. Открой завершённый run с результатами или скопируй лог ошибки вручную.');
+    return;
+  }
 
   // Open agent terminal and send task
   document.getElementById('agentPanel').classList.add('open');
@@ -8010,7 +9326,7 @@ async function loadAiGenerateScript() {
 
   const baseUrl  = document.getElementById('loadBaseUrl')?.value  || 'http://localhost:5000';
   const vus      = document.getElementById('loadVus')?.value      || '10';
-  const duration = document.getElementById('loadDuration')?.value || '30s';
+  const duration = durationInputToK6(document.getElementById('loadDuration')?.value || '1');
 
   const featureList = (D && D.features || []).map(f => `- ${f.label} (key: ${f.key})`).join('\n');
 
@@ -8038,12 +9354,18 @@ ${featureList || '(нет данных)'}
 **Шаг 2 — составь k6 скрипт.**
 Требования:
 1. Валидный JavaScript для k6 (import from 'k6/http', 'k6', 'k6/data')
-2. \`export const options = { vus: ${vus}, duration: '${duration}', thresholds: {...} }\`
+2. Можно использовать \`options.scenarios\`; тогда VibeRadar в Auto-режиме не будет передавать \`--vus/--duration\`, а прокинет значения UI в \`__ENV.SMOKE_VUS\` и \`__ENV.SMOKE_DURATION\`
 3. \`export default function() { ... }\` с проверками \`check()\`
-4. Если нужна авторизация — добавь заголовок Authorization (Bearer-токен как переменную __ENV.TOKEN)
-5. Если нужна загрузка файла — используй \`http.file()\` и \`open()\`
-6. Добавь \`sleep(1)\` между запросами
-7. Добавь комментарий в начале: что тестируется и какой эндпоинт
+4. Base URL бери из \`__ENV.BASE_URL || '${baseUrl}'\`
+5. Если нужны учётки — читай \`JSON.parse(__ENV.TEST_ACCOUNTS_JSON || '[]')\`, выбирай аккаунт по \`__VU\`; для старых скриптов доступна первая учётка как \`__ENV.TEST_EMAIL\`/\`__ENV.TEST_PASSWORD\`
+6. Если нужна авторизация токеном в конкретном проекте — используй env-переменную с понятным именем, например \`__ENV.API_TOKEN\`
+7. Если нужна загрузка файла — используй \`http.file()\` и \`open()\`
+8. Если нужны CSV/JSON/локальные helper-модули, используй относительные пути от Data dir: \`open('./users.csv')\`, \`import './lib/helper.js'\`
+9. Не добавляй \`handleSummary\` и не пиши результаты сам: VibeRadar сохраняет summary.json, metrics.ndjson, k6.log
+10. Добавь \`sleep(1)\` между запросами
+11. Добавь комментарий в начале: что тестируется и какой эндпоинт
+12. У каждого \`http.get/post/patch/request\` указывай стабильный тег \`tags: { endpoint: 'auth_login' }\`; по нему VibeRadar строит таблицу p90/p95/p99 и ищет медленный endpoint
+13. Если сценарий содержит несколько ключевых endpoint, добавь отдельные thresholds вида \`'http_req_duration{endpoint:auth_login}': ['p(95)<2000']\`
 
 **Шаг 3 — сохрани ТОЛЬКО скрипт в файл.**
 Запиши итоговый JavaScript-код в файл: \`.viberadar/load-script-generated.js\`
@@ -8105,6 +9427,46 @@ async function loadRefreshScripts() {
   } catch {}
 }
 
+async function loadRefreshRuns() {
+  try {
+    const r = await fetch('/api/load/runs');
+    if (!r.ok) return;
+    loadRuns = await r.json();
+    if (contextMode === 'load' && loadView === 'library') renderContent();
+  } catch {}
+}
+
+async function loadFetchResults() {
+  try {
+    const r = await fetch('/api/load/results');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d && d.status && d.status !== 'idle') {
+      loadState = d;
+      loadBuckets = d.buckets || [];
+      loadLogLines = d.logs || [];
+      if (d.config) applyLoadConfigToFields(d.config);
+    }
+  } catch {}
+}
+
+async function loadOpenRun(runId) {
+  try {
+    const r = await fetch('/api/load/runs/' + encodeURIComponent(runId));
+    if (!r.ok) return;
+    const d = await r.json();
+    loadState = d;
+    loadBuckets = d.buckets || [];
+    loadLogLines = d.logs || [];
+    loadScriptDraft = d.script || '';
+    loadScriptNameDraft = d.config?.scriptName || d.scriptName || '';
+    loadImportedEnvVarsDraft = {};
+    if (d.config) applyLoadConfigToFields(d.config);
+    loadView = 'editor';
+    renderContent();
+  } catch {}
+}
+
 async function loadSaveScript() {
   const nameEl = document.getElementById('loadScriptName');
   const name = (nameEl ? nameEl.value : loadScriptNameDraft).trim();
@@ -8112,12 +9474,36 @@ async function loadSaveScript() {
   const taEl = document.getElementById('loadScriptEditor');
   const script = taEl ? taEl.value : loadScriptDraft;
   if (!script.trim()) { alert('Скрипт пустой'); return; }
+  const baseUrl = (document.getElementById('loadBaseUrl')?.value || loadBaseUrlDraft || 'http://localhost:5000').trim();
+  const vus = parseInt(document.getElementById('loadVus')?.value || String(loadVusDraft || 10), 10) || 10;
+  const duration = durationInputToK6(document.getElementById('loadDuration')?.value || loadDurationDraft || '1');
+  const dataDir = (document.getElementById('loadDataDir')?.value || loadDataDirDraft || '').trim();
+  const resultDir = (document.getElementById('loadResultDir')?.value || loadResultDirDraft || '').trim();
+  const accountsRaw = document.getElementById('loadAccountsJson')?.value || loadAccountsJsonDraft || '';
+  const accountsInfo = normalizeAccountsJson(accountsRaw);
+  if (accountsInfo.error) { alert(accountsInfo.error); return; }
   loadScriptNameDraft = name;
+  loadBaseUrlDraft = baseUrl;
+  loadVusDraft = vus;
+  loadDurationDraft = duration;
+  loadDataDirDraft = dataDir;
+  loadResultDirDraft = resultDir;
+  loadAccountsJsonDraft = accountsRaw;
   try {
     const r = await fetch('/api/load/scripts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, script }),
+      body: JSON.stringify({
+        name,
+        script,
+        baseUrl,
+        vus,
+        duration,
+        dataDir,
+        resultDir,
+        accountsJson: accountsInfo.text,
+        envVars: loadImportedEnvVarsDraft || {},
+      }),
     });
     if (!r.ok) { const d = await r.json().catch(() => ({})); alert('Ошибка: ' + (d.error || r.status)); return; }
     await loadRefreshScripts();
@@ -8132,6 +9518,8 @@ async function loadLoadScript(name) {
   if (!s) return;
   loadScriptDraft = s.script;
   loadScriptNameDraft = s.name;
+  loadImportedEnvVarsDraft = {};
+  applyLoadConfigToFields(s);
   const ta = document.getElementById('loadScriptEditor');
   if (ta) { ta.value = s.script; ta.style.borderColor = 'var(--blue)'; setTimeout(() => { ta.style.borderColor = ''; }, 1500); }
   const nameEl = document.getElementById('loadScriptName');
@@ -8158,6 +9546,10 @@ function connectSSE() {
   es.addEventListener('data-updated', () => {
     setLiveDot('#e3b341', 'Обновляю данные…');
     scheduleRefreshData();
+  });
+
+  es.addEventListener('tasks-updated', () => {
+    void loadTasks();
   });
 
   es.addEventListener('rescan-error', () => {
@@ -8458,10 +9850,20 @@ function connectSSE() {
 
   // ── Load test SSE events ────────────────────────────────────────────────────
   es.addEventListener('load-started', (e) => {
-    const { config } = JSON.parse(e.data);
-    loadState = { status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0, totalErrors: 0, logs: [], script: config?.script || '', config, summary: null };
+    const { runId, config } = JSON.parse(e.data);
+    loadState = { runId, status: 'running', startTime: Date.now(), buckets: [], totalRequests: 0, totalErrors: 0, logs: [], script: loadScriptDraft || '', config, summary: null };
     loadBuckets = [];
     loadLogLines = [];
+    if (loadLiveUiTimer) clearInterval(loadLiveUiTimer);
+    loadLiveUiTimer = setInterval(() => {
+      if (!loadState || loadState.status !== 'running') {
+        clearInterval(loadLiveUiTimer);
+        loadLiveUiTimer = null;
+        return;
+      }
+      if (contextMode === 'load') updateLoadLiveStats();
+    }, 1000);
+    if (config) applyLoadConfigToFields(config);
     if (contextMode === 'load') { renderSidebar(); renderContent(); }
   });
 
@@ -8469,6 +9871,11 @@ function connectSSE() {
     const { line } = JSON.parse(e.data);
     loadLogLines.push(line);
     if (loadLogLines.length > 500) loadLogLines.shift();
+    if (loadState) {
+      if (!Array.isArray(loadState.logs)) loadState.logs = [];
+      loadState.logs.push(line);
+      if (loadState.logs.length > 500) loadState.logs.shift();
+    }
     if (contextMode === 'load') {
       const logEl = document.getElementById('loadLogContent');
       if (logEl) {
@@ -8484,13 +9891,16 @@ function connectSSE() {
   es.addEventListener('load-progress', (e) => {
     const { buckets, total, errors } = JSON.parse(e.data);
     loadBuckets = buckets || [];
+    if (loadState) loadState.buckets = loadBuckets;
     if (loadState) { loadState.totalRequests = total || 0; loadState.totalErrors = errors || 0; }
-    if (contextMode === 'load') { drawLoadCharts(); renderSidebar(); }
+    if (contextMode === 'load') { updateLoadLiveStats(); drawLoadCharts(); renderSidebar(); }
   });
 
   es.addEventListener('load-done', (e) => {
     const { status, summary } = JSON.parse(e.data);
     if (loadState) { loadState.status = status; loadState.summary = summary || null; loadState.endTime = Date.now(); }
+    if (loadLiveUiTimer) { clearInterval(loadLiveUiTimer); loadLiveUiTimer = null; }
+    loadRefreshRuns();
     if (contextMode === 'load') { renderSidebar(); renderContent(); }
   });
 

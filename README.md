@@ -65,6 +65,12 @@ Repository includes an observability baseline for structured logs:
 - CI/lint command: `npm run lint:logs`
 - Lint self-check tests: `npm run test:lint-logs`
 
+## Task tracker standard
+
+Task Tracker imports project tasks from `viberadar.tasks.json`.
+Authoring rules for human reviewers and Codex skills are documented in
+`docs/task-tracker/task-authoring-standard.md`.
+
 ## Tech
 
 - CLI: TypeScript + Node.js
