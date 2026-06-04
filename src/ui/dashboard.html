@@ -333,6 +333,114 @@
     .obs-list { display: flex; flex-direction: column; gap: 6px; }
     .obs-list-item { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 
+    /* ── Microservices readiness ────────────────────────────────────────────── */
+    .micro-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .micro-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .micro-panel-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 10px;
+    }
+    .micro-risk-list { display: flex; flex-direction: column; gap: 8px; }
+    .micro-risk-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 7px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .micro-risk-item:last-child { border-bottom: none; }
+    .micro-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .micro-pill-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .micro-pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 10px;
+      color: var(--muted);
+      background: var(--bg);
+      white-space: nowrap;
+    }
+    .micro-pill.high { color: var(--red); border-color: rgba(248,81,73,0.45); }
+    .micro-pill.medium { color: var(--yellow); border-color: rgba(227,179,65,0.45); }
+    .micro-pill.ready { color: var(--green); border-color: rgba(63,185,80,0.45); }
+    .micro-pill.watch { color: var(--yellow); border-color: rgba(227,179,65,0.45); }
+    .micro-pill.risky { color: var(--red); border-color: rgba(248,81,73,0.45); }
+    .micro-score {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 4px;
+    }
+    .micro-score-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .micro-score-fill { height: 100%; background: var(--blue); border-radius: 999px; }
+    .micro-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .micro-table th,
+    .micro-table td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .micro-table th {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      background: var(--bg);
+    }
+    .micro-table tr:last-child td { border-bottom: none; }
+    .micro-table tr.clickable { cursor: pointer; }
+    .micro-table tr.clickable:hover { background: var(--bg-hover); }
+    .micro-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 18px 0 10px;
+    }
+    .micro-section-head h3 { font-size: 16px; }
+    .micro-subtle { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .micro-back {
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .micro-back:hover { background: var(--bg-hover); border-color: var(--blue); }
+
     /* ── Feature cards ───────────────────────────────────────────────────────── */
     .features-grid {
       display: grid;
@@ -1991,6 +2099,12 @@ let taskImportDraft = '';
 let taskImportResult = '';
 let taskSelectedId = null;
 let taskEditMode = false;
+let microFeatureFilter = 'all';
+let microTierFilter = 'all';
+let microSizeFilter = 'problem';
+let microTypeFilter = 'all';
+let microSearchQuery = '';
+let microDrillKey = null;
 
 function toggleObsHint(id) {
   document.getElementById(id).classList.toggle('open');
@@ -2008,6 +2122,7 @@ function switchObsTab(tabId) {
 const modeStore = {
   qa: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   observability: { view: 'files', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
+  microservices: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   docs: { view: 'features', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   scenarios: { view: 'list', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null },
   services: { view: 'graph', searchQuery: '', activeTypes: new Set(), drillFeatureKey: null, drillTestType: null, activePanelKey: null, showOnlyUntestedInFeature: false, testNavType: 'all', testNavFeature: null, testNavProblem: null, svcTab: 'graph' },
@@ -2018,6 +2133,7 @@ const modeStore = {
 
 function getModeFromPath(pathname = window.location.pathname) {
   if (pathname.startsWith('/radar/observability')) return 'observability';
+  if (pathname.startsWith('/radar/microservices')) return 'microservices';
   if (pathname.startsWith('/radar/docs')) return 'docs';
   if (pathname.startsWith('/radar/services')) return 'services';
   if (pathname.startsWith('/radar/load')) return 'load';
@@ -2028,6 +2144,7 @@ function getModeFromPath(pathname = window.location.pathname) {
 
 function routePathForMode(mode) {
   if (mode === 'observability') return '/radar/observability';
+  if (mode === 'microservices') return '/radar/microservices';
   if (mode === 'docs') return '/radar/docs';
   if (mode === 'services') return '/radar/services';
   if (mode === 'load') return '/radar/load';
@@ -2076,7 +2193,7 @@ function switchMode(nextMode) {
   saveModeState(contextMode);
   contextMode = nextMode;
   restoreModeState(contextMode);
-  if (contextMode === 'observability' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load' || contextMode === 'probe' || contextMode === 'tasks') {
+  if (contextMode === 'observability' || contextMode === 'microservices' || contextMode === 'docs' || contextMode === 'services' || contextMode === 'load' || contextMode === 'probe' || contextMode === 'tasks') {
     view = 'features';
     drillFeatureKey = null;
     drillTestType = null;
@@ -3419,6 +3536,23 @@ function renderStats() {
         { v: '—', l: 'Шумных паттернов' },
       ];
     }
+  } else if (contextMode === 'microservices') {
+    const ms = D.microservices;
+    if (ms) {
+      items = [
+        { v: ms.summary.godFiles + ms.summary.criticalFiles, l: 'God files', c: (ms.summary.godFiles + ms.summary.criticalFiles) ? '#f85149' : '#3fb950' },
+        { v: ms.summary.largeFiles, l: 'Large files', c: ms.summary.largeFiles ? '#e3b341' : undefined },
+        { v: ms.summary.modules, l: 'Modules' },
+        { v: ms.summary.readyModules, l: 'Ready >= 70', c: '#3fb950' },
+        { v: ms.summary.riskyModules, l: 'Risky < 40', c: ms.summary.riskyModules ? '#f85149' : undefined },
+      ];
+    } else {
+      items = [
+        { v: '—', l: 'God files' },
+        { v: '—', l: 'Large files' },
+        { v: '—', l: 'Modules' },
+      ];
+    }
   } else if (contextMode === 'tasks') {
     const tasks = taskTracker.tasks || [];
     const active = tasks.filter(t => t.status !== 'archived');
@@ -3481,6 +3615,7 @@ function renderModeSwitch() {
   const modes = [
     { key: 'qa', label: 'QA Coverage', hint: 'Покрытие, пробелы, тренды' },
     { key: 'observability', label: 'Наблюдаемость', hint: 'Логи, шум, сигналы ошибок' },
+    { key: 'microservices', label: 'Микросервисы', hint: 'God files, границы, готовность' },
     { key: 'docs', label: 'Документация', hint: 'Актуальность, генерация, обновление' },
     { key: 'scenarios', label: 'Сценарии', hint: 'Пользовательские сценарии, user journeys' },
     { key: 'services', label: 'Карта сервисов', hint: 'Зависимости, пайплайны, мониторинг' },
@@ -3522,6 +3657,60 @@ function renderSidebar() {
       <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45">
         Источники логов и качество сигналов для триажа инцидентов.
       </div>`;
+    return;
+  }
+
+  if (contextMode === 'microservices') {
+    tabs.style.display = 'none';
+    const ms = D.microservices;
+    const features = D.features || [];
+    const types = ms ? Array.from(new Set(ms.files.map(f => f.type))).sort() : [];
+    extra.innerHTML = `
+      <div class="sidebar-label">Микросервисы</div>
+      <div style="font-size:12px;color:var(--muted);padding:0 6px;line-height:1.45;margin-bottom:12px">
+        Наблюдение за размером файлов, границами фич и готовностью к сервисному выделению.
+      </div>
+      <div style="padding:0 6px;display:flex;flex-direction:column;gap:8px">
+        <label class="sidebar-label" style="padding:0">Поиск</label>
+        <input id="microSearchInput" class="search-input" placeholder="Файл или модуль" value="${escapeHtml(microSearchQuery)}">
+        <label class="sidebar-label" style="padding:0">Фича</label>
+        <select id="microFeatureFilter" class="search-input">
+          <option value="all" ${microFeatureFilter === 'all' ? 'selected' : ''}>Все фичи</option>
+          <option value="__unknown__" ${microFeatureFilter === '__unknown__' ? 'selected' : ''}>Unknown ownership</option>
+          ${features.map(f => `<option value="${escapeHtml(f.key)}" ${microFeatureFilter === f.key ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+        </select>
+        <label class="sidebar-label" style="padding:0">Готовность</label>
+        <select id="microTierFilter" class="search-input">
+          <option value="all" ${microTierFilter === 'all' ? 'selected' : ''}>Любая</option>
+          <option value="ready" ${microTierFilter === 'ready' ? 'selected' : ''}>Ready >= 70</option>
+          <option value="watch" ${microTierFilter === 'watch' ? 'selected' : ''}>Watch 40-69</option>
+          <option value="risky" ${microTierFilter === 'risky' ? 'selected' : ''}>Risky < 40</option>
+        </select>
+        <label class="sidebar-label" style="padding:0">Размер</label>
+        <select id="microSizeFilter" class="search-input">
+          <option value="problem" ${microSizeFilter === 'problem' ? 'selected' : ''}>Large + god + critical</option>
+          <option value="all" ${microSizeFilter === 'all' ? 'selected' : ''}>Все</option>
+          <option value="critical" ${microSizeFilter === 'critical' ? 'selected' : ''}>Critical</option>
+          <option value="god" ${microSizeFilter === 'god' ? 'selected' : ''}>God</option>
+          <option value="large" ${microSizeFilter === 'large' ? 'selected' : ''}>Large</option>
+          <option value="normal" ${microSizeFilter === 'normal' ? 'selected' : ''}>Normal</option>
+        </select>
+        <label class="sidebar-label" style="padding:0">Тип файла</label>
+        <select id="microTypeFilter" class="search-input">
+          <option value="all" ${microTypeFilter === 'all' ? 'selected' : ''}>Все типы</option>
+          ${types.map(t => `<option value="${escapeHtml(t)}" ${microTypeFilter === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+        </select>
+        ${ms ? `<div class="micro-subtle" style="margin-top:6px">
+          Source: <span style="color:var(--text)">${ms.summary.sourceFiles}</span><br>
+          Unknown: <span style="color:var(--text)">${ms.summary.unmappedFiles}</span><br>
+          Multi-feature: <span style="color:var(--text)">${ms.summary.multiFeatureFiles}</span>
+        </div>` : ''}
+      </div>`;
+    document.getElementById('microSearchInput').oninput = (e) => { microSearchQuery = e.target.value; renderContent(); };
+    document.getElementById('microFeatureFilter').onchange = (e) => { microFeatureFilter = e.target.value; microDrillKey = null; renderStats(); renderContent(); };
+    document.getElementById('microTierFilter').onchange = (e) => { microTierFilter = e.target.value; microDrillKey = null; renderStats(); renderContent(); };
+    document.getElementById('microSizeFilter').onchange = (e) => { microSizeFilter = e.target.value; renderContent(); };
+    document.getElementById('microTypeFilter').onchange = (e) => { microTypeFilter = e.target.value; renderContent(); };
     return;
   }
 
@@ -3693,11 +3882,282 @@ function renderSidebar() {
   });
 }
 
+// ─── Microservices readiness ─────────────────────────────────────────────────
+function microCategoryLabel(cat) {
+  return cat === 'critical' ? 'Critical' : cat === 'god' ? 'God' : cat === 'large' ? 'Large' : 'Normal';
+}
+
+function microTierLabel(tier) {
+  return tier === 'ready' ? 'Ready' : tier === 'risky' ? 'Risky' : 'Watch';
+}
+
+function microScoreColor(score) {
+  if (score >= 70) return 'var(--green)';
+  if (score < 40) return 'var(--red)';
+  return 'var(--yellow)';
+}
+
+function microRiskPills(risks, max = 3) {
+  const shown = (risks || []).slice(0, max);
+  const rest = Math.max(0, (risks || []).length - shown.length);
+  return `
+    <div class="micro-pill-row">
+      ${shown.map(r => `<span class="micro-pill ${r.severity}">${escapeHtml(r.label)}</span>`).join('')}
+      ${rest ? `<span class="micro-pill">+${rest}</span>` : ''}
+    </div>`;
+}
+
+function microFeatureLabels(keys) {
+  if (!keys || keys.length === 0) return '<span class="micro-pill medium">unknown</span>';
+  const byKey = new Map((D.features || []).map(f => [f.key, f.label]));
+  return `<div class="micro-pill-row">${keys.map(k => `<span class="micro-pill">${escapeHtml(byKey.get(k) || k)}</span>`).join('')}</div>`;
+}
+
+function filteredMicroModules(ms) {
+  const q = microSearchQuery.trim().toLowerCase();
+  return (ms.modules || []).filter(m => {
+    if (microFeatureFilter !== 'all' && m.key !== microFeatureFilter) return false;
+    if (microTierFilter !== 'all' && m.readinessTier !== microTierFilter) return false;
+    if (q && !(`${m.key} ${m.label} ${m.description}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function filteredMicroFiles(ms, moduleKey = null) {
+  const q = microSearchQuery.trim().toLowerCase();
+  return (ms.files || []).filter(f => {
+    if (moduleKey) {
+      if (moduleKey === '__unknown__') {
+        if (f.featureKeys.length !== 0) return false;
+      } else if (!f.featureKeys.includes(moduleKey)) return false;
+    } else if (microFeatureFilter !== 'all') {
+      if (microFeatureFilter === '__unknown__') {
+        if (f.featureKeys.length !== 0) return false;
+      } else if (!f.featureKeys.includes(microFeatureFilter)) return false;
+    }
+    if (microSizeFilter === 'problem' && f.sizeCategory === 'normal') return false;
+    if (microSizeFilter !== 'all' && microSizeFilter !== 'problem' && f.sizeCategory !== microSizeFilter) return false;
+    if (microTypeFilter !== 'all' && f.type !== microTypeFilter) return false;
+    if (q && !(`${f.path} ${f.type} ${(f.featureKeys || []).join(' ')} ${(f.risks || []).map(r => r.label).join(' ')}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function renderMicroservices(c) {
+  const ms = D.microservices;
+  if (!ms) {
+    c.innerHTML = `<div class="empty-state">Нет данных microservices readiness. Обновите сканирование проекта.</div>`;
+    return;
+  }
+  if (microDrillKey) {
+    renderMicroserviceDetail(c, ms, microDrillKey);
+    return;
+  }
+
+  const modules = filteredMicroModules(ms);
+  const files = filteredMicroFiles(ms);
+  const problemFiles = files.filter(f => f.sizeCategory !== 'normal');
+  const riskFiles = (ms.topRisks || []).slice(0, 6);
+
+  c.innerHTML = `
+    <div class="micro-summary-grid">
+      <div class="micro-panel">
+        <div class="micro-panel-title">Размерные бюджеты</div>
+        <div class="micro-score">${ms.summary.godFiles + ms.summary.criticalFiles}</div>
+        <div class="micro-subtle">God/critical files из ${ms.summary.sourceFiles} source-файлов. Large от ${ms.budgets.largeKb} KB или ${ms.budgets.largeLines} строк.</div>
+      </div>
+      <div class="micro-panel">
+        <div class="micro-panel-title">Готовность модулей</div>
+        <div class="micro-score" style="color:var(--green)">${ms.summary.readyModules}</div>
+        <div class="micro-subtle">Ready >= 70. Risky < 40: <span style="color:${ms.summary.riskyModules ? 'var(--red)' : 'var(--text)'}">${ms.summary.riskyModules}</span>.</div>
+      </div>
+      <div class="micro-panel">
+        <div class="micro-panel-title">Границы ownership</div>
+        <div class="micro-score" style="color:${ms.summary.unmappedFiles || ms.summary.multiFeatureFiles ? 'var(--yellow)' : 'var(--green)'}">${ms.summary.unmappedFiles + ms.summary.multiFeatureFiles}</div>
+        <div class="micro-subtle">Unknown ownership: ${ms.summary.unmappedFiles}. Multi-feature files: ${ms.summary.multiFeatureFiles}.</div>
+      </div>
+    </div>
+
+    <div class="micro-panel">
+      <div class="micro-panel-title">Top risks</div>
+      <div class="micro-risk-list">
+        ${riskFiles.length ? riskFiles.map(f => `
+          <div class="micro-risk-item">
+            <div>
+              <div class="micro-path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</div>
+              ${microRiskPills(f.risks, 4)}
+            </div>
+            <div style="text-align:right">
+              <div style="color:${f.sizeCategory === 'critical' || f.sizeCategory === 'god' ? 'var(--red)' : 'var(--yellow)'};font-weight:700">${microCategoryLabel(f.sizeCategory)}</div>
+              <div class="micro-subtle">${f.sizeKb} KB · ${f.lineCount} lines</div>
+            </div>
+          </div>`).join('') : `<div class="micro-subtle">Критичных рисков по текущим фильтрам нет.</div>`}
+      </div>
+    </div>
+
+    <div class="micro-section-head">
+      <h3>Модули и готовность</h3>
+      <span class="micro-subtle">${modules.length} из ${ms.modules.length}</span>
+    </div>
+    <table class="micro-table">
+      <thead>
+        <tr>
+          <th>Модуль</th>
+          <th>Score</th>
+          <th>Файлы</th>
+          <th>Largest file</th>
+          <th>Boundary hints</th>
+          <th>Top risks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${modules.map(m => `
+          <tr class="clickable micro-module-row" data-micro-key="${escapeHtml(m.key)}">
+            <td>
+              <div style="font-weight:700;color:var(--text)">${escapeHtml(m.label)}</div>
+              <div class="micro-subtle">${escapeHtml(m.key)}</div>
+            </td>
+            <td>
+              <div style="font-weight:700;color:${microScoreColor(m.readinessScore)}">${m.readinessScore}</div>
+              <span class="micro-pill ${m.readinessTier}">${microTierLabel(m.readinessTier)}</span>
+            </td>
+            <td>
+              <div>${m.fileCount} total</div>
+              <div class="micro-subtle">${m.criticalFileCount + m.godFileCount} god/critical · ${m.testedCount} tested</div>
+            </td>
+            <td>
+              ${m.largestFile ? `<div class="micro-path" title="${escapeHtml(m.largestFile.path)}">${escapeHtml(m.largestFile.path)}</div><div class="micro-subtle">${m.largestFile.sizeKb} KB · ${m.largestFile.lineCount} lines</div>` : '<span class="micro-subtle">—</span>'}
+            </td>
+            <td><div class="micro-pill-row">${(m.boundaryHints || []).slice(0, 4).map(h => `<span class="micro-pill">${escapeHtml(h)}</span>`).join('') || '<span class="micro-subtle">—</span>'}</div></td>
+            <td>${(m.topRisks || []).slice(0, 3).map(r => `<div class="micro-subtle">${escapeHtml(r)}</div>`).join('') || '<span class="micro-subtle">—</span>'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="micro-section-head">
+      <h3>God и large files</h3>
+      <span class="micro-subtle">${problemFiles.length} файлов по фильтру</span>
+    </div>
+    ${renderMicroFileTable(problemFiles)}
+  `;
+
+  c.querySelectorAll('.micro-module-row').forEach(row => {
+    row.onclick = () => {
+      microDrillKey = row.dataset.microKey;
+      renderContent();
+    };
+  });
+}
+
+function renderMicroFileTable(files) {
+  const rows = files
+    .sort((a, b) => b.sizeBytes - a.sizeBytes)
+    .slice(0, 250)
+    .map(f => `
+      <tr>
+        <td>
+          <div class="micro-path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</div>
+          <div class="micro-subtle">${escapeHtml(f.type)} · deps ${f.dependencyCount}</div>
+        </td>
+        <td>
+          <span class="micro-pill ${f.sizeCategory === 'normal' ? '' : f.sizeCategory === 'large' ? 'medium' : 'high'}">${microCategoryLabel(f.sizeCategory)}</span>
+        </td>
+        <td>${f.sizeKb} KB</td>
+        <td>${f.lineCount}</td>
+        <td>${microFeatureLabels(f.featureKeys)}</td>
+        <td>${microRiskPills(f.risks, 4)}</td>
+      </tr>`).join('');
+  return `
+    <table class="micro-table">
+      <thead>
+        <tr>
+          <th>Файл</th>
+          <th>Размер</th>
+          <th>KB</th>
+          <th>Строки</th>
+          <th>Ownership</th>
+          <th>Причины риска</th>
+        </tr>
+      </thead>
+      <tbody>${rows || `<tr><td colspan="6"><div class="micro-subtle">Файлы не найдены по текущим фильтрам.</div></td></tr>`}</tbody>
+    </table>`;
+}
+
+function renderMicroserviceDetail(c, ms, key) {
+  const module = (ms.modules || []).find(m => m.key === key);
+  if (!module) {
+    microDrillKey = null;
+    renderMicroservices(c);
+    return;
+  }
+  const files = filteredMicroFiles(ms, key).sort((a, b) => b.sizeBytes - a.sizeBytes);
+  c.innerHTML = `
+    <button class="micro-back" id="microBackBtn">← Назад к обзору</button>
+    <div class="micro-section-head">
+      <div>
+        <h3>${escapeHtml(module.label)}</h3>
+        <div class="micro-subtle">${escapeHtml(module.key)} · ${module.fileCount} files</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:28px;font-weight:700;color:${microScoreColor(module.readinessScore)}">${module.readinessScore}</div>
+        <span class="micro-pill ${module.readinessTier}">${microTierLabel(module.readinessTier)}</span>
+      </div>
+    </div>
+
+    <div class="micro-summary-grid">
+      ${[
+        ['Size health', module.sizeHealth],
+        ['Ownership clarity', module.ownershipClarity],
+        ['Test readiness', module.testReadiness],
+        ['Boundary readiness', module.boundaryReadiness],
+        ['Observability', module.observabilityReadiness],
+      ].map(([label, value]) => `
+        <div class="micro-panel">
+          <div class="micro-panel-title">${label}</div>
+          <div class="micro-score" style="color:${microScoreColor(value)}">${value}</div>
+          <div class="micro-score-bar"><div class="micro-score-fill" style="width:${value}%;background:${microScoreColor(value)}"></div></div>
+        </div>`).join('')}
+    </div>
+
+    <div class="micro-summary-grid">
+      <div class="micro-panel">
+        <div class="micro-panel-title">Boundary hints</div>
+        <div class="micro-pill-row">${(module.boundaryHints || []).map(h => `<span class="micro-pill">${escapeHtml(h)}</span>`).join('') || '<span class="micro-subtle">Нет явных hints</span>'}</div>
+      </div>
+      <div class="micro-panel">
+        <div class="micro-panel-title">Service map</div>
+        <div class="micro-subtle">Nodes: ${module.serviceNodes.length ? module.serviceNodes.map(escapeHtml).join(', ') : '—'}</div>
+        <div class="micro-subtle">Pipelines: ${module.pipelineIds.length ? module.pipelineIds.map(escapeHtml).join(', ') : '—'}</div>
+      </div>
+      <div class="micro-panel">
+        <div class="micro-panel-title">Tests and ownership</div>
+        <div class="micro-subtle">Tested: ${module.testedCount}/${module.fileCount}</div>
+        <div class="micro-subtle">Stale tests: ${module.staleTestCount}</div>
+        <div class="micro-subtle">Multi-feature files: ${module.multiFeatureFileCount}</div>
+      </div>
+    </div>
+
+    <div class="micro-section-head">
+      <h3>Файлы модуля</h3>
+      <span class="micro-subtle">${files.length} по текущим фильтрам</span>
+    </div>
+    ${renderMicroFileTable(files)}
+  `;
+  document.getElementById('microBackBtn').onclick = () => {
+    microDrillKey = null;
+    renderContent();
+  };
+}
+
 // ─── Content ──────────────────────────────────────────────────────────────────
 function renderContent() {
   const c = document.getElementById('content');
   if (contextMode === 'observability') {
     renderObservability(c);
+    return;
+  }
+  if (contextMode === 'microservices') {
+    renderMicroservices(c);
     return;
   }
   if (contextMode === 'docs') {

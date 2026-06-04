@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 import * as yaml from 'js-yaml';
+import { buildMicroservicesReport, MicroservicesReport } from './microservices';
 
 export interface ModuleInfo {
   id: string;
@@ -109,6 +110,7 @@ export interface ScanResult {
   documentation?: DocumentationReport;
   scenarios?: ScenariosReport;
   serviceMap?: ServiceMapReport;
+  microservices?: MicroservicesReport;
 }
 
 export interface ObservabilityCatalogItem {
@@ -1746,6 +1748,19 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     else if (deps['jest'] || scripts['test']?.includes('jest')) testRunner = 'jest';
   } catch {}
 
+  const observability = computeObservabilityReport(modules, projectRoot, config?.features);
+  const documentation = computeDocumentationReport(modules, projectRoot, config?.features);
+  const scenarios = computeScenariosReport(projectRoot, config?.scenarios, config?.features);
+  const serviceMap = computeServiceMapReport(projectRoot, config?.services);
+  const microservices = buildMicroservicesReport({
+    projectRoot,
+    modules,
+    features,
+    serviceMap,
+    documentation,
+    observability,
+  });
+
   return {
     projectRoot,
     projectName,
@@ -1756,10 +1771,11 @@ export async function scanProject(projectRoot: string): Promise<ScanResult> {
     infraCount: modules.filter(m => m.isInfra).length,
     agent: config?.agent,
     testRunner,
-    observability: computeObservabilityReport(modules, projectRoot, config?.features),
-    documentation: computeDocumentationReport(modules, projectRoot, config?.features),
-    scenarios: computeScenariosReport(projectRoot, config?.scenarios, config?.features),
-    serviceMap: computeServiceMapReport(projectRoot, config?.services),
+    observability,
+    documentation,
+    scenarios,
+    serviceMap,
+    microservices,
   };
 }
 
